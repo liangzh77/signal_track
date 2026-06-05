@@ -13,6 +13,7 @@ from signal_track.cli import refresh_markets as cli_refresh_markets
 from signal_track.dashboard import render_dashboard
 from signal_track.extraction import ExtractedInput, ExtractedSignal
 from signal_track.instrument_master import InstrumentMasterService
+from signal_track.logic_supplement import LogicSupplement, LogicSupplementer
 from signal_track.market_data import MarketDataService
 from signal_track.models import DailyBar, Instrument, Market
 from signal_track.publisher import extract_published_address
@@ -69,6 +70,24 @@ class RecordingMarketDataProvider(MarketDataProvider):
         if self.instruments is None:
             raise NotImplementedError
         return [instrument for instrument in self.instruments if instrument.market == market]
+
+
+class FakeLogicSupplementer(LogicSupplementer):
+    def supplement(self, *, name, direction, source_logic, instruments):
+        del name, direction, source_logic, instruments
+        return LogicSupplement(
+            thesis="AI补充：围绕广告、游戏与估值修复建立跟踪假设。",
+            tracking_metrics=["广告收入环比改善", "游戏流水恢复", "股价跌破 20 日线"],
+            exit_conditions=["跌破 20 日线", "核心业务恢复低于预期"],
+            verification_notes=["财务和行业数据需要外部来源交叉验证"],
+            confidence=0.7,
+        )
+
+
+class BrokenLogicSupplementer(LogicSupplementer):
+    def supplement(self, *, name, direction, source_logic, instruments):
+        del name, direction, source_logic, instruments
+        raise RuntimeError("boom")
 
 
 class SignalTrackCoreTests(unittest.TestCase):
@@ -240,6 +259,44 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("needs_review", html)
             self.assertIn("polyline", html)
             self.assertIn("系统补充逻辑", html)
+
+    def test_low_logic_signal_uses_optional_logic_supplementer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+
+            result = SignalIngestor(
+                repo,
+                InstrumentResolver(repo.list_instruments()),
+                logic_supplementer=FakeLogicSupplementer(),
+            ).ingest(source_name="测试源", content="腾讯 做多，先跟踪。")
+
+            logic = repo.list_logic_blocks(result.project_ids[0])
+            system_logic = [block["content"] for block in logic if block["logic_type"] == "system_logic"][0]
+            self.assertIn("AI补充", system_logic)
+            self.assertIn("关键跟踪指标", system_logic)
+            self.assertIn("跌破 20 日线", system_logic)
+
+    def test_logic_supplementer_failure_falls_back_to_local_system_logic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+
+            result = SignalIngestor(
+                repo,
+                InstrumentResolver(repo.list_instruments()),
+                logic_supplementer=BrokenLogicSupplementer(),
+            ).ingest(source_name="测试源", content="腾讯 做多，先跟踪。")
+
+            logic = repo.list_logic_blocks(result.project_ids[0])
+            system_logic = [block["content"] for block in logic if block["logic_type"] == "system_logic"][0]
+            self.assertIn("3C-5M-3D-3T", system_logic)
 
     def test_structured_extraction_can_create_portfolio_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

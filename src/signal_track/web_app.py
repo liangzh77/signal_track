@@ -8,6 +8,7 @@ from .dashboard import render_dashboard
 from .db import Database, Repository
 from .extraction import OpenAISignalExtractor
 from .instrument_master import InstrumentMasterService
+from .logic_supplement import build_logic_supplementer
 from .models import Market
 from .publisher import DemoPublisher, extract_published_address
 from .providers.factory import build_market_data_provider
@@ -252,7 +253,11 @@ def ingest_content(
             source_name = extraction.source_name
     elif extractor == "openai":
         raise HTTPException(status_code=503, detail="OPENAI_API_KEY is required for extractor=openai")
-    return SignalIngestor(repo, resolver).ingest(
+    return SignalIngestor(
+        repo,
+        resolver,
+        logic_supplementer=build_logic_supplementer(settings.openai_api_key, settings.openai_model),
+    ).ingest(
         source_name=source_name,
         content=content,
         as_portfolio=portfolio,

@@ -12,6 +12,7 @@ from .dashboard import render_dashboard
 from .db import Database, Repository
 from .extraction import OpenAISignalExtractor
 from .instrument_master import InstrumentMasterService
+from .logic_supplement import build_logic_supplementer
 from .market_data import MarketDataService
 from .models import Market
 from .publisher import DemoPublisher, extract_published_address
@@ -237,7 +238,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             if args.source == "manual" and extraction.source_name:
                 source_name = extraction.source_name
-        result = SignalIngestor(repo, resolver).ingest(
+        result = SignalIngestor(
+            repo,
+            resolver,
+            logic_supplementer=build_logic_supplementer(settings.openai_api_key, settings.openai_model),
+        ).ingest(
             source_name=source_name,
             content=content,
             as_portfolio=args.portfolio,

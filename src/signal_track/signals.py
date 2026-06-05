@@ -6,6 +6,7 @@ from datetime import date
 
 from .db import Repository
 from .extraction import ExtractedInput, ExtractedSignal
+from .logic_supplement import LogicSupplementer
 from .models import Direction, ProjectStatus
 from .resolver import InstrumentResolver
 
@@ -26,9 +27,15 @@ class IngestResult:
 
 
 class SignalIngestor:
-    def __init__(self, repo: Repository, resolver: InstrumentResolver):
+    def __init__(
+        self,
+        repo: Repository,
+        resolver: InstrumentResolver,
+        logic_supplementer: LogicSupplementer | None = None,
+    ):
         self.repo = repo
         self.resolver = resolver
+        self.logic_supplementer = logic_supplementer
 
     def ingest(
         self,
@@ -74,7 +81,12 @@ class SignalIngestor:
                 metadata={"raw_extract_status": "no_instrument_resolved"},
             )
             self.repo.add_logic_block(project_id, "source_logic", content, logic_score / 10, [content[:240]])
-            self.repo.add_logic_block(project_id, "system_logic", build_system_logic("未识别标的", direction), 0.35)
+            self.repo.add_logic_block(
+                project_id,
+                "system_logic",
+                self._system_logic("未识别标的", direction, content, []),
+                0.35,
+            )
             return IngestResult(raw_input_id, [project_id], [], logic_score, True)
 
         project_ids: list[int] = []
@@ -133,7 +145,12 @@ class SignalIngestor:
                     metadata={"raw_extract_status": "no_instrument_resolved", "extractor": "structured"},
                 )
                 self.repo.add_logic_block(project_id, "source_logic", source_logic, logic_score / 10, [original_content[:240]])
-                self.repo.add_logic_block(project_id, "system_logic", build_system_logic("未识别标的", direction), 0.35)
+                self.repo.add_logic_block(
+                    project_id,
+                    "system_logic",
+                    self._system_logic("未识别标的", direction, source_logic, []),
+                    0.35,
+                )
                 project_ids.append(project_id)
                 system_logic_added = True
                 continue
@@ -250,7 +267,7 @@ class SignalIngestor:
             self.repo.add_logic_block(
                 project_id,
                 "system_logic",
-                build_system_logic(resolution.instrument.name, direction),
+                self._system_logic(resolution.instrument.name, direction, content, [resolution.instrument]),
                 0.62,
             )
         return project_id
@@ -288,8 +305,34 @@ class SignalIngestor:
             self.repo.add_project_leg(project_id, instrument_id, direction.value, weight)
         self.repo.add_logic_block(project_id, "source_logic", summarize_source_logic(content), logic_score / 10, [content[:240]])
         if needs_review or weight_needs_review:
-            self.repo.add_logic_block(project_id, "system_logic", build_system_logic(title, direction), 0.62)
+            self.repo.add_logic_block(
+                project_id,
+                "system_logic",
+                self._system_logic(title, direction, content, [resolution.instrument for resolution in resolutions]),
+                0.62,
+            )
         return project_id
+
+    def _system_logic(
+        self,
+        name: str,
+        direction: Direction,
+        source_logic: str,
+        instruments: list,
+    ) -> str:
+        if self.logic_supplementer:
+            try:
+                supplement = self.logic_supplementer.supplement(
+                    name=name,
+                    direction=direction,
+                    source_logic=source_logic,
+                    instruments=instruments,
+                )
+                if supplement.thesis.strip():
+                    return supplement.to_block()
+            except Exception:
+                pass
+        return build_system_logic(name, direction)
 
 
 def extract_probe_terms(content: str) -> list[str]:

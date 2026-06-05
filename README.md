@@ -10,7 +10,7 @@ Current implementation status:
 - SQLite schema for instruments, prices, sources, inputs, tracking projects, logic blocks, daily checks, and publish events.
 - Instrument resolver for A shares, Hong Kong stocks, China futures, US stocks, and US futures seed symbols.
 - Unified daily bar interface with fixture, Tushare, yfinance, and auto-routed providers.
-- Heuristic extraction plus optional OpenAI Structured Outputs extraction.
+- Heuristic extraction plus optional OpenAI Structured Outputs extraction and low-logic tracking supplement.
 - Daily check flow with price refresh, return calculation, exit-signal thresholding, and HTML rendering.
 - Glassmorphism dashboard with project list, detail cards, logic blocks, and SVG return curves.
 - CLI and FastAPI backend for ingestion, checking, rendering, publishing, and serving.
@@ -241,3 +241,7 @@ multiple signals, portfolio flags, directions, weights, source logic, observatio
 logic, and logic scores in a predictable shape. When the raw source logic is weak,
 Signal Track still creates the tracking project and stores a system-supplemented
 3C-5M-3D-3T logic block.
+
+When `OPENAI_API_KEY` is configured, weak-logic projects also get a structured
+tracking supplement with concrete metrics, exit/review conditions, and data
+verification notes. Without an API key, the local 3C-5M-3D-3T fallback is used.
