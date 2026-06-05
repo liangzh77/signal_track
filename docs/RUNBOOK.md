@@ -29,6 +29,9 @@ sudo systemctl start signal-track.service
 sudo systemctl start signal-track-daily.timer
 ```
 
+Set `SIGNAL_TRACK_API_KEY` in `signal-track.env` before exposing the backend outside
+localhost. Mutating endpoints reject requests without that key.
+
 ## Service Commands
 
 ```bash
@@ -84,6 +87,15 @@ File input:
 /srv/signal-track/venv/bin/python -m signal_track.cli ingest --source 信息源A --file /path/to/note.md --publish
 ```
 
+HTTP input with API key:
+
+```bash
+curl -X POST http://127.0.0.1:8765/api/inputs \
+  -H "X-Signal-Track-Key: $SIGNAL_TRACK_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"source":"信息源A","content":"腾讯 做多，先跟踪。"}'
+```
+
 ## Manual Daily Run
 
 ```bash
@@ -99,4 +111,3 @@ sqlite3 /srv/signal-track/shared/signal_track.sqlite3 ".backup '/srv/signal-trac
 ```
 
 Keep `signal-track.env` outside git and back it up with your normal secret store.
-

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import date
 from pathlib import Path
 
@@ -16,6 +17,13 @@ from signal_track.publisher import extract_published_address
 from signal_track.providers.fixture import FixtureMarketDataProvider
 from signal_track.resolver import InstrumentResolver, SEED_INSTRUMENTS
 from signal_track.signals import SignalIngestor
+
+try:
+    from fastapi.testclient import TestClient
+    from signal_track.web_app import create_app
+except Exception:
+    TestClient = None
+    create_app = None
 
 
 class SignalTrackCoreTests(unittest.TestCase):
@@ -209,6 +217,34 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(row["status"], "exit_signal")
             checks = repo.list_daily_checks(project_id=result.project_ids[0])
             self.assertIn("跌破 5 日均线", checks[0]["triggered_rules"])
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_mutating_web_endpoints_require_api_key_when_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_API_KEY": "secret-key",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+
+            denied = client.post("/api/inputs", json={"source": "测试源", "content": "腾讯 做多"})
+            self.assertEqual(denied.status_code, 401)
+
+            allowed = client.post(
+                "/api/inputs",
+                headers={"X-Signal-Track-Key": "secret-key"},
+                json={"source": "测试源", "content": "腾讯 做多"},
+            )
+            self.assertEqual(allowed.status_code, 200)
+            self.assertEqual(allowed.json()["resolved_symbols"], ["00700.HK"])
+
+            health = client.get("/health")
+            self.assertEqual(health.status_code, 200)
 
 
 if __name__ == "__main__":

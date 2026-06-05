@@ -31,6 +31,7 @@ class Settings:
     daily_provider: str
     openai_api_key: str | None
     openai_model: str
+    signal_track_api_key: str | None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -44,6 +45,7 @@ class Settings:
             daily_provider=os.getenv("SIGNAL_TRACK_DAILY_PROVIDER", "none"),
             openai_api_key=os.getenv("OPENAI_API_KEY") or None,
             openai_model=os.getenv("SIGNAL_TRACK_OPENAI_MODEL", "gpt-4o-mini"),
+            signal_track_api_key=os.getenv("SIGNAL_TRACK_API_KEY") or None,
         )
 
 

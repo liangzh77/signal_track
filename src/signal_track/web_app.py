@@ -25,7 +25,7 @@ class IngestRequest:
 
 def create_app():
     try:
-        from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
+        from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
         from fastapi.responses import HTMLResponse
         from pydantic import BaseModel
     except ImportError as exc:
@@ -55,6 +55,19 @@ def create_app():
 
     app = FastAPI(title="Signal Track", version="0.1.0")
 
+    def require_write_auth(
+        authorization: str | None = Header(default=None),
+        x_signal_track_key: str | None = Header(default=None),
+    ) -> None:
+        if not settings.signal_track_api_key:
+            return
+        bearer = None
+        if authorization and authorization.lower().startswith("bearer "):
+            bearer = authorization.split(" ", 1)[1].strip()
+        if x_signal_track_key == settings.signal_track_api_key or bearer == settings.signal_track_api_key:
+            return
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
     if settings.enable_scheduler:
         provider = build_market_data_provider(settings.daily_provider, settings)
         scheduled_jobs = build_scheduler(
@@ -76,7 +89,7 @@ def create_app():
     def health():
         return {"ok": True}
 
-    @app.post("/api/inputs")
+    @app.post("/api/inputs", dependencies=[Depends(require_write_auth)])
     def ingest(payload: InputPayload):
         result = ingest_content(
             repo,
@@ -89,7 +102,7 @@ def create_app():
         publish_result = maybe_publish(repo, settings, "新增信息后自动发布")
         return result_response(result, publish_result)
 
-    @app.post("/api/inputs/file")
+    @app.post("/api/inputs/file", dependencies=[Depends(require_write_auth)])
     async def ingest_file(
         source: str = Form("manual"),
         portfolio: bool = Form(False),
@@ -137,7 +150,7 @@ def create_app():
             for instrument in repo.list_instruments()
         ]
 
-    @app.post("/api/instruments/refresh")
+    @app.post("/api/instruments/refresh", dependencies=[Depends(require_write_auth)])
     def refresh_instruments(payload: RefreshInstrumentsPayload):
         try:
             provider = build_market_data_provider(payload.provider, settings)
@@ -175,7 +188,7 @@ def create_app():
             },
         }
 
-    @app.post("/api/checks/run")
+    @app.post("/api/checks/run", dependencies=[Depends(require_write_auth)])
     def run_checks(payload: CheckPayload = Body(default=CheckPayload())):
         try:
             provider = build_market_data_provider(payload.provider, settings)
@@ -193,7 +206,7 @@ def create_app():
     def dashboard():
         return HTMLResponse(render_dashboard(repo))
 
-    @app.post("/api/publish")
+    @app.post("/api/publish", dependencies=[Depends(require_write_auth)])
     def publish():
         if not settings.demo_publish_url or not settings.demo_api_key:
             raise HTTPException(

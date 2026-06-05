@@ -37,6 +37,7 @@ Copy `.env.example` to `.env` and fill provider credentials:
 SIGNAL_TRACK_DB_PATH=data/signal_track.sqlite3
 SIGNAL_TRACK_ENABLE_SCHEDULER=false
 SIGNAL_TRACK_DAILY_PROVIDER=tushare
+SIGNAL_TRACK_API_KEY=<your-signal-track-api-key>
 TUSHARE_TOKEN=<your-tushare-token>
 OPENAI_API_KEY=<your-openai-api-key>
 SIGNAL_TRACK_OPENAI_MODEL=gpt-4o-mini
@@ -75,6 +76,22 @@ Useful endpoints:
 
 When publish credentials are configured, `POST /api/inputs` and `POST /api/checks/run`
 automatically publish the refreshed dashboard.
+
+If `SIGNAL_TRACK_API_KEY` is configured, mutating endpoints require either:
+
+```text
+Authorization: Bearer <your-signal-track-api-key>
+X-Signal-Track-Key: <your-signal-track-api-key>
+```
+
+Example:
+
+```bash
+curl -X POST http://127.0.0.1:8765/api/inputs \
+  -H "X-Signal-Track-Key: $SIGNAL_TRACK_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"source":"信息源A","content":"腾讯 做多，先跟踪。"}'
+```
 
 ## Production Deployment
 
