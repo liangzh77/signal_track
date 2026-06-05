@@ -3,11 +3,12 @@ from __future__ import annotations
 import tempfile
 import unittest
 from unittest.mock import patch
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from signal_track.db import Database, Repository
 from signal_track.checker import DailyChecker
+from signal_track.cli import refresh_markets as cli_refresh_markets
 from signal_track.dashboard import render_dashboard
 from signal_track.extraction import ExtractedInput, ExtractedSignal
 from signal_track.instrument_master import InstrumentMasterService
@@ -24,6 +25,12 @@ try:
 except Exception:
     TestClient = None
     create_app = None
+
+
+def next_fixture_trading_day(current: date) -> date:
+    while current.weekday() >= 5:
+        current += timedelta(days=1)
+    return current
 
 
 class SignalTrackCoreTests(unittest.TestCase):
@@ -113,6 +120,19 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIsNotNone(repo.get_instrument("300750.SZ"))
             self.assertIsNotNone(repo.get_instrument("600519.SH"))
 
+    def test_refresh_all_markets_includes_us_futures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            markets = cli_refresh_markets("all")
+
+            self.assertIn(Market.US_FUT, markets)
+            results = InstrumentMasterService(repo, FixtureMarketDataProvider()).refresh_many(markets)
+
+            self.assertTrue(any(result.market == Market.US_FUT and result.count >= 2 for result in results))
+            self.assertIsNotNone(repo.get_instrument("NQ"))
+
     def test_ingest_low_logic_signal_creates_tracking_project_with_system_logic(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
@@ -131,7 +151,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertLess(result.logic_score, 6)
             self.assertTrue(result.system_logic_added)
 
-            checked = DailyChecker(repo, FixtureMarketDataProvider()).run(date(2026, 6, 5))
+            checked = DailyChecker(repo, FixtureMarketDataProvider()).run(next_fixture_trading_day(date.today()))
             self.assertEqual(checked, 1)
 
             html = render_dashboard(repo)

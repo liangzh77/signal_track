@@ -1,5 +1,7 @@
 # Signal Track
 
+[![CI](https://github.com/liangz77/signal_track/actions/workflows/ci.yml/badge.svg)](https://github.com/liangz77/signal_track/actions/workflows/ci.yml)
+
 Signal Track turns raw investment source notes into monitored tracking projects.
 
 Current implementation status:

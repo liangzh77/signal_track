@@ -394,7 +394,7 @@ def parse_date(value: str) -> date:
 
 def refresh_markets(value: str) -> list[Market]:
     if value == "all":
-        return [Market.CN_A, Market.HK, Market.CN_FUT, Market.US]
+        return [Market.CN_A, Market.HK, Market.CN_FUT, Market.US, Market.US_FUT]
     return [Market(value)]
 
 

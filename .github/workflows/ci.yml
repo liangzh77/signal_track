@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  test:
+    name: Test and smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[web]"
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests
+
+      - name: Compile sources
+        run: python -m compileall -q src tests scripts
+
+      - name: Run CLI smoke flow
+        run: |
+          mkdir -p data dist
+          python -m signal_track.cli --db data/ci.sqlite3 migrate-db
+          python -m signal_track.cli --db data/ci.sqlite3 refresh-instruments --provider fixture --market all
+          python -m signal_track.cli --db data/ci.sqlite3 ingest --source CI --text "Tencent long, watch for a break below the 5 day moving average."
+          python -m signal_track.cli --db data/ci.sqlite3 daily-run --date 2026-06-05 --provider fixture --out dist/ci-dashboard.html
+          test -s dist/ci-dashboard.html
+
+      - name: Run API health smoke
+        run: |
+          python -m signal_track.cli --db data/ci-web.sqlite3 serve --host 127.0.0.1 --port 8765 &
+          pid=$!
+          trap "kill $pid" EXIT
+          for i in $(seq 1 20); do
+            if python scripts/healthcheck.py http://127.0.0.1:8765/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
