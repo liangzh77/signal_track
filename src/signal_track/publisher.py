@@ -53,3 +53,11 @@ class DemoPublisher:
         except urllib.error.URLError as exc:
             return PublishResult(False, None, str(exc.reason))
 
+
+def extract_published_address(body: str) -> str | None:
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    address = data.get("address")
+    return str(address) if address else None

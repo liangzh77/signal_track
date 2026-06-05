@@ -37,9 +37,10 @@ class SignalIngestor:
         as_portfolio: bool = False,
         weights: dict[str, float] | None = None,
         extraction: ExtractedInput | None = None,
+        attachment_path: str | None = None,
     ) -> IngestResult:
         source_id = self.repo.get_or_create_source(source_name or "manual")
-        raw_input_id = self.repo.add_raw_input(source_id, content)
+        raw_input_id = self.repo.add_raw_input(source_id, content, attachment_path=attachment_path)
         if extraction and extraction.signals:
             return self._ingest_extraction(source_id, raw_input_id, content, extraction)
 
@@ -78,6 +79,7 @@ class SignalIngestor:
 
         project_ids: list[int] = []
         if as_portfolio:
+            weights = weights or parse_weight_hints(content, resolutions)
             project_id = self._create_portfolio_project(
                 source_id, raw_input_id, content, resolutions, direction, logic_score, needs_review, weights
             )
@@ -282,7 +284,7 @@ class SignalIngestor:
         )
         for resolution in resolutions:
             instrument_id = self.repo.upsert_instrument(resolution.instrument)
-            weight = weights.get(resolution.instrument.symbol, default_weight)
+            weight = resolve_weight_for_instrument(weights, resolution.instrument, default_weight)
             self.repo.add_project_leg(project_id, instrument_id, direction.value, weight)
         self.repo.add_logic_block(project_id, "source_logic", summarize_source_logic(content), logic_score / 10, [content[:240]])
         if needs_review or weight_needs_review:
@@ -334,8 +336,53 @@ def score_tracking_logic(content: str) -> float:
     return float(min(score, 10))
 
 
+def parse_weight_hints(content: str, resolutions) -> dict[str, float]:
+    weights: dict[str, float] = {}
+    normalized_content = content.replace("％", "%")
+
+    for resolution in resolutions:
+        instrument = resolution.instrument
+        keys = [instrument.symbol, instrument.name, instrument.provider_symbol, *instrument.aliases]
+        for key in keys:
+            pattern = rf"{re.escape(key)}[^\d%]{{0,16}}(\d+(?:\.\d+)?)\s*%"
+            match = re.search(pattern, normalized_content, flags=re.IGNORECASE)
+            if match:
+                weights[instrument.symbol] = float(match.group(1)) / 100
+                break
+
+    if len(weights) == len(resolutions):
+        return normalize_weights(weights)
+
+    percentages = [float(value) / 100 for value in re.findall(r"(\d+(?:\.\d+)?)\s*%", normalized_content)]
+    if len(percentages) == len(resolutions):
+        return normalize_weights(
+            {
+                resolution.instrument.symbol: percentages[index]
+                for index, resolution in enumerate(resolutions)
+            }
+        )
+
+    return normalize_weights(weights)
+
+
+def normalize_weights(weights: dict[str, float]) -> dict[str, float]:
+    total = sum(value for value in weights.values() if value > 0)
+    if not total:
+        return weights
+    if abs(total - 1) <= 0.02:
+        return weights
+    return {key: value / total for key, value in weights.items()}
+
+
+def resolve_weight_for_instrument(weights: dict[str, float], instrument, default_weight: float) -> float:
+    for key in [instrument.symbol, instrument.provider_symbol, instrument.name, *instrument.aliases]:
+        if key in weights:
+            return weights[key]
+    return default_weight
+
+
 def summarize_source_logic(content: str) -> str:
-    stripped = re.sub(r"\s+", " ", content).strip()
+    stripped = re.sub(r"\s+", " ", content.lstrip("\ufeff")).strip()
     return stripped[:1200]
 
 

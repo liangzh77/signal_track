@@ -13,7 +13,7 @@ from .db import Database, Repository
 from .extraction import OpenAISignalExtractor
 from .market_data import MarketDataService
 from .models import Market
-from .publisher import DemoPublisher
+from .publisher import DemoPublisher, extract_published_address
 from .providers.factory import build_market_data_provider
 from .resolver import InstrumentResolver, SEED_INSTRUMENTS
 from .signals import SignalIngestor
@@ -43,6 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     ingest_parser = subparsers.add_parser("ingest", help="Create tracking projects from raw source text.")
     ingest_parser.add_argument("--source", default="manual")
     ingest_parser.add_argument("--text", help="Raw investment note. Reads stdin if omitted.")
+    ingest_parser.add_argument("--file", help="Read raw investment note from a text/markdown file.")
     ingest_parser.add_argument("--portfolio", action="store_true", help="Treat all resolved instruments as one project.")
     ingest_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after ingest.")
     ingest_parser.add_argument(
@@ -166,7 +167,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "ingest":
         db.init()
         seed_if_empty(repo)
-        content = args.text if args.text is not None else sys.stdin.read()
+        attachment_path = None
+        if args.file:
+            attachment = Path(args.file)
+            content = attachment.read_text(encoding="utf-8", errors="replace")
+            attachment_path = str(attachment)
+        else:
+            content = args.text if args.text is not None else sys.stdin.read()
         resolver = InstrumentResolver(repo.list_instruments())
         extraction = None
         source_name = args.source
@@ -184,6 +191,7 @@ def main(argv: list[str] | None = None) -> int:
             content=content,
             as_portfolio=args.portfolio,
             extraction=extraction,
+            attachment_path=attachment_path,
         )
         publish_result = None
         if args.publish:
@@ -197,7 +205,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             repo.record_publish_event(
                 title="Signal Track 投资信号看板",
-                url=settings.demo_publish_url,
+                url=extract_published_address(publish_result.body) or settings.demo_publish_url,
                 status_code=publish_result.status_code,
                 response_body=publish_result.body,
                 metadata={"ok": publish_result.ok, "flow": "ingest"},
@@ -247,7 +255,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         repo.record_publish_event(
             title=args.title,
-            url=settings.demo_publish_url,
+            url=extract_published_address(result.body) or settings.demo_publish_url,
             status_code=result.status_code,
             response_body=result.body,
             metadata={"ok": result.ok},
@@ -281,7 +289,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             repo.record_publish_event(
                 title=args.title,
-                url=settings.demo_publish_url,
+                url=extract_published_address(publish_result.body) or settings.demo_publish_url,
                 status_code=publish_result.status_code,
                 response_body=publish_result.body,
                 metadata={"ok": publish_result.ok, "flow": "daily-run"},

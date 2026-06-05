@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
+from .analytics import project_performance
 from .checker import DailyChecker
 from .config import Settings
 from .dashboard import render_dashboard
 from .db import Database, Repository
 from .extraction import OpenAISignalExtractor
-from .publisher import DemoPublisher
+from .publisher import DemoPublisher, extract_published_address
 from .providers.factory import build_market_data_provider
 from .resolver import InstrumentResolver, SEED_INSTRUMENTS
 from .scheduler import build_scheduler
@@ -23,7 +25,7 @@ class IngestRequest:
 
 def create_app():
     try:
-        from fastapi import FastAPI, HTTPException
+        from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
         from fastapi.responses import HTMLResponse
         from pydantic import BaseModel
     except ImportError as exc:
@@ -43,6 +45,9 @@ def create_app():
         content: str
         portfolio: bool = False
         extractor: str = "auto"
+
+    class CheckPayload(BaseModel):
+        provider: str = "none"
 
     app = FastAPI(title="Signal Track", version="0.1.0")
 
@@ -69,43 +74,80 @@ def create_app():
 
     @app.post("/api/inputs")
     def ingest(payload: InputPayload):
-        resolver = InstrumentResolver(repo.list_instruments())
-        extraction = None
-        source_name = payload.source
-        if payload.extractor in {"auto", "openai"} and settings.openai_api_key:
-            extraction = OpenAISignalExtractor(settings.openai_api_key, settings.openai_model).extract(
-                payload.content,
-                source_hint=payload.source,
-            )
-            if payload.source == "manual" and extraction.source_name:
-                source_name = extraction.source_name
-        elif payload.extractor == "openai":
-            raise HTTPException(status_code=503, detail="OPENAI_API_KEY is required for extractor=openai")
-        result = SignalIngestor(repo, resolver).ingest(
-            source_name=source_name,
+        result = ingest_content(
+            repo,
+            settings,
+            source=payload.source,
             content=payload.content,
-            as_portfolio=payload.portfolio,
-            extraction=extraction,
+            portfolio=payload.portfolio,
+            extractor=payload.extractor,
         )
         publish_result = maybe_publish(repo, settings, "新增信息后自动发布")
-        return {
-            "raw_input_id": result.raw_input_id,
-            "project_ids": result.project_ids,
-            "resolved_symbols": result.resolved_symbols,
-            "logic_score": result.logic_score,
-            "system_logic_added": result.system_logic_added,
-            "publish": publish_result,
-        }
+        return result_response(result, publish_result)
+
+    @app.post("/api/inputs/file")
+    async def ingest_file(
+        source: str = Form("manual"),
+        portfolio: bool = Form(False),
+        extractor: str = Form("auto"),
+        file: UploadFile = File(...),
+    ):
+        attachments_dir = settings.db_path.parent / "attachments"
+        attachments_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = Path(file.filename or "input.txt").name
+        attachment_path = attachments_dir / safe_name
+        content_bytes = await file.read()
+        attachment_path.write_bytes(content_bytes)
+        content = content_bytes.decode("utf-8", errors="replace")
+        result = ingest_content(
+            repo,
+            settings,
+            source=source,
+            content=content,
+            portfolio=portfolio,
+            extractor=extractor,
+            attachment_path=str(attachment_path),
+        )
+        publish_result = maybe_publish(repo, settings, "上传文件后自动发布")
+        return result_response(result, publish_result)
 
     @app.get("/api/projects")
     def list_projects():
         return [dict(row) for row in repo.list_project_rows()]
 
+    @app.get("/api/projects/{project_id}")
+    def get_project(project_id: int):
+        project = repo.get_project_row(project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        performance = project_performance(repo, project_id)
+        return {
+            "project": dict(project),
+            "legs": [dict(row) for row in repo.list_project_legs(project_id)],
+            "logic_blocks": [dict(row) for row in repo.list_logic_blocks(project_id)],
+            "daily_checks": [dict(row) for row in repo.list_daily_checks(project_id=project_id)],
+            "performance": {
+                "return_pct": performance.return_pct,
+                "latest_date": performance.latest_date,
+                "points": performance.points,
+                "missing_price_symbols": performance.missing_price_symbols,
+                "legs": [leg.__dict__ for leg in performance.legs],
+            },
+        }
+
     @app.post("/api/checks/run")
-    def run_checks():
-        checked = DailyChecker(repo).run()
+    def run_checks(payload: CheckPayload = Body(default=CheckPayload())):
+        try:
+            provider = build_market_data_provider(payload.provider, settings)
+        except ValueError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        checked = DailyChecker(repo, provider).run()
         publish_result = maybe_publish(repo, settings, f"每日检查完成，更新 {checked} 个项目")
         return {"checked_projects": checked, "publish": publish_result}
+
+    @app.get("/api/publish/events")
+    def list_publish_events():
+        return [dict(row) for row in repo.list_publish_events()]
 
     @app.get("/dashboard", response_class=HTMLResponse)
     def dashboard():
@@ -124,7 +166,7 @@ def create_app():
         )
         repo.record_publish_event(
             title="Signal Track 投资信号看板",
-            url=settings.demo_publish_url,
+            url=extract_published_address(result.body) or settings.demo_publish_url,
             status_code=result.status_code,
             response_body=result.body,
             metadata={"ok": result.ok},
@@ -134,6 +176,47 @@ def create_app():
         return {"ok": True, "status_code": result.status_code}
 
     return app
+
+
+def ingest_content(
+    repo: Repository,
+    settings: Settings,
+    source: str,
+    content: str,
+    portfolio: bool,
+    extractor: str,
+    attachment_path: str | None = None,
+):
+    resolver = InstrumentResolver(repo.list_instruments())
+    extraction = None
+    source_name = source
+    if extractor in {"auto", "openai"} and settings.openai_api_key:
+        extraction = OpenAISignalExtractor(settings.openai_api_key, settings.openai_model).extract(
+            content,
+            source_hint=source,
+        )
+        if source == "manual" and extraction.source_name:
+            source_name = extraction.source_name
+    elif extractor == "openai":
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY is required for extractor=openai")
+    return SignalIngestor(repo, resolver).ingest(
+        source_name=source_name,
+        content=content,
+        as_portfolio=portfolio,
+        extraction=extraction,
+        attachment_path=attachment_path,
+    )
+
+
+def result_response(result, publish_result: dict) -> dict:
+    return {
+        "raw_input_id": result.raw_input_id,
+        "project_ids": result.project_ids,
+        "resolved_symbols": result.resolved_symbols,
+        "logic_score": result.logic_score,
+        "system_logic_added": result.system_logic_added,
+        "publish": publish_result,
+    }
 
 
 def maybe_publish(repo: Repository, settings: Settings, feature: str) -> dict:
@@ -146,7 +229,7 @@ def maybe_publish(repo: Repository, settings: Settings, feature: str) -> dict:
     )
     repo.record_publish_event(
         title="Signal Track 投资信号看板",
-        url=settings.demo_publish_url,
+        url=extract_published_address(result.body) or settings.demo_publish_url,
         status_code=result.status_code,
         response_body=result.body,
         metadata={"ok": result.ok, "feature": feature},

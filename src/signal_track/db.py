@@ -617,14 +617,32 @@ class Repository:
                 ),
             )
 
-    def list_daily_checks(self, limit: int = 30) -> list[sqlite3.Row]:
+    def list_daily_checks(self, limit: int = 30, project_id: int | None = None) -> list[sqlite3.Row]:
+        where = ""
+        params: list[object] = []
+        if project_id is not None:
+            where = "WHERE c.project_id = ?"
+            params.append(project_id)
+        params.append(limit)
         with self.db.session() as conn:
             return conn.execute(
-                """
+                f"""
                 SELECT c.*, p.title
                 FROM daily_checks c
                 JOIN tracking_projects p ON p.id = c.project_id
+                {where}
                 ORDER BY c.check_date DESC, c.id DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+
+    def list_publish_events(self, limit: int = 20) -> list[sqlite3.Row]:
+        with self.db.session() as conn:
+            return conn.execute(
+                """
+                SELECT * FROM publish_events
+                ORDER BY published_at DESC, id DESC
                 LIMIT ?
                 """,
                 (limit,),

@@ -10,6 +10,8 @@ from .db import Repository
 def render_dashboard(repo: Repository) -> str:
     projects = repo.list_project_rows()
     checks = repo.list_daily_checks(limit=20)
+    publish_events = repo.list_publish_events(limit=1)
+    last_publish = publish_events[0] if publish_events else None
     performances = {int(row["id"]): project_performance(repo, int(row["id"])) for row in projects}
     active = sum(1 for row in projects if row["status"] in {"active", "needs_review"})
     exits = sum(1 for row in projects if row["status"] == "exit_signal")
@@ -125,7 +127,7 @@ def render_dashboard(repo: Repository) -> str:
         <h1>Signal Track 投资信号看板</h1>
         <div class="stamp">最后生成：{escape(now)}</div>
       </div>
-      <div class="stamp">Card based layered dashboard · Futuristic minimalism</div>
+      <div class="stamp">{render_publish_stamp(last_publish)}</div>
     </section>
     <section class="metrics">
       <div class="card metric"><span>全部项目</span><strong>{len(projects)}</strong></div>
@@ -238,6 +240,16 @@ def logic_label(value: str) -> str:
     if value == "system_logic":
         return "系统补充逻辑"
     return value
+
+
+def render_publish_stamp(row) -> str:
+    if not row:
+        return "Card based layered dashboard · Futuristic minimalism"
+    status = row["status_code"] or "--"
+    url = row["url"] or ""
+    if url:
+        return f"最近发布：<a href='{escape(url)}'>{escape(url)}</a> · {escape(status)}"
+    return f"最近发布状态：{escape(status)}"
 
 
 def escape(value: object) -> str:

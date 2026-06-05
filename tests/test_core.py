@@ -11,6 +11,7 @@ from signal_track.dashboard import render_dashboard
 from signal_track.extraction import ExtractedInput, ExtractedSignal
 from signal_track.market_data import MarketDataService
 from signal_track.models import Market
+from signal_track.publisher import extract_published_address
 from signal_track.providers.fixture import FixtureMarketDataProvider
 from signal_track.resolver import InstrumentResolver, SEED_INSTRUMENTS
 from signal_track.signals import SignalIngestor
@@ -117,6 +118,25 @@ class SignalTrackCoreTests(unittest.TestCase):
             rows = repo.list_project_rows()
             self.assertEqual(rows[0]["symbols"], "300750.SZ, 600519.SH")
 
+    def test_heuristic_portfolio_weight_parsing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                source_name="测试源",
+                content="组合做多：宁德时代 60%，贵州茅台 40%，观察毛利率和消费恢复。",
+                as_portfolio=True,
+            )
+
+            legs = repo.list_project_legs(result.project_ids[0])
+            weights = {leg["symbol"]: leg["weight"] for leg in legs}
+            self.assertAlmostEqual(weights["300750.SZ"], 0.6)
+            self.assertAlmostEqual(weights["600519.SH"], 0.4)
+
     def test_close_signal_updates_existing_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
@@ -135,6 +155,11 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(rows[0]["status"], "closed")
             logic = repo.list_logic_blocks(opened.project_ids[0])
             self.assertTrue(any(block["logic_type"] == "close_logic" for block in logic))
+
+    def test_extract_published_address(self) -> None:
+        body = '{"address":"https://example.com/demo/a","title":"x"}'
+        self.assertEqual(extract_published_address(body), "https://example.com/demo/a")
+        self.assertIsNone(extract_published_address("not json"))
 
 
 if __name__ == "__main__":

@@ -62,10 +62,13 @@ Useful endpoints:
 
 - `GET /health`
 - `POST /api/inputs` with `{ "source": "...", "content": "...", "portfolio": false }`
+- `POST /api/inputs/file` multipart upload with `file`, `source`, `portfolio`, `extractor`
 - `GET /api/projects`
-- `POST /api/checks/run`
+- `GET /api/projects/{project_id}`
+- `POST /api/checks/run` with optional `{ "provider": "tushare" }`
 - `GET /dashboard`
 - `POST /api/publish`
+- `GET /api/publish/events`
 
 When publish credentials are configured, `POST /api/inputs` and `POST /api/checks/run`
 automatically publish the refreshed dashboard.
@@ -113,6 +116,16 @@ Default local extraction is heuristic and works without network access:
 ```powershell
 python -m signal_track.cli ingest --source 信息源A --text "腾讯 做多，先跟踪。"
 ```
+
+You can also ingest a text or markdown file:
+
+```powershell
+python -m signal_track.cli ingest --source 信息源A --file .\notes\source-note.md
+```
+
+For portfolio notes, pass `--portfolio`. If the note includes weights such as
+`宁德时代 60%，贵州茅台 40%`, Signal Track applies them automatically. If no weights
+are found, it creates an equal-weight project and marks the weight for review.
 
 If a later input contains close words such as `平仓`, `止盈`, `止损`, `退出`, or
 `exit`, Signal Track first looks for active projects containing the resolved
