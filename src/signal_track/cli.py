@@ -11,6 +11,7 @@ from .config import Settings
 from .dashboard import render_dashboard
 from .db import Database, Repository
 from .extraction import OpenAISignalExtractor
+from .instrument_master import InstrumentMasterService
 from .market_data import MarketDataService
 from .models import Market
 from .publisher import DemoPublisher, extract_published_address
@@ -39,6 +40,15 @@ def main(argv: list[str] | None = None) -> int:
     bars_parser.add_argument("--start")
     bars_parser.add_argument("--end")
     bars_parser.add_argument("--market", choices=[market.value for market in Market])
+
+    refresh_parser = subparsers.add_parser("refresh-instruments", help="Refresh instrument master records.")
+    refresh_parser.add_argument("--provider", choices=["fixture", "tushare"], default="tushare")
+    refresh_parser.add_argument(
+        "--market",
+        choices=["all", *[market.value for market in Market]],
+        default="all",
+    )
+    refresh_parser.add_argument("--sample", type=int, default=0, help="Print the first N refreshed symbols.")
 
     ingest_parser = subparsers.add_parser("ingest", help="Create tracking projects from raw source text.")
     ingest_parser.add_argument("--source", default="manual")
@@ -157,6 +167,30 @@ def main(argv: list[str] | None = None) -> int:
                     "end": end.isoformat(),
                     "bar_count": len(bars),
                     "stored_bar_count": repo.count_price_bars(resolution.instrument.symbol),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "refresh-instruments":
+        db.init()
+        provider = build_provider(args.provider, settings)
+        markets = refresh_markets(args.market)
+        results = InstrumentMasterService(repo, provider).refresh_many(markets)
+        print(
+            json.dumps(
+                {
+                    "provider": provider.name,
+                    "results": [
+                        {
+                            "market": result.market.value,
+                            "count": result.count,
+                            "sample": result.symbols[: args.sample] if args.sample else [],
+                        }
+                        for result in results
+                    ],
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -339,6 +373,12 @@ def build_provider(name: str, settings: Settings):
 
 def parse_date(value: str) -> date:
     return date.fromisoformat(value)
+
+
+def refresh_markets(value: str) -> list[Market]:
+    if value == "all":
+        return [Market.CN_A, Market.HK, Market.CN_FUT, Market.US]
+    return [Market(value)]
 
 
 if __name__ == "__main__":

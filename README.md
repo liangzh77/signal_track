@@ -21,6 +21,7 @@ python -m venv .venv
 pip install -e .
 python -m signal_track.cli init-db
 python -m signal_track.cli resolve 宁德时代
+python -m signal_track.cli refresh-instruments --provider fixture --market CN_A
 python -m signal_track.cli fetch-bars 300750.SZ --provider fixture
 python -m signal_track.cli ingest --source 测试源 --text "腾讯 做多，先跟踪。"
 python -m signal_track.cli daily-run --provider fixture --out dist/dashboard.html
@@ -63,6 +64,8 @@ Useful endpoints:
 - `GET /health`
 - `POST /api/inputs` with `{ "source": "...", "content": "...", "portfolio": false }`
 - `POST /api/inputs/file` multipart upload with `file`, `source`, `portfolio`, `extractor`
+- `GET /api/instruments`
+- `POST /api/instruments/refresh` with `{ "provider": "tushare", "market": "CN_A" }`
 - `GET /api/projects`
 - `GET /api/projects/{project_id}`
 - `POST /api/checks/run` with optional `{ "provider": "tushare" }`
@@ -120,6 +123,29 @@ python -m unittest discover -s tests
 - `yfinance`: temporary fallback for US stocks, Hong Kong stocks, and US futures.
 
 US futures support is intentionally provider-abstracted. For production-grade historical futures data, wire the same interface to CME DataMine or another licensed futures source.
+
+## Instrument Master
+
+Refresh all supported Tushare instrument master records:
+
+```powershell
+python -m signal_track.cli refresh-instruments --provider tushare --market all
+```
+
+Refresh one market:
+
+```powershell
+python -m signal_track.cli refresh-instruments --provider tushare --market CN_A
+python -m signal_track.cli refresh-instruments --provider tushare --market HK
+python -m signal_track.cli refresh-instruments --provider tushare --market CN_FUT
+python -m signal_track.cli refresh-instruments --provider tushare --market US
+```
+
+Without provider credentials, use the fixture provider to seed representative symbols:
+
+```powershell
+python -m signal_track.cli refresh-instruments --provider fixture --market all
+```
 
 ## Signal Extraction
 

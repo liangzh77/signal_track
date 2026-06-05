@@ -4,6 +4,7 @@ from datetime import date, timedelta
 
 from signal_track.models import DailyBar, Instrument
 from signal_track.providers.base import MarketDataProvider
+from signal_track.resolver import SEED_INSTRUMENTS
 
 
 class FixtureMarketDataProvider(MarketDataProvider):
@@ -50,7 +51,9 @@ class FixtureMarketDataProvider(MarketDataProvider):
             current += timedelta(days=1)
         return bars
 
+    def list_instruments(self, market):
+        return [instrument for instrument in SEED_INSTRUMENTS if instrument.market == market]
+
 
 def stable_seed(text: str) -> int:
     return sum((index + 1) * ord(char) for index, char in enumerate(text))
-

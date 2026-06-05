@@ -9,6 +9,8 @@ from .config import Settings
 from .dashboard import render_dashboard
 from .db import Database, Repository
 from .extraction import OpenAISignalExtractor
+from .instrument_master import InstrumentMasterService
+from .models import Market
 from .publisher import DemoPublisher, extract_published_address
 from .providers.factory import build_market_data_provider
 from .resolver import InstrumentResolver, SEED_INSTRUMENTS
@@ -48,6 +50,10 @@ def create_app():
 
     class CheckPayload(BaseModel):
         provider: str = "none"
+
+    class RefreshInstrumentsPayload(BaseModel):
+        provider: str = "tushare"
+        market: str = "all"
 
     app = FastAPI(title="Signal Track", version="0.1.0")
 
@@ -114,6 +120,42 @@ def create_app():
     @app.get("/api/projects")
     def list_projects():
         return [dict(row) for row in repo.list_project_rows()]
+
+    @app.get("/api/instruments")
+    def list_instruments():
+        return [
+            {
+                "id": instrument.id,
+                "symbol": instrument.symbol,
+                "provider_symbol": instrument.provider_symbol,
+                "name": instrument.name,
+                "market": instrument.market.value,
+                "asset_type": instrument.asset_type.value,
+                "exchange": instrument.exchange,
+                "currency": instrument.currency,
+                "timezone": instrument.timezone,
+                "aliases": list(instrument.aliases),
+            }
+            for instrument in repo.list_instruments()
+        ]
+
+    @app.post("/api/instruments/refresh")
+    def refresh_instruments(payload: RefreshInstrumentsPayload):
+        try:
+            provider = build_market_data_provider(payload.provider, settings)
+        except ValueError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        if provider is None:
+            raise HTTPException(status_code=400, detail="A concrete provider is required")
+        markets = refresh_markets(payload.market)
+        results = InstrumentMasterService(repo, provider).refresh_many(markets)
+        return {
+            "provider": provider.name,
+            "results": [
+                {"market": result.market.value, "count": result.count}
+                for result in results
+            ],
+        }
 
     @app.get("/api/projects/{project_id}")
     def get_project(project_id: int):
@@ -217,6 +259,15 @@ def result_response(result, publish_result: dict) -> dict:
         "system_logic_added": result.system_logic_added,
         "publish": publish_result,
     }
+
+
+def refresh_markets(value: str) -> list[Market]:
+    if value == "all":
+        return [Market.CN_A, Market.HK, Market.CN_FUT, Market.US]
+    try:
+        return [Market(value)]
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Unknown market: {value}") from exc
 
 
 def maybe_publish(repo: Repository, settings: Settings, feature: str) -> dict:

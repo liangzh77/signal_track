@@ -9,6 +9,7 @@ from signal_track.db import Database, Repository
 from signal_track.checker import DailyChecker
 from signal_track.dashboard import render_dashboard
 from signal_track.extraction import ExtractedInput, ExtractedSignal
+from signal_track.instrument_master import InstrumentMasterService
 from signal_track.market_data import MarketDataService
 from signal_track.models import DailyBar, Market
 from signal_track.publisher import extract_published_address
@@ -55,6 +56,17 @@ class SignalTrackCoreTests(unittest.TestCase):
             stored = repo.get_instrument(instrument.symbol)
             self.assertIsNotNone(stored)
             self.assertEqual(stored.name, "宁德时代")
+
+    def test_fixture_instrument_master_refresh(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            result = InstrumentMasterService(repo, FixtureMarketDataProvider()).refresh(Market.CN_A)
+
+            self.assertGreaterEqual(result.count, 2)
+            self.assertIsNotNone(repo.get_instrument("300750.SZ"))
+            self.assertIsNotNone(repo.get_instrument("600519.SH"))
 
     def test_ingest_low_logic_signal_creates_tracking_project_with_system_logic(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
