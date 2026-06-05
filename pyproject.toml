@@ -1,0 +1,32 @@
+[project]
+name = "signal-track"
+version = "0.1.0"
+description = "Private investment signal tracking service."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+market = [
+  "tushare>=1.4.24",
+  "yfinance>=0.2.50",
+]
+web = [
+  "fastapi>=0.115.0",
+  "uvicorn>=0.30.0",
+  "jinja2>=3.1.0",
+  "apscheduler>=3.10.0",
+  "requests>=2.32.0",
+]
+llm = [
+  "openai>=1.82.0",
+]
+
+[project.scripts]
+signal-track = "signal_track.cli:main"
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
