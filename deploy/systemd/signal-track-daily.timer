@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Signal Track daily check at 19:00 Asia/Shanghai
+
+[Timer]
+OnCalendar=*-*-* 19:00:00
+Timezone=Asia/Shanghai
+Persistent=true
+Unit=signal-track-daily.service
+
+[Install]
+WantedBy=timers.target

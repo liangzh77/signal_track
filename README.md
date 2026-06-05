@@ -76,6 +76,28 @@ Useful endpoints:
 When publish credentials are configured, `POST /api/inputs` and `POST /api/checks/run`
 automatically publish the refreshed dashboard.
 
+## Production Deployment
+
+Linux/systemd deployment templates live under `deploy/`, with an operational runbook at
+[docs/RUNBOOK.md](docs/RUNBOOK.md).
+
+Basic flow:
+
+```bash
+git clone https://github.com/liangzh77/signal_track /srv/signal-track/app
+cd /srv/signal-track/app
+sudo bash scripts/install_service.sh
+sudo editor /srv/signal-track/shared/signal-track.env
+sudo systemctl start signal-track.service
+sudo systemctl start signal-track-daily.timer
+```
+
+Health check:
+
+```bash
+python scripts/healthcheck.py http://127.0.0.1:8765/health
+```
+
 ## Daily Job
 
 Run the full daily flow locally:
