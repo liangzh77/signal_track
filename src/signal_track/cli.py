@@ -40,13 +40,13 @@ def main(argv: list[str] | None = None) -> int:
 
     bars_parser = subparsers.add_parser("fetch-bars", help="Fetch and store daily bars.")
     bars_parser.add_argument("query", help="Instrument name, alias, or symbol.")
-    bars_parser.add_argument("--provider", choices=["fixture", "tushare", "yfinance"], default="fixture")
+    bars_parser.add_argument("--provider", choices=["auto", "fixture", "tushare", "yfinance"], default="fixture")
     bars_parser.add_argument("--start")
     bars_parser.add_argument("--end")
     bars_parser.add_argument("--market", choices=[market.value for market in Market])
 
     refresh_parser = subparsers.add_parser("refresh-instruments", help="Refresh instrument master records.")
-    refresh_parser.add_argument("--provider", choices=["fixture", "tushare"], default="tushare")
+    refresh_parser.add_argument("--provider", choices=["auto", "fixture", "tushare"], default="tushare")
     refresh_parser.add_argument(
         "--market",
         choices=["all", *[market.value for market in Market]],
@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     check_parser.add_argument("--date", help="Check date, YYYY-MM-DD. Defaults to today.")
     check_parser.add_argument(
         "--provider",
-        choices=["none", "fixture", "tushare", "yfinance"],
+        choices=["none", "auto", "fixture", "tushare", "yfinance"],
         default="none",
         help="Optional provider used to refresh prices before checking.",
     )
@@ -87,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     daily_parser.add_argument("--date", help="Check date, YYYY-MM-DD. Defaults to today.")
     daily_parser.add_argument(
         "--provider",
-        choices=["none", "fixture", "tushare", "yfinance"],
+        choices=["none", "auto", "fixture", "tushare", "yfinance"],
         default="none",
         help="Optional provider used to refresh prices before checking.",
     )

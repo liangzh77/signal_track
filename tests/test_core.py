@@ -6,6 +6,7 @@ from unittest.mock import patch
 from datetime import date, timedelta
 from pathlib import Path
 
+from signal_track.config import Settings
 from signal_track.db import Database, Repository
 from signal_track.checker import DailyChecker
 from signal_track.cli import refresh_markets as cli_refresh_markets
@@ -13,8 +14,11 @@ from signal_track.dashboard import render_dashboard
 from signal_track.extraction import ExtractedInput, ExtractedSignal
 from signal_track.instrument_master import InstrumentMasterService
 from signal_track.market_data import MarketDataService
-from signal_track.models import DailyBar, Market
+from signal_track.models import DailyBar, Instrument, Market
 from signal_track.publisher import extract_published_address
+from signal_track.providers.auto import AutoMarketDataProvider
+from signal_track.providers.base import MarketDataProvider
+from signal_track.providers.factory import build_auto_provider
 from signal_track.providers.fixture import FixtureMarketDataProvider
 from signal_track.resolver import InstrumentResolver, SEED_INSTRUMENTS
 from signal_track.signals import SignalIngestor
@@ -31,6 +35,40 @@ def next_fixture_trading_day(current: date) -> date:
     while current.weekday() >= 5:
         current += timedelta(days=1)
     return current
+
+
+class RecordingMarketDataProvider(MarketDataProvider):
+    def __init__(self, name: str, instruments: list[Instrument] | None = None):
+        self.name = name
+        self.calls: list[str] = []
+        self.instruments = instruments
+
+    def get_daily_bars(
+        self,
+        instrument: Instrument,
+        start_date: date,
+        end_date: date,
+        adjustment: str = "none",
+    ) -> list[DailyBar]:
+        del start_date, end_date, adjustment
+        self.calls.append(instrument.symbol)
+        return [
+            DailyBar(
+                symbol=instrument.symbol,
+                provider_symbol=instrument.provider_symbol,
+                date=date(2026, 6, 5),
+                open=100,
+                high=101,
+                low=99,
+                close=100,
+                provider=self.name,
+            )
+        ]
+
+    def list_instruments(self, market: Market) -> list[Instrument]:
+        if self.instruments is None:
+            raise NotImplementedError
+        return [instrument for instrument in self.instruments if instrument.market == market]
 
 
 class SignalTrackCoreTests(unittest.TestCase):
@@ -132,6 +170,48 @@ class SignalTrackCoreTests(unittest.TestCase):
 
             self.assertTrue(any(result.market == Market.US_FUT and result.count >= 2 for result in results))
             self.assertIsNotNone(repo.get_instrument("NQ"))
+
+    def test_auto_market_provider_routes_by_market_and_falls_back_to_seed_master(self) -> None:
+        cn_provider = RecordingMarketDataProvider("cn")
+        us_provider = RecordingMarketDataProvider("us")
+        provider = AutoMarketDataProvider.from_market_map(
+            {
+                Market.CN_A: cn_provider,
+                Market.US_FUT: us_provider,
+            }
+        )
+
+        provider.get_daily_bars(SEED_INSTRUMENTS[0], date(2026, 6, 1), date(2026, 6, 5))
+        provider.get_daily_bars(SEED_INSTRUMENTS[-1], date(2026, 6, 1), date(2026, 6, 5))
+
+        self.assertEqual(cn_provider.calls, ["300750.SZ"])
+        self.assertEqual(us_provider.calls, ["NQ"])
+        self.assertEqual([instrument.symbol for instrument in provider.list_instruments(Market.US_FUT)], ["ES", "NQ"])
+
+    def test_auto_provider_prefers_tushare_and_uses_yfinance_for_us_futures(self) -> None:
+        tushare_provider = RecordingMarketDataProvider("tushare")
+        yfinance_provider = RecordingMarketDataProvider("yfinance")
+        settings = Settings(
+            db_path=Path(":memory:"),
+            tushare_token="token",
+            demo_publish_url=None,
+            demo_api_key=None,
+            enable_scheduler=False,
+            daily_provider="auto",
+            openai_api_key=None,
+            openai_model="model",
+            signal_track_api_key=None,
+        )
+
+        with patch("signal_track.providers.factory.TushareMarketDataProvider", return_value=tushare_provider):
+            with patch("signal_track.providers.factory.YFinanceMarketDataProvider", return_value=yfinance_provider):
+                provider = build_auto_provider(settings)
+
+        provider.get_daily_bars(SEED_INSTRUMENTS[2], date(2026, 6, 1), date(2026, 6, 5))
+        provider.get_daily_bars(SEED_INSTRUMENTS[-1], date(2026, 6, 1), date(2026, 6, 5))
+
+        self.assertEqual(tushare_provider.calls, ["00700.HK"])
+        self.assertEqual(yfinance_provider.calls, ["NQ"])
 
     def test_ingest_low_logic_signal_creates_tracking_project_with_system_logic(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

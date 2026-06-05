@@ -63,10 +63,10 @@ Expected:
 
 ## Initial Data Setup
 
-With Tushare token configured:
+With provider credentials configured:
 
 ```bash
-/srv/signal-track/venv/bin/python -m signal_track.cli refresh-instruments --provider tushare --market all
+/srv/signal-track/venv/bin/python -m signal_track.cli refresh-instruments --provider auto --market all
 ```
 
 Without token, seed fixture symbols:
@@ -99,7 +99,7 @@ curl -X POST http://127.0.0.1:8765/api/inputs \
 ## Manual Daily Run
 
 ```bash
-/srv/signal-track/venv/bin/python -m signal_track.cli daily-run --provider tushare --publish --out /srv/signal-track/shared/dashboard.html
+/srv/signal-track/venv/bin/python -m signal_track.cli daily-run --provider auto --publish --out /srv/signal-track/shared/dashboard.html
 ```
 
 ## Backup

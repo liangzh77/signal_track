@@ -9,7 +9,7 @@ Current implementation status:
 - Local configuration via `.env`.
 - SQLite schema for instruments, prices, sources, inputs, tracking projects, logic blocks, daily checks, and publish events.
 - Instrument resolver for A shares, Hong Kong stocks, China futures, US stocks, and US futures seed symbols.
-- Unified daily bar interface with a fixture provider for tests and optional Tushare/yfinance providers for real data.
+- Unified daily bar interface with fixture, Tushare, yfinance, and auto-routed providers.
 - Heuristic extraction plus optional OpenAI Structured Outputs extraction.
 - Daily check flow with price refresh, return calculation, exit-signal thresholding, and HTML rendering.
 - Glassmorphism dashboard with project list, detail cards, logic blocks, and SVG return curves.
@@ -39,7 +39,7 @@ Copy `.env.example` to `.env` and fill provider credentials:
 ```text
 SIGNAL_TRACK_DB_PATH=data/signal_track.sqlite3
 SIGNAL_TRACK_ENABLE_SCHEDULER=false
-SIGNAL_TRACK_DAILY_PROVIDER=tushare
+SIGNAL_TRACK_DAILY_PROVIDER=auto
 SIGNAL_TRACK_API_KEY=<your-signal-track-api-key>
 TUSHARE_TOKEN=<your-tushare-token>
 OPENAI_API_KEY=<your-openai-api-key>
@@ -69,10 +69,10 @@ Useful endpoints:
 - `POST /api/inputs` with `{ "source": "...", "content": "...", "portfolio": false }`
 - `POST /api/inputs/file` multipart upload with `file`, `source`, `portfolio`, `extractor`
 - `GET /api/instruments`
-- `POST /api/instruments/refresh` with `{ "provider": "tushare", "market": "CN_A" }`
+- `POST /api/instruments/refresh` with `{ "provider": "auto", "market": "CN_A" }`
 - `GET /api/projects`
 - `GET /api/projects/{project_id}`
-- `POST /api/checks/run` with optional `{ "provider": "tushare" }`
+- `POST /api/checks/run` with optional `{ "provider": "auto" }`
 - `GET /dashboard`
 - `POST /api/publish`
 - `GET /api/publish/events`
@@ -123,7 +123,7 @@ python scripts/healthcheck.py http://127.0.0.1:8765/health
 Run the full daily flow locally:
 
 ```powershell
-python -m signal_track.cli daily-run --provider tushare --publish
+python -m signal_track.cli daily-run --provider auto --publish
 ```
 
 For development without provider credentials:
@@ -175,6 +175,7 @@ python -m signal_track.cli backup-db --out data\backup.sqlite3
 ## Market Data Providers
 
 - `fixture`: deterministic local bars for tests and UI development.
+- `auto`: routes by market. Tushare handles A shares, Hong Kong stocks, China futures, and US stocks when `TUSHARE_TOKEN` is configured; yfinance handles Hong Kong stocks, US stocks, and US futures when installed.
 - `tushare`: A shares, Hong Kong stocks, China futures, and US stocks when `TUSHARE_TOKEN` is configured.
 - `yfinance`: temporary fallback for US stocks, Hong Kong stocks, and US futures.
 
@@ -182,10 +183,10 @@ US futures support is intentionally provider-abstracted. For production-grade hi
 
 ## Instrument Master
 
-Refresh all supported Tushare instrument master records:
+Refresh all supported instrument master records using the auto router:
 
 ```powershell
-python -m signal_track.cli refresh-instruments --provider tushare --market all
+python -m signal_track.cli refresh-instruments --provider auto --market all
 ```
 
 Refresh one market:
