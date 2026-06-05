@@ -10,7 +10,7 @@ from signal_track.checker import DailyChecker
 from signal_track.dashboard import render_dashboard
 from signal_track.extraction import ExtractedInput, ExtractedSignal
 from signal_track.market_data import MarketDataService
-from signal_track.models import Market
+from signal_track.models import DailyBar, Market
 from signal_track.publisher import extract_published_address
 from signal_track.providers.fixture import FixtureMarketDataProvider
 from signal_track.resolver import InstrumentResolver, SEED_INSTRUMENTS
@@ -160,6 +160,43 @@ class SignalTrackCoreTests(unittest.TestCase):
         body = '{"address":"https://example.com/demo/a","title":"x"}'
         self.assertEqual(extract_published_address(body), "https://example.com/demo/a")
         self.assertIsNone(extract_published_address("not json"))
+
+    def test_daily_check_triggers_moving_average_break_rule(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                source_name="测试源",
+                content="腾讯 做多，观察是否跌破5日线。",
+            )
+            instrument = repo.get_instrument("00700.HK")
+            self.assertIsNotNone(instrument)
+            instrument_id = repo.upsert_instrument(instrument)
+            closes = [100, 100, 100, 100, 80]
+            bars = [
+                DailyBar(
+                    symbol="00700.HK",
+                    provider_symbol="00700.HK",
+                    date=date(2026, 6, index + 1),
+                    open=close,
+                    high=close,
+                    low=close,
+                    close=close,
+                    provider="test",
+                )
+                for index, close in enumerate(closes)
+            ]
+            repo.upsert_bars(instrument_id, bars)
+
+            DailyChecker(repo).run(date(2026, 6, 5))
+
+            row = repo.get_project_row(result.project_ids[0])
+            self.assertEqual(row["status"], "exit_signal")
+            checks = repo.list_daily_checks(project_id=result.project_ids[0])
+            self.assertIn("跌破 5 日均线", checks[0]["triggered_rules"])
 
 
 if __name__ == "__main__":

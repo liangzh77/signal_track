@@ -94,6 +94,18 @@ The flow is intentionally sequential:
 3. Render the dashboard HTML.
 4. Publish through the demo API when `--publish` is passed.
 
+## Automatic Check Rules
+
+Daily checks currently execute deterministic price rules found in the stored logic:
+
+- `跌破 N 日线`: triggers an exit signal when the latest close is below the N-day moving average.
+- `回撤/亏损/跌幅/止损 N%`: triggers an exit signal when project return is at or below `-N%`.
+- `止盈/涨幅/收益/盈利 N%`: triggers an exit signal when project return is at or above `N%`.
+
+Non-price rules such as margin, revenue, orders, industry prices, or management changes
+are saved in the source/system logic blocks and marked for future data-provider or LLM
+review. They are not silently guessed.
+
 ## Tests
 
 ```powershell

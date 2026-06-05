@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import json
 from datetime import datetime
 
 from .analytics import project_performance
@@ -25,7 +26,7 @@ def render_dashboard(repo: Repository) -> str:
     )
     detail_cards = "\n".join(render_project_detail(repo, row, performances[int(row["id"])]) for row in projects)
     check_items = "\n".join(
-        f"<li><span>{escape(row['check_date'])}</span><strong>{escape(row['title'])}</strong><em>{escape(row['conclusion'])}</em></li>"
+        render_check_item(row)
         for row in checks
     ) or "<li class='empty'>暂无检查记录</li>"
 
@@ -101,6 +102,7 @@ def render_dashboard(repo: Repository) -> str:
     .rail ul {{ list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }}
     .rail li {{ display: grid; gap: 4px; padding: 10px 0; border-bottom: 1px solid rgba(231,238,232,.08); }}
     .rail span, .rail em {{ color: var(--muted); font-size: 12px; font-style: normal; }}
+    .rule-hit {{ color: var(--amber); font-size: 12px; line-height: 18px; }}
     .empty {{ color: var(--faint); padding: 20px; }}
     .detail-card {{ padding: 16px; }}
     .detail-top {{ display: flex; justify-content: space-between; gap: 12px; align-items: start; margin-bottom: 12px; }}
@@ -169,6 +171,19 @@ def render_project_row(row, performance) -> str:
         f"<td class='num {return_class}'>{format_return(performance.return_pct)}</td>"
         f"<td>{review}</td>"
         "</tr>"
+    )
+
+
+def render_check_item(row) -> str:
+    rules = json.loads(row["triggered_rules"] or "[]")
+    rule_html = "".join(f"<div class='rule-hit'>{escape(rule)}</div>" for rule in rules)
+    return (
+        "<li>"
+        f"<span>{escape(row['check_date'])}</span>"
+        f"<strong>{escape(row['title'])}</strong>"
+        f"<em>{escape(row['conclusion'])}</em>"
+        f"{rule_html}"
+        "</li>"
     )
 
 
