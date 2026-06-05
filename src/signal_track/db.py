@@ -138,6 +138,38 @@ CREATE TABLE IF NOT EXISTS publish_events (
 );
 """
 
+CURRENT_SCHEMA_VERSION = 1
+
+REQUIRED_COLUMNS: dict[str, dict[str, str]] = {
+    "raw_inputs": {
+        "attachment_path": "TEXT",
+        "metadata": "TEXT NOT NULL DEFAULT '{}'",
+    },
+    "tracking_projects": {
+        "entry_date": "TEXT",
+        "closed_date": "TEXT",
+        "logic_score": "REAL NOT NULL DEFAULT 0",
+        "needs_review": "INTEGER NOT NULL DEFAULT 0",
+        "weight_needs_review": "INTEGER NOT NULL DEFAULT 0",
+        "metadata": "TEXT NOT NULL DEFAULT '{}'",
+        "updated_at": "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
+    },
+    "project_legs": {
+        "entry_price": "REAL",
+        "entry_date": "TEXT",
+        "metadata": "TEXT NOT NULL DEFAULT '{}'",
+    },
+    "daily_checks": {
+        "triggered_rules": "TEXT NOT NULL DEFAULT '[]'",
+    },
+    "publish_events": {
+        "url": "TEXT",
+        "status_code": "INTEGER",
+        "response_body": "TEXT",
+        "metadata": "TEXT NOT NULL DEFAULT '{}'",
+    },
+}
+
 
 class Database:
     def __init__(self, path: str | Path):
@@ -162,6 +194,45 @@ class Database:
     def init(self) -> None:
         with self.session() as conn:
             conn.executescript(SCHEMA)
+            migrate_connection(conn)
+
+    def migrate(self) -> int:
+        with self.session() as conn:
+            return migrate_connection(conn)
+
+    def backup(self, destination: str | Path) -> Path:
+        dest_path = Path(destination)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        source = self.connect()
+        try:
+            target = sqlite3.connect(dest_path)
+            try:
+                source.backup(target)
+            finally:
+                target.close()
+        finally:
+            source.close()
+        return dest_path
+
+
+def migrate_connection(conn: sqlite3.Connection) -> int:
+    conn.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
+    for table, columns in REQUIRED_COLUMNS.items():
+        existing = table_columns(conn, table)
+        if not existing:
+            continue
+        for column, definition in columns.items():
+            if column not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+    return CURRENT_SCHEMA_VERSION
+
+
+def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    try:
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    except sqlite3.OperationalError:
+        return set()
+    return {row["name"] if isinstance(row, sqlite3.Row) else row[1] for row in rows}
 
 
 class Repository:

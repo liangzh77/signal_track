@@ -26,6 +26,10 @@ def main(argv: list[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("init-db", help="Initialize the SQLite database.")
+    subparsers.add_parser("migrate-db", help="Apply SQLite schema migrations.")
+
+    backup_parser = subparsers.add_parser("backup-db", help="Create a safe SQLite backup.")
+    backup_parser.add_argument("--out", help="Backup destination path.")
 
     seed_parser = subparsers.add_parser("seed-instruments", help="Insert built-in seed instruments.")
     seed_parser.add_argument("--print", action="store_true", help="Print inserted instruments as JSON.")
@@ -103,6 +107,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "init-db":
         db.init()
         print(json.dumps({"ok": True, "db_path": str(db.path)}, ensure_ascii=False))
+        return 0
+
+    if args.command == "migrate-db":
+        db.init()
+        version = db.migrate()
+        print(json.dumps({"ok": True, "db_path": str(db.path), "schema_version": version}, ensure_ascii=False))
+        return 0
+
+    if args.command == "backup-db":
+        db.init()
+        destination = args.out or default_backup_path(db.path)
+        backup_path = db.backup(destination)
+        print(json.dumps({"ok": True, "backup": str(backup_path)}, ensure_ascii=False))
         return 0
 
     if args.command == "seed-instruments":
@@ -379,6 +396,11 @@ def refresh_markets(value: str) -> list[Market]:
     if value == "all":
         return [Market.CN_A, Market.HK, Market.CN_FUT, Market.US]
     return [Market(value)]
+
+
+def default_backup_path(db_path: Path) -> Path:
+    stamp = date.today().isoformat()
+    return db_path.parent / f"{db_path.stem}-{stamp}.backup.sqlite3"
 
 
 if __name__ == "__main__":

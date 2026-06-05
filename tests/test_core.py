@@ -65,6 +65,43 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIsNotNone(stored)
             self.assertEqual(stored.name, "宁德时代")
 
+    def test_database_migration_adds_missing_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "legacy.sqlite3"
+            db = Database(db_path)
+            with db.session() as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE tracking_projects (
+                      id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      title TEXT NOT NULL,
+                      source_id INTEGER NOT NULL,
+                      raw_input_id INTEGER,
+                      status TEXT NOT NULL,
+                      direction TEXT NOT NULL
+                    )
+                    """
+                )
+
+            version = db.migrate()
+            self.assertEqual(version, 1)
+            with db.session() as conn:
+                columns = {row["name"] for row in conn.execute("PRAGMA table_info(tracking_projects)")}
+            self.assertIn("logic_score", columns)
+            self.assertIn("weight_needs_review", columns)
+
+    def test_database_backup_creates_readable_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            repo.upsert_instrument(SEED_INSTRUMENTS[0])
+
+            backup_path = db.backup(Path(tmp) / "backup.sqlite3")
+
+            backup_repo = Repository(Database(backup_path))
+            self.assertIsNotNone(backup_repo.get_instrument("300750.SZ"))
+
     def test_fixture_instrument_master_refresh(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")

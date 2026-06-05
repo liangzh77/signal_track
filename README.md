@@ -20,6 +20,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e .
 python -m signal_track.cli init-db
+python -m signal_track.cli migrate-db
 python -m signal_track.cli resolve 宁德时代
 python -m signal_track.cli refresh-instruments --provider fixture --market CN_A
 python -m signal_track.cli fetch-bars 300750.SZ --provider fixture
@@ -153,6 +154,20 @@ review. They are not silently guessed.
 ```powershell
 $env:PYTHONPATH='src'
 python -m unittest discover -s tests
+```
+
+## Database Maintenance
+
+Apply schema migrations:
+
+```powershell
+python -m signal_track.cli migrate-db
+```
+
+Create a SQLite-safe backup, including WAL state:
+
+```powershell
+python -m signal_track.cli backup-db --out data\backup.sqlite3
 ```
 
 ## Market Data Providers

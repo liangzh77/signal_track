@@ -107,7 +107,18 @@ curl -X POST http://127.0.0.1:8765/api/inputs \
 SQLite backup:
 
 ```bash
-sqlite3 /srv/signal-track/shared/signal_track.sqlite3 ".backup '/srv/signal-track/shared/backup-$(date +%F).sqlite3'"
+/srv/signal-track/venv/bin/python -m signal_track.cli backup-db --out "/srv/signal-track/shared/backup-$(date +%F).sqlite3"
 ```
 
 Keep `signal-track.env` outside git and back it up with your normal secret store.
+
+## Upgrade
+
+```bash
+cd /srv/signal-track/app
+git pull
+/srv/signal-track/venv/bin/pip install -e ".[web,market,llm]"
+/srv/signal-track/venv/bin/python -m signal_track.cli backup-db --out "/srv/signal-track/shared/pre-upgrade-$(date +%F).sqlite3"
+/srv/signal-track/venv/bin/python -m signal_track.cli migrate-db
+sudo systemctl restart signal-track.service
+```
