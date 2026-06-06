@@ -76,6 +76,7 @@ Useful endpoints:
 - `GET /api/instruments`
 - `POST /api/instruments/refresh` with `{ "provider": "auto", "market": "CN_A" }`
 - `GET /api/projects`
+- `GET /api/exit-signals`
 - `GET /api/projects/{project_id}`
 - `POST /api/projects/{project_id}/close` with `{ "closed_date": "2026-06-10", "reason": "..." }`
 - `PATCH /api/projects/{project_id}/weights` with `{ "weights": { "300750.SZ": 60, "600519.SH": 40 } }`
@@ -329,6 +330,7 @@ being expanded:
 
 ```powershell
 python -m signal_track.cli list-research-items --project-id 1
+python -m signal_track.cli list-exit-signals
 python -m signal_track.cli update-research-item 1 --status verified --source-note "checked filing"
 python -m signal_track.cli update-research-item 1 --status contradicted --check --provider auto --publish
 python -m signal_track.cli update-project-weights 1 --weights-json '{"300750.SZ":60,"600519.SH":40}'

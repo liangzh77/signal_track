@@ -9,6 +9,7 @@ from .daily_evaluator import build_daily_logic_evaluator
 from .dashboard import render_dashboard
 from .db import Database, Repository
 from .extraction import OpenAISignalExtractor
+from .exit_signals import exit_signal_summaries
 from .instrument_master import InstrumentMasterService
 from .input_summary import input_detail, input_summaries
 from .logic_supplement import build_logic_supplementer
@@ -171,6 +172,10 @@ def create_app():
     @app.get("/api/projects")
     def list_projects():
         return [dict(row) for row in repo.list_project_rows()]
+
+    @app.get("/api/exit-signals")
+    def list_exit_signals(limit: int = 100):
+        return exit_signal_summaries(repo, limit=limit)
 
     @app.get("/api/instruments")
     def list_instruments():

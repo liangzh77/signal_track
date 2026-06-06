@@ -18,6 +18,7 @@ from signal_track.cli import run_self_check
 from signal_track.dashboard import render_dashboard
 from signal_track.analytics import project_performance
 from signal_track.daily_evaluator import DailyEvaluation, DailyLogicEvaluator
+from signal_track.exit_signals import exit_signal_summaries
 from signal_track.extraction import ExtractedInput, ExtractedSignal
 from signal_track.instrument_master import InstrumentMasterService
 from signal_track.logic_supplement import LogicSupplement, LogicSupplementer
@@ -1079,6 +1080,59 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("核心跟踪假设被证伪", checks[0]["summary"])
             self.assertIn("逻辑评估：核心假设被证伪", checks[0]["triggered_rules"])
 
+    def test_exit_signal_summaries_include_latest_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                source_name="测试源",
+                content="腾讯 做多，观察广告恢复和游戏流水。",
+            )
+
+            DailyChecker(repo, FixtureMarketDataProvider(), evaluator=FakeDailyEvaluator()).run(
+                next_fixture_trading_day(date.today())
+            )
+            signals = exit_signal_summaries(repo)
+
+            self.assertEqual([item["id"] for item in signals], result.project_ids)
+            self.assertEqual(signals[0]["action"], "exit_signal")
+            self.assertEqual(signals[0]["latest_check"]["conclusion"], "exit_signal")
+
+    def test_cli_list_exit_signals(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            db = Database(db_path)
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                source_name="CLI Desk",
+                content="腾讯 做多，观察广告恢复和游戏流水。",
+            )
+            DailyChecker(repo, FixtureMarketDataProvider(), evaluator=FakeDailyEvaluator()).run(
+                next_fixture_trading_day(date.today())
+            )
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+
+            output = StringIO()
+            with patch.dict("os.environ", env, clear=False):
+                with redirect_stdout(output):
+                    code = cli_main(["list-exit-signals"])
+
+            payload = json.loads(output.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["exit_signals"][0]["action"], "exit_signal")
+            self.assertEqual(payload["exit_signals"][0]["latest_check"]["conclusion"], "exit_signal")
+
     def test_daily_check_triggers_moving_average_break_rule(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
@@ -1196,6 +1250,35 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(closed.json()["project_ids"], [projects[0]["id"]])
             self.assertEqual(closed.json()["projects"][0]["action"], "close")
             self.assertEqual(closed.json()["projects"][0]["status"], "closed")
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_exit_signals_endpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+                created = client.post(
+                    "/api/inputs",
+                    json={"source": "API Desk", "content": "腾讯 做多，观察广告恢复和游戏流水。"},
+                )
+            repo = Repository(Database(db_path))
+            DailyChecker(repo, FixtureMarketDataProvider(), evaluator=FakeDailyEvaluator()).run(
+                next_fixture_trading_day(date.today())
+            )
+
+            signals = client.get("/api/exit-signals").json()
+
+            self.assertEqual(signals[0]["id"], created.json()["project_ids"][0])
+            self.assertEqual(signals[0]["action"], "exit_signal")
+            self.assertEqual(signals[0]["latest_check"]["conclusion"], "exit_signal")
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_close_project_endpoint_records_close_logic(self) -> None:

@@ -668,6 +668,31 @@ class Repository:
         by_id = {int(row["id"]): row for row in rows}
         return [by_id[project_id] for project_id in project_ids if project_id in by_id]
 
+    def list_project_rows_by_status(self, statuses: list[str], limit: int = 100) -> list[sqlite3.Row]:
+        if not statuses:
+            return []
+        placeholders = ",".join("?" for _ in statuses)
+        params: list[object] = [*statuses, limit]
+        with self.db.session() as conn:
+            return conn.execute(
+                f"""
+                SELECT
+                  p.*,
+                  s.name AS source_name,
+                  GROUP_CONCAT(i.symbol, ', ') AS symbols,
+                  GROUP_CONCAT(i.name, ', ') AS instrument_names
+                FROM tracking_projects p
+                JOIN sources s ON s.id = p.source_id
+                LEFT JOIN project_legs l ON l.project_id = p.id
+                LEFT JOIN instruments i ON i.id = l.instrument_id
+                WHERE p.status IN ({placeholders})
+                GROUP BY p.id
+                ORDER BY p.updated_at DESC, p.id DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+
     def list_active_project_ids(self) -> list[int]:
         with self.db.session() as conn:
             rows = conn.execute(

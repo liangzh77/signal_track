@@ -13,6 +13,7 @@ from .daily_evaluator import build_daily_logic_evaluator
 from .dashboard import render_dashboard
 from .db import Database, Repository
 from .extraction import OpenAISignalExtractor
+from .exit_signals import exit_signal_summaries
 from .instrument_master import InstrumentMasterService
 from .input_summary import input_detail, input_summaries
 from .logic_supplement import build_logic_supplementer
@@ -79,6 +80,9 @@ def main(argv: list[str] | None = None) -> int:
     list_research_parser = subparsers.add_parser("list-research-items", help="List pending research verification items.")
     list_research_parser.add_argument("--project-id", type=int)
     list_research_parser.add_argument("--limit", type=int, default=50)
+
+    list_exit_parser = subparsers.add_parser("list-exit-signals", help="List projects currently carrying exit signals.")
+    list_exit_parser.add_argument("--limit", type=int, default=50)
 
     update_research_parser = subparsers.add_parser("update-research-item", help="Update a research verification item.")
     update_research_parser.add_argument("item_id", type=int)
@@ -302,6 +306,11 @@ def main(argv: list[str] | None = None) -> int:
         db.init()
         items = [dict(row) for row in repo.list_research_items(project_id=args.project_id, limit=args.limit)]
         print(json.dumps({"items": items}, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "list-exit-signals":
+        db.init()
+        print(json.dumps({"exit_signals": exit_signal_summaries(repo, limit=args.limit)}, ensure_ascii=False, indent=2))
         return 0
 
     if args.command == "update-research-item":
