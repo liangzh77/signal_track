@@ -112,9 +112,9 @@ def main(argv: list[str] | None = None) -> int:
     ingest_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     ingest_parser.add_argument(
         "--extractor",
-        choices=["heuristic", "openai"],
-        default="heuristic",
-        help="Extraction engine for raw source text.",
+        choices=["auto", "heuristic", "openai"],
+        default="auto",
+        help="Extraction engine for raw source text. auto uses OpenAI when OPENAI_API_KEY is configured.",
     )
 
     check_parser = subparsers.add_parser("check", help="Run daily checks for active projects.")
@@ -397,13 +397,13 @@ def main(argv: list[str] | None = None) -> int:
             content = args.text if args.text is not None else sys.stdin.read()
         resolver = InstrumentResolver(repo.list_instruments())
         extraction = None
-        if args.extractor == "openai":
-            if not settings.openai_api_key:
-                raise SystemExit("OPENAI_API_KEY is required for --extractor openai")
+        if args.extractor in {"auto", "openai"} and settings.openai_api_key:
             extraction = OpenAISignalExtractor(settings.openai_api_key, settings.openai_model).extract(
                 content,
                 source_hint=args.source,
             )
+        elif args.extractor == "openai":
+            raise SystemExit("OPENAI_API_KEY is required for --extractor openai")
         source_name = resolve_source_name(args.source, content, extraction)
         if not source_name:
             print(

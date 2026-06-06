@@ -254,7 +254,9 @@ python -m signal_track.cli refresh-instruments --provider fixture --market all
 
 ## Signal Extraction
 
-Default local extraction is heuristic and works without network access:
+Default extraction is `auto`: it uses structured OpenAI extraction when
+`OPENAI_API_KEY` is configured, and falls back to local heuristic extraction
+without network access:
 
 ```powershell
 python -m signal_track.cli ingest --source 信息源A --text "腾讯 做多，先跟踪。"
@@ -297,10 +299,12 @@ If the same source sends a non-close follow-up for the same active instrument an
 direction, Signal Track appends a `source_update` logic block to the existing
 project instead of creating a duplicate tracking item.
 
-Structured model extraction is available when `OPENAI_API_KEY` is configured:
+Force structured model extraction with `--extractor openai`, or force the local
+offline parser with `--extractor heuristic`:
 
 ```powershell
 python -m signal_track.cli ingest --extractor openai --source 信息源A --text "腾讯 做多，先跟踪。"
+python -m signal_track.cli ingest --extractor heuristic --source 信息源A --text "腾讯 做多，先跟踪。"
 ```
 
 The OpenAI path uses Structured Outputs with a JSON Schema so the system can receive

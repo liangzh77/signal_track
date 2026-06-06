@@ -118,6 +118,29 @@ class FakeDemoPublisher:
         return PublishResult(True, 200, '{"address":"https://example.com/demo/signal"}')
 
 
+class FakeOpenAIExtractor:
+    calls: list[dict[str, str | None]] = []
+
+    def __init__(self, api_key: str, model: str):
+        self.api_key = api_key
+        self.model = model
+
+    def extract(self, content: str, source_hint: str | None = None) -> ExtractedInput:
+        self.calls.append({"api_key": self.api_key, "model": self.model, "source_hint": source_hint})
+        return ExtractedInput(
+            signals=[
+                ExtractedSignal(
+                    instruments=["NVDA"],
+                    direction="short",
+                    source_logic=f"structured: {content}",
+                    observation_logic="watch orders and margin.",
+                    logic_score=8,
+                    action="open",
+                )
+            ],
+        )
+
+
 class FakeDailyEvaluator(DailyLogicEvaluator):
     def __init__(self):
         self.research_item_count = 0
@@ -902,6 +925,38 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(code, 0)
             events = Repository(Database(db_path)).list_publish_events()
             self.assertEqual(events, [])
+
+    def test_cli_ingest_auto_extractor_uses_openai_when_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "openai-key",
+                "SIGNAL_TRACK_OPENAI_MODEL": "test-model",
+            }
+            FakeOpenAIExtractor.calls = []
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.cli.OpenAISignalExtractor", FakeOpenAIExtractor):
+                    with redirect_stdout(StringIO()):
+                        code = cli_main([
+                            "ingest",
+                            "--source",
+                            "CLI Desk",
+                            "--text",
+                            "Use structured extraction for this note.",
+                        ])
+
+            repo = Repository(Database(db_path))
+            projects = repo.list_project_rows()
+            self.assertEqual(code, 0)
+            self.assertEqual(FakeOpenAIExtractor.calls[0]["api_key"], "openai-key")
+            self.assertEqual(FakeOpenAIExtractor.calls[0]["model"], "test-model")
+            self.assertEqual(projects[0]["symbols"], "NVDA")
+            self.assertEqual(projects[0]["direction"], "short")
 
     def test_daily_logic_evaluator_can_trigger_exit_signal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
