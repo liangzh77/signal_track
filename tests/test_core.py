@@ -1203,6 +1203,8 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("table-wrap", html)
             self.assertIn("<th>入场</th>", html)
             self.assertIn("source-chip", html)
+            self.assertIn('href="/inbox"', html)
+            self.assertIn("class=\"top-actions\"", html)
             self.assertIn("data-source='信息源A'", html)
             self.assertIn("data-status='needs_review'", html)
             self.assertIn("data-direction='long'", html)
@@ -1213,6 +1215,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("report-card", html)
             self.assertIn("report-body", html)
             self.assertIn("data:text/markdown;charset=utf-8,", html)
+            self.assertIn("aria-label='下载项目投研报告 Markdown'", html)
             self.assertIn("download='signal-track-project-", html)
             self.assertNotIn("/api/projects/", html)
             self.assertIn("投研报告 | 基于风和3C-5M-3D-3T框架", html)
@@ -2442,6 +2445,11 @@ class SignalTrackCoreTests(unittest.TestCase):
                 repo.upsert_instrument(instrument)
             ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
             opened = ingestor.ingest("测试源", "腾讯 做多，观察广告。")
+            with db.session() as conn:
+                conn.execute(
+                    "UPDATE tracking_projects SET entry_date = ? WHERE id = ?",
+                    (date(2026, 6, 6).isoformat(), opened.project_ids[0]),
+                )
             repo.close_project(opened.project_ids[0], date(2026, 6, 5).isoformat())
             provider = RecordingMarketDataProvider("fixture")
 

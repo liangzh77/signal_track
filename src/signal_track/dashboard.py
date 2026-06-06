@@ -88,6 +88,9 @@ def render_dashboard(repo: Repository) -> str:
     }}
     h1 {{ margin: 0; font-size: 28px; line-height: 36px; letter-spacing: 0; }}
     .stamp {{ color: var(--muted); font-size: 13px; }}
+    .top-actions {{ display: flex; align-items: center; justify-content: end; gap: 10px; flex-wrap: wrap; }}
+    .nav-link {{ color: var(--cyan); text-decoration: none; border: 1px solid rgba(68,215,200,.45); border-radius: 999px; min-height: 32px; display: inline-flex; align-items: center; padding: 0 12px; font-size: 13px; background: rgba(68,215,200,.07); }}
+    .nav-link:hover {{ background: rgba(68,215,200,.12); }}
     .metrics {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }}
     .source-summary {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }}
     .filter-bar {{ display: grid; gap: 10px; margin: 0 0 16px; }}
@@ -206,6 +209,7 @@ def render_dashboard(repo: Repository) -> str:
       .grid {{ grid-template-columns: 1fr; }}
       .details {{ grid-template-columns: 1fr; }}
       .topbar {{ align-items: start; flex-direction: column; }}
+      .top-actions {{ justify-content: start; }}
       table {{ min-width: 960px; }}
       .research-item {{ grid-template-columns: 1fr; gap: 6px; }}
       .research-item em {{ text-align: left; }}
@@ -232,7 +236,10 @@ def render_dashboard(repo: Repository) -> str:
         <h1>Signal Track 投资信号看板</h1>
         <div class="stamp">最后生成：{escape(now)}</div>
       </div>
-      <div class="stamp">{render_publish_stamp(last_publish)}</div>
+      <div class="top-actions">
+        <a class="nav-link" href="/inbox" title="打开信息录入页">Inbox</a>
+        <div class="stamp">{render_publish_stamp(last_publish)}</div>
+      </div>
     </section>
     <section class="filter-bar" aria-label="看板筛选">
       <div class="filter-group source-filter" data-filter-group="source"><span class="filter-label">来源</span>{source_filter}</div>
@@ -522,6 +529,7 @@ def render_report_snapshot(repo: Repository, project_id: int) -> str:
         "<div class='report-card-head'>"
         f"<div><h4>{escape(report['title'])}</h4><div class='muted'>Embedded report with Markdown download</div></div>"
         f"<a class='report-link' href='{report_download_href(markdown)}' "
+        "aria-label='下载项目投研报告 Markdown' title='下载项目投研报告 Markdown' "
         f"download='signal-track-project-{project_id}-report.md'>Markdown</a>"
         "</div>"
         "<div class='report-stats'>"
