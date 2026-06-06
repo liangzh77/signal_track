@@ -59,7 +59,7 @@ class SignalIngestor:
         system_logic_added = needs_review
 
         if is_close_action(content) and resolutions:
-            closed_project_ids = self._close_existing_projects(raw_input_id, content, resolutions, logic_score)
+            closed_project_ids = self._close_existing_projects(source_id, content, resolutions, logic_score)
             if closed_project_ids:
                 return IngestResult(
                     raw_input_id=raw_input_id,
@@ -144,7 +144,7 @@ class SignalIngestor:
                 source_logic = f"{source_logic}\n\n观察逻辑：{signal.observation_logic}"
 
             if is_extracted_close_action(signal, source_logic, original_content) and resolutions:
-                closed_project_ids = self._close_existing_projects(raw_input_id, source_logic, resolutions, logic_score)
+                closed_project_ids = self._close_existing_projects(source_id, source_logic, resolutions, logic_score)
                 if closed_project_ids:
                     project_ids.extend(closed_project_ids)
                     resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
@@ -242,12 +242,14 @@ class SignalIngestor:
                 seen.add(resolution.instrument.symbol)
         return found
 
-    def _close_existing_projects(self, raw_input_id: int, content: str, resolutions, logic_score: float) -> list[int]:
-        del raw_input_id
+    def _close_existing_projects(self, source_id: int, content: str, resolutions, logic_score: float) -> list[int]:
         closed_ids: list[int] = []
         closed_at = date.today().isoformat()
         for resolution in resolutions:
-            for project_id in self.repo.find_active_project_ids_by_symbol(resolution.instrument.symbol):
+            for project_id in self.repo.find_active_project_ids_by_source_symbol(
+                source_id,
+                resolution.instrument.symbol,
+            ):
                 self.repo.close_project(
                     project_id,
                     closed_at,

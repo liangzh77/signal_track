@@ -685,6 +685,23 @@ class SignalTrackCoreTests(unittest.TestCase):
             logic = repo.list_logic_blocks(opened.project_ids[0])
             self.assertTrue(any(block["logic_type"] == "close_logic" for block in logic))
 
+    def test_close_signal_only_closes_same_source_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+
+            source_a = ingestor.ingest("Source A", "00700.HK long, watch ads recovery.")
+            source_b = ingestor.ingest("Source B", "00700.HK long, watch games recovery.")
+            closed = ingestor.ingest("Source A", "00700.HK close, ads recovery failed.")
+
+            self.assertEqual(closed.project_ids, source_a.project_ids)
+            self.assertEqual(repo.get_project_row(source_a.project_ids[0])["status"], "closed")
+            self.assertIn(repo.get_project_row(source_b.project_ids[0])["status"], {"active", "needs_review"})
+
     def test_same_source_followup_updates_existing_project_without_duplicate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
@@ -753,6 +770,38 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(rows[0]["status"], "closed")
             logic = repo.list_logic_blocks(opened.project_ids[0])
             self.assertTrue(any(block["logic_type"] == "close_logic" for block in logic))
+
+    def test_structured_close_signal_only_closes_same_source_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+            source_a = ingestor.ingest("Source A", "00700.HK long, watch ads recovery.")
+            source_b = ingestor.ingest("Source B", "00700.HK long, watch games recovery.")
+
+            closed = ingestor.ingest(
+                "Source A",
+                "00700.HK close, ads recovery failed.",
+                extraction=ExtractedInput(
+                    signals=[
+                        ExtractedSignal(
+                            instruments=["00700.HK"],
+                            direction="neutral",
+                            source_logic="00700.HK close, ads recovery failed.",
+                            observation_logic="",
+                            logic_score=7,
+                            action="close",
+                        )
+                    ],
+                ),
+            )
+
+            self.assertEqual(closed.project_ids, source_a.project_ids)
+            self.assertEqual(repo.get_project_row(source_a.project_ids[0])["status"], "closed")
+            self.assertIn(repo.get_project_row(source_b.project_ids[0])["status"], {"active", "needs_review"})
 
     def test_closed_project_prices_refresh_during_post_close_window(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
