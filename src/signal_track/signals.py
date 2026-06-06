@@ -15,6 +15,7 @@ LONG_WORDS = ("做多", "买入", "开多", "long", "看多", "多头")
 SHORT_WORDS = ("做空", "卖空", "开空", "short", "看空", "空头")
 EXIT_WORDS = ("平仓", "止盈", "止损", "退出", "close", "exit")
 LOGIC_WORDS = ("因为", "逻辑", "观察", "跟踪", "如果", "若", "触发", "催化", "风险", "验证")
+PORTFOLIO_WORDS = ("组合", "一篮子", "篮子", "配对", "权重", "占比", "portfolio", "basket", "pair trade")
 
 
 @dataclass(frozen=True)
@@ -68,16 +69,21 @@ class SignalIngestor:
                     system_logic_added=False,
                 )
 
-        if not as_portfolio:
-            updated_project_ids = self._append_existing_project_updates(source_id, content, resolutions, direction, logic_score)
-            if updated_project_ids:
-                return IngestResult(
-                    raw_input_id=raw_input_id,
-                    project_ids=updated_project_ids,
-                    resolved_symbols=[resolution.instrument.symbol for resolution in resolutions],
-                    logic_score=logic_score,
-                    system_logic_added=False,
-                )
+        weights = weights or parse_weight_hints(content, resolutions)
+        as_portfolio = as_portfolio or should_treat_as_portfolio(content, resolutions, weights)
+        updated_project_ids = (
+            self._append_existing_portfolio_updates(source_id, content, resolutions, direction, logic_score)
+            if as_portfolio
+            else self._append_existing_project_updates(source_id, content, resolutions, direction, logic_score)
+        )
+        if updated_project_ids:
+            return IngestResult(
+                raw_input_id=raw_input_id,
+                project_ids=updated_project_ids,
+                resolved_symbols=[resolution.instrument.symbol for resolution in resolutions],
+                logic_score=logic_score,
+                system_logic_added=False,
+            )
 
         if not resolutions:
             project_id = self.repo.create_tracking_project(
@@ -97,7 +103,6 @@ class SignalIngestor:
 
         project_ids: list[int] = []
         if as_portfolio:
-            weights = weights or parse_weight_hints(content, resolutions)
             project_id = self._create_portfolio_project(
                 source_id, raw_input_id, content, resolutions, direction, logic_score, needs_review, weights
             )
@@ -145,7 +150,19 @@ class SignalIngestor:
                     resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
                     continue
 
-            if not signal.is_portfolio:
+            if signal.is_portfolio:
+                updated_project_ids = self._append_existing_portfolio_updates(
+                    source_id,
+                    source_logic,
+                    resolutions,
+                    direction,
+                    logic_score,
+                )
+                if updated_project_ids:
+                    project_ids.extend(updated_project_ids)
+                    resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
+                    continue
+            else:
                 updated_project_ids = self._append_existing_project_updates(
                     source_id,
                     source_logic,
@@ -275,6 +292,31 @@ class SignalIngestor:
                 )
                 updated_ids.append(project_id)
         return sorted(set(updated_ids))
+
+    def _append_existing_portfolio_updates(
+        self,
+        source_id: int,
+        content: str,
+        resolutions,
+        direction: Direction,
+        logic_score: float,
+    ) -> list[int]:
+        direction_filter = None if direction == Direction.NEUTRAL else direction.value
+        symbols = [resolution.instrument.symbol for resolution in resolutions]
+        updated_ids = self.repo.find_active_project_ids_by_source_symbols(
+            source_id,
+            symbols,
+            direction=direction_filter,
+        )
+        for project_id in updated_ids:
+            self.repo.add_logic_block(
+                project_id,
+                "source_update",
+                summarize_source_logic(content),
+                logic_score / 10,
+                [content[:240]],
+            )
+        return updated_ids
 
     def _find_instruments(self, content: str):
         found = []
@@ -620,6 +662,16 @@ def parse_weight_hints(content: str, resolutions) -> dict[str, float]:
         )
 
     return normalize_weights(weights)
+
+
+def should_treat_as_portfolio(content: str, resolutions, weights: dict[str, float] | None = None) -> bool:
+    if len(resolutions) < 2:
+        return False
+    lowered = content.lower()
+    if any(word in lowered for word in PORTFOLIO_WORDS):
+        return True
+    parsed_weights = weights if weights is not None else parse_weight_hints(content, resolutions)
+    return len(parsed_weights) == len(resolutions)
 
 
 def normalize_weights(weights: dict[str, float]) -> dict[str, float]:

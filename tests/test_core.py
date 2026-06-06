@@ -582,6 +582,87 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertAlmostEqual(weights["300750.SZ"], 0.6)
             self.assertAlmostEqual(weights["600519.SH"], 0.4)
 
+    def test_heuristic_portfolio_can_be_inferred_from_content(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                source_name="Portfolio Desk",
+                content="portfolio long: 300750.SZ 60%, 600519.SH 40%, watch margin and demand.",
+            )
+
+            self.assertEqual(len(result.project_ids), 1)
+            legs = repo.list_project_legs(result.project_ids[0])
+            weights = {leg["symbol"]: leg["weight"] for leg in legs}
+            self.assertAlmostEqual(weights["300750.SZ"], 0.6)
+            self.assertAlmostEqual(weights["600519.SH"], 0.4)
+            self.assertFalse(bool(repo.get_project_row(result.project_ids[0])["weight_needs_review"]))
+
+    def test_plain_multi_instrument_note_still_splits_projects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                source_name="Split Desk",
+                content="300750.SZ long, watch battery margin. 600519.SH long, watch demand recovery.",
+            )
+
+            self.assertEqual(len(result.project_ids), 2)
+            self.assertEqual(result.resolved_symbols, ["300750.SZ", "600519.SH"])
+
+    def test_auto_portfolio_does_not_update_overlapping_single_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+
+            single = ingestor.ingest(
+                source_name="Overlap Desk",
+                content="300750.SZ long, watch battery margin.",
+            )
+            portfolio = ingestor.ingest(
+                source_name="Overlap Desk",
+                content="portfolio long: 300750.SZ 60%, 600519.SH 40%, watch margin and demand.",
+            )
+
+            self.assertNotEqual(single.project_ids, portfolio.project_ids)
+            self.assertEqual(len(repo.list_project_rows()), 2)
+            self.assertEqual(len(repo.list_project_legs(portfolio.project_ids[0])), 2)
+
+    def test_same_source_portfolio_followup_updates_existing_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+
+            opened = ingestor.ingest(
+                source_name="Portfolio Desk",
+                content="portfolio long: 300750.SZ 60%, 600519.SH 40%, watch margin and demand.",
+            )
+            updated = ingestor.ingest(
+                source_name="Portfolio Desk",
+                content="portfolio update: 300750.SZ and 600519.SH, keep watching margin recovery.",
+            )
+
+            self.assertEqual(updated.project_ids, opened.project_ids)
+            self.assertEqual(len(repo.list_project_rows()), 1)
+            logic = repo.list_logic_blocks(opened.project_ids[0])
+            self.assertTrue(any(block["logic_type"] == "source_update" for block in logic))
+
     def test_close_signal_updates_existing_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")

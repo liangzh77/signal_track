@@ -273,9 +273,12 @@ If `--source` is omitted, the first few lines of the note must include a marker
 such as `source: Alpha Desk`, `来源：Alpha Desk`, or `信息源：Alpha Desk`.
 Otherwise the CLI returns `source_required` and skips ingestion.
 
-For portfolio notes, pass `--portfolio`. If the note includes weights such as
-`宁德时代 60%，贵州茅台 40%`, Signal Track applies them automatically. If no weights
-are found, it creates an equal-weight project and marks the weight for review.
+For portfolio notes, either pass `--portfolio` or write an explicit portfolio
+marker in the note, such as `组合`, `portfolio`, `权重`, or `占比`. If the note
+includes weights such as `宁德时代 60%，贵州茅台 40%`, Signal Track applies them
+automatically. If no weights are found, it creates an equal-weight project and
+marks the weight for review. Plain multi-instrument notes without portfolio
+markers still split into separate tracking projects.
 
 If a later input contains close words such as `平仓`, `止盈`, `止损`, `退出`, or
 `exit`, Signal Track first looks for active projects containing the resolved
