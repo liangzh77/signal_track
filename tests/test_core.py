@@ -244,6 +244,16 @@ class FailingDemoPublisher:
         return PublishResult(False, 500, '{"error":"publish failed"}')
 
 
+class ThrowingDemoPublisher:
+    def __init__(self, publish_url: str, api_key: str):
+        self.publish_url = publish_url
+        self.api_key = api_key
+
+    def publish(self, title: str, html: str, feature: str = "", disabled: bool = False) -> PublishResult:
+        del title, html, feature, disabled
+        raise RuntimeError("network exploded")
+
+
 class FakeOpenAIExtractor:
     calls: list[dict[str, str | None]] = []
 
@@ -1883,6 +1893,52 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(checked, 0)
             self.assertEqual(events[0]["url"], "https://example.com/demo/signal")
             self.assertEqual(events[0]["status_code"], 200)
+
+    def test_scheduler_records_failed_publish_event(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+
+            with patch("signal_track.scheduler.DemoPublisher", FailingDemoPublisher):
+                checked = execute_daily_check(
+                    repo,
+                    provider=None,
+                    publish_url="https://example.com/api/publish",
+                    api_key="key",
+                )
+
+            events = repo.list_publish_events()
+            metadata = json.loads(events[0]["metadata"])
+            self.assertEqual(checked, 0)
+            self.assertEqual(events[0]["url"], "https://example.com/api/publish")
+            self.assertEqual(events[0]["status_code"], 500)
+            self.assertFalse(metadata["ok"])
+            self.assertEqual(metadata["job"], "daily_check")
+            self.assertEqual(metadata["error"], '{"error":"publish failed"}')
+
+    def test_scheduler_records_publish_exception_without_raising(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+
+            with patch("signal_track.scheduler.DemoPublisher", ThrowingDemoPublisher):
+                checked = execute_daily_check(
+                    repo,
+                    provider=None,
+                    publish_url="invalid-url",
+                    api_key="key",
+                )
+
+            events = repo.list_publish_events()
+            metadata = json.loads(events[0]["metadata"])
+            self.assertEqual(checked, 0)
+            self.assertEqual(events[0]["url"], "invalid-url")
+            self.assertIsNone(events[0]["status_code"])
+            self.assertIn("network exploded", events[0]["response_body"])
+            self.assertFalse(metadata["ok"])
+            self.assertEqual(metadata["exception_type"], "RuntimeError")
 
     def test_scheduler_registers_asia_evening_and_us_morning_jobs(self) -> None:
         try:

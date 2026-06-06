@@ -6,7 +6,7 @@ from .checker import DailyChecker
 from .daily_evaluator import DailyLogicEvaluator
 from .dashboard import render_dashboard
 from .db import Repository
-from .publisher import DemoPublisher, extract_published_address
+from .publisher import DemoPublisher, PublishResult, publish_payload
 from .providers.base import MarketDataProvider
 
 
@@ -64,16 +64,35 @@ def execute_daily_check(
 ) -> int:
     checked = DailyChecker(repo, provider, evaluator=evaluator).run()
     if publish_url and api_key:
+        record_scheduled_publish(repo, publish_url, api_key)
+    return checked
+
+
+def record_scheduled_publish(repo: Repository, publish_url: str, api_key: str) -> None:
+    title = "Signal Track 投资信号看板"
+    metadata = {"job": "daily_check"}
+    try:
         result = DemoPublisher(publish_url, api_key).publish(
-            title="Signal Track 投资信号看板",
+            title=title,
             html=render_dashboard(repo),
             feature="每日检查后自动发布",
         )
-        repo.record_publish_event(
-            title="Signal Track 投资信号看板",
-            url=extract_published_address(result.body) or publish_url,
-            status_code=result.status_code,
-            response_body=result.body,
-            metadata={"ok": result.ok, "job": "daily_check"},
-        )
-    return checked
+    except Exception as exc:
+        result = PublishResult(False, None, str(exc))
+        metadata["exception_type"] = type(exc).__name__
+
+    payload = publish_payload(result, publish_url)
+    metadata.update(
+        {
+            "ok": payload["ok"],
+            "publish_url": payload["publish_url"],
+            "error": payload["error"],
+        }
+    )
+    repo.record_publish_event(
+        title=title,
+        url=payload["url"] or publish_url,
+        status_code=payload["status_code"],
+        response_body=payload["response_body"],
+        metadata=metadata,
+    )
