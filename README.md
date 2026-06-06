@@ -84,6 +84,7 @@ Useful endpoints:
 - `GET /api/projects?source=Alpha%20Desk&status=needs_review&direction=long`
 - `GET /api/exit-signals`
 - `GET /api/projects/{project_id}`
+- `GET /api/projects/{project_id}/report?format=markdown` or `format=json`
 - `POST /api/projects/{project_id}/close` with `{ "closed_date": "2026-06-10", "reason": "..." }`
 - `PATCH /api/projects/{project_id}/weights` with `{ "weights": { "300750.SZ": 60, "600519.SH": 40 } }`
 - `GET /api/research-items`
@@ -111,6 +112,11 @@ use `source`, `status`, and `direction` query parameters to drive filtered
 project lists.
 Project summaries also include `latest_check` and `next_action` so callers can
 surface the current decision without fetching full project details.
+`GET /api/projects/{project_id}/report` exports a Markdown or JSON project
+research report assembled from source logic, system-supplemented
+3C-5M-3D-3T tracking logic, research verification items, latest checks, and
+price performance. It marks unverified data as review material rather than
+confirmed facts.
 `GET /api/exit-signals` and `list-exit-signals` use the same performance-bearing
 summary and include the latest check that triggered the signal.
 `extractor` accepts `auto`, `heuristic`, or `openai`; unknown values return `400`
@@ -421,6 +427,8 @@ being expanded:
 python -m signal_track.cli list-projects
 python -m signal_track.cli list-research-items --project-id 1
 python -m signal_track.cli list-exit-signals
+python -m signal_track.cli export-project-report 1 --out reports/project-1.md
+python -m signal_track.cli export-project-report 1 --format json
 python -m signal_track.cli update-research-item 1 --status verified --source-note "checked filing"
 python -m signal_track.cli update-research-item 1 --status contradicted --check --provider auto --publish
 python -m signal_track.cli update-project-weights 1 --weights-json '{"300750.SZ":60,"600519.SH":40}'

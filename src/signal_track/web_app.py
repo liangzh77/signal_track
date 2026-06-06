@@ -18,6 +18,7 @@ from .market_smoke import market_data_smoke
 from .models import Direction, Market
 from .provider_diagnostics import market_data_coverage
 from .project_actions import ProjectActionError, close_tracking_project, update_tracking_project_weights
+from .project_report import build_project_report, render_project_report_markdown
 from .project_summary import project_summaries, project_summary
 from .publisher import DemoPublisher, extract_published_address, publish_payload
 from .providers.factory import build_market_data_provider
@@ -37,7 +38,7 @@ class IngestRequest:
 def create_app():
     try:
         from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
-        from fastapi.responses import HTMLResponse
+        from fastapi.responses import HTMLResponse, PlainTextResponse
         from pydantic import BaseModel
     except ImportError as exc:
         raise RuntimeError("Install web extras first: pip install -e .[web]") from exc
@@ -272,6 +273,17 @@ def create_app():
                 "legs": [leg.__dict__ for leg in performance.legs],
             },
         }
+
+    @app.get("/api/projects/{project_id}/report")
+    def get_project_report(project_id: int, format: str = "markdown"):
+        report = build_project_report(repo, project_id)
+        if not report:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if format == "json":
+            return report
+        if format == "markdown":
+            return PlainTextResponse(render_project_report_markdown(report), media_type="text/markdown; charset=utf-8")
+        raise HTTPException(status_code=400, detail="format must be markdown or json")
 
     @app.post("/api/projects/{project_id}/close", dependencies=[Depends(require_write_auth)])
     def close_project(project_id: int, payload: CloseProjectPayload = Body(default=CloseProjectPayload())):

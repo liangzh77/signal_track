@@ -172,6 +172,7 @@ the weights after confirmation:
 
 ```bash
 /srv/signal-track/venv/bin/python -m signal_track.cli list-projects --status needs_review --direction long
+/srv/signal-track/venv/bin/python -m signal_track.cli export-project-report 1 --out /srv/signal-track/shared/project-1.md
 /srv/signal-track/venv/bin/python -m signal_track.cli update-project-weights 1 --weights-json '{"300750.SZ":60,"600519.SH":40}'
 ```
 
@@ -188,6 +189,8 @@ curl -X POST http://127.0.0.1:8765/api/checks/run \
   -H "X-Signal-Track-Key: $SIGNAL_TRACK_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"provider":"auto","date":"2026-06-10"}'
+
+curl "http://127.0.0.1:8765/api/projects/1/report?format=markdown"
 ```
 
 CLI update commands publish automatically when `GO_SITES_DEMO_PUBLISH_URL`,

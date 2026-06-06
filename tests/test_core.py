@@ -30,6 +30,7 @@ from signal_track.models import DailyBar, Direction, Instrument, Market
 from signal_track.provider_diagnostics import market_data_coverage
 from signal_track.publisher import extract_published_address, publish_payload
 from signal_track.publisher import PublishResult
+from signal_track.project_report import build_project_report, render_project_report_markdown
 from signal_track.providers.auto import AutoMarketDataProvider
 from signal_track.providers.base import MarketDataProvider
 from signal_track.providers.factory import build_auto_provider
@@ -827,6 +828,36 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("研究验证项", html)
             self.assertIn("tracking_metric: 广告收入环比改善", html)
             self.assertIn("广告收入环比改善", html)
+
+    def test_project_report_exports_framework_and_verification_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+
+            result = SignalIngestor(
+                repo,
+                InstrumentResolver(repo.list_instruments()),
+                logic_supplementer=FakeLogicSupplementer(),
+            ).ingest(source_name="Report Desk", content="00700.HK long, watch ads recovery.")
+            DailyChecker(repo, FixtureMarketDataProvider()).run(next_fixture_trading_day(date.today()))
+
+            report = build_project_report(repo, result.project_ids[0])
+            self.assertIsNotNone(report)
+            assert report is not None
+            markdown = render_project_report_markdown(report)
+
+        self.assertIn("3C-5M-3D-3T", report["title"])
+        self.assertEqual(report["project"]["source_name"], "Report Desk")
+        self.assertEqual(report["project"]["direction"], "long")
+        self.assertEqual(report["instruments"][0]["symbol"], "00700.HK")
+        self.assertGreater(report["data_verification"]["pending_count"], 0)
+        self.assertIn("tracking_metric", {item["item_type"] for item in report["research_items"]})
+        self.assertIn("3C-5M-3D-3T", markdown)
+        self.assertIn("tracking_metric", markdown)
+        self.assertIn("免责声明", markdown)
 
     def test_openai_logic_supplementer_can_force_web_search(self) -> None:
         RecordingResponses.calls = []
@@ -1876,6 +1907,39 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(short_payload["projects"][0]["source_name"], "CLI Desk B")
         self.assertEqual(short_payload["projects"][0]["direction"], "short")
 
+    def test_cli_export_project_report_outputs_markdown_and_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            report_path = Path(tmp) / "project-report.md"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with redirect_stdout(StringIO()):
+                    cli_main(["ingest", "--source", "CLI Report Desk", "--text", "00700.HK long, watch ads recovery."])
+                project_id = int(Repository(Database(db_path)).list_project_rows()[0]["id"])
+                with redirect_stdout(StringIO()) as markdown_output:
+                    markdown_code = cli_main(["export-project-report", str(project_id), "--out", str(report_path)])
+                json_output = StringIO()
+                with redirect_stdout(json_output):
+                    json_code = cli_main(["export-project-report", str(project_id), "--format", "json"])
+                report_exists = report_path.exists()
+                report_content = report_path.read_text(encoding="utf-8") if report_exists else ""
+
+        payload = json.loads(json_output.getvalue())
+        self.assertEqual(markdown_code, 0)
+        self.assertEqual(json_code, 0)
+        self.assertTrue(report_exists)
+        self.assertIn("3C-5M-3D-3T", report_content)
+        self.assertIn("path", json.loads(markdown_output.getvalue()))
+        self.assertEqual(payload["project"]["source_name"], "CLI Report Desk")
+        self.assertEqual(payload["instruments"][0]["symbol"], "00700.HK")
+
     def test_cli_ingest_auto_extractor_uses_openai_when_configured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"
@@ -2395,6 +2459,38 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual([project["source_name"] for project in long_projects], ["Desk A"])
         self.assertEqual([project["source_name"] for project in short_projects], ["Desk B"])
         self.assertEqual(invalid_direction.status_code, 422)
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_project_report_endpoint_returns_markdown_and_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+                ingested = client.post(
+                    "/api/inputs",
+                    json={"source": "Web Report Desk", "content": "00700.HK long, watch ads recovery."},
+                )
+                project_id = ingested.json()["project_ids"][0]
+                markdown = client.get(f"/api/projects/{project_id}/report")
+                report_json = client.get(f"/api/projects/{project_id}/report", params={"format": "json"})
+                invalid = client.get(f"/api/projects/{project_id}/report", params={"format": "pdf"})
+                missing = client.get("/api/projects/999999/report")
+
+        self.assertEqual(markdown.status_code, 200)
+        self.assertIn("text/markdown", markdown.headers["content-type"])
+        self.assertIn("3C-5M-3D-3T", markdown.text)
+        self.assertEqual(report_json.status_code, 200)
+        self.assertEqual(report_json.json()["project"]["source_name"], "Web Report Desk")
+        self.assertEqual(report_json.json()["instruments"][0]["symbol"], "00700.HK")
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(missing.status_code, 404)
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_auto_extractor_falls_back_when_openai_fails(self) -> None:

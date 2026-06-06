@@ -24,6 +24,7 @@ from .market_smoke import market_data_smoke
 from .models import Direction, Market, ProjectStatus
 from .provider_diagnostics import market_data_coverage
 from .project_actions import ProjectActionError, close_tracking_project, update_tracking_project_weights
+from .project_report import build_project_report, render_project_report_markdown
 from .project_summary import project_summaries, project_summary
 from .publisher import DemoPublisher, extract_published_address
 from .providers.factory import build_market_data_provider
@@ -103,6 +104,11 @@ def main(argv: list[str] | None = None) -> int:
 
     list_exit_parser = subparsers.add_parser("list-exit-signals", help="List projects currently carrying exit signals.")
     list_exit_parser.add_argument("--limit", type=int, default=50)
+
+    report_parser = subparsers.add_parser("export-project-report", help="Export a project research report.")
+    report_parser.add_argument("project_id", type=int)
+    report_parser.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    report_parser.add_argument("--out", help="Output path. Prints to stdout if omitted.")
 
     update_research_parser = subparsers.add_parser("update-research-item", help="Update a research verification item.")
     update_research_parser.add_argument("item_id", type=int)
@@ -369,6 +375,26 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "list-exit-signals":
         db.init()
         print(json.dumps({"exit_signals": exit_signal_summaries(repo, limit=args.limit)}, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "export-project-report":
+        db.init()
+        report = build_project_report(repo, args.project_id)
+        if not report:
+            print(json.dumps({"ok": False, "code": "project_not_found"}, ensure_ascii=False))
+            return 2
+        content = (
+            json.dumps(report, ensure_ascii=False, indent=2)
+            if args.format == "json"
+            else render_project_report_markdown(report)
+        )
+        if args.out:
+            out_path = Path(args.out)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(content, encoding="utf-8")
+            print(json.dumps({"ok": True, "path": str(out_path)}, ensure_ascii=False))
+        else:
+            print(content)
         return 0
 
     if args.command == "update-research-item":
