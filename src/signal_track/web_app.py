@@ -125,8 +125,8 @@ def create_app():
             repo,
             provider=provider,
             evaluator=build_daily_evaluator_from_settings(settings),
-            publish_url=settings.demo_publish_url,
-            api_key=settings.demo_api_key,
+            publish_url=settings.demo_publish_url if settings.auto_publish_on_update else None,
+            api_key=settings.demo_api_key if settings.auto_publish_on_update else None,
         )
 
         @app.on_event("startup")

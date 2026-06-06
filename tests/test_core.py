@@ -4132,6 +4132,36 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIn("Auto provider requires", payload["scheduler_provider_error"])
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_scheduler_respects_auto_publish_disabled(self) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_build_scheduler(repo, **kwargs):
+            captured.update(kwargs)
+            fake_scheduler = types.SimpleNamespace(get_jobs=lambda: [])
+            return types.SimpleNamespace(scheduler=fake_scheduler)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_ENABLE_SCHEDULER": "true",
+                "SIGNAL_TRACK_DAILY_PROVIDER": "none",
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
+                "GO_SITES_DEMO_API_KEY": "demo-key",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.web_app.build_scheduler", side_effect=fake_build_scheduler):
+                    client = TestClient(create_app())
+                    response = client.get("/health")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(captured["publish_url"])
+        self.assertIsNone(captured["api_key"])
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_health_reports_operational_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"
