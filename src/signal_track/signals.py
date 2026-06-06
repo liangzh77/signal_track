@@ -504,7 +504,7 @@ class SignalIngestor:
             title = "Portfolio tracking: " + " / ".join(resolution.instrument.name for resolution in resolutions)
             project_metadata = {"portfolio": True}
         else:
-            title = f"{resolutions[0].instrument.name} {direction_label(effective_direction)}璺熻釜"
+            title = f"{resolutions[0].instrument.name} {direction_label(effective_direction)}跟踪"
             project_metadata = {
                 "resolution_confidence": resolutions[0].confidence,
                 "resolution_reason": resolutions[0].reason,

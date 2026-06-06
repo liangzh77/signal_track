@@ -1778,6 +1778,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["symbols"], "00700.HK")
             self.assertEqual(rows[0]["direction"], "long")
+            self.assertEqual(rows[0]["title"], "腾讯控股 做多跟踪")
             self.assertEqual(rows[0]["raw_input_id"], unresolved.raw_input_id)
             metadata = json.loads(rows[0]["metadata"])
             self.assertEqual(metadata["raw_extract_status"], "resolved_later")
