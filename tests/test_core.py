@@ -1864,6 +1864,39 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertNotIn("20", terms)
         self.assertIsNone(resolver.resolve("2026"))
 
+    def test_extract_probe_terms_keeps_china_future_contract_codes(self) -> None:
+        resolver = InstrumentResolver()
+        terms = extract_probe_terms("CU2601.SHF long, IF2606.CFX short, CU.SHF watch.")
+
+        self.assertIn("CU2601.SHF", terms)
+        self.assertIn("IF2606.CFX", terms)
+        self.assertIn("CU.SHF", terms)
+        self.assertNotIn("SHF", terms)
+        self.assertNotIn("CFX", terms)
+        self.assertIsNone(resolver.resolve("SHF"))
+        self.assertIsNone(resolver.resolve("CFX"))
+
+    def test_heuristic_china_future_contract_code_creates_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                "Futures Desk",
+                "CU2601.SHF long, watch inventory and close if price breaks support.",
+            )
+
+            self.assertEqual(result.resolved_symbols, ["CU2601.SHF"])
+            self.assertEqual(len(result.project_ids), 1)
+            project = repo.list_project_rows()[0]
+            self.assertEqual(project["symbols"], "CU2601.SHF")
+            instrument = repo.get_instrument("CU2601.SHF")
+            self.assertEqual(instrument.market, Market.CN_FUT)
+            self.assertTrue(instrument.metadata["synthetic"])
+
     def test_heuristic_later_symbol_resolves_unresolved_project_without_duplicate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")

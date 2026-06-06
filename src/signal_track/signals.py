@@ -872,6 +872,8 @@ def extract_probe_terms(content: str) -> list[str]:
     patterns = [
         (r"\b\d{6}(?:\.(?:SZ|SH))?\b", re.IGNORECASE),
         (r"\b\d{1,5}\.HK\b", re.IGNORECASE),
+        (r"\b[A-Z]{1,4}\d{3,4}\.(?:SHF|DCE|CZC|CFX|INE|GFE)\b", re.IGNORECASE),
+        (r"\b[A-Z]{1,4}\.(?:SHF|DCE|CZC|CFX|INE|GFE)\b", re.IGNORECASE),
         (r"\b\d{4,5}\b", 0),
         (r"\b[A-Z]{1,5}(?:\.US|=F)?\b", 0),
         (r"[\u4e00-\u9fffA-Za-z0-9\-]{2,20}", 0),
@@ -885,6 +887,9 @@ def extract_probe_terms(content: str) -> list[str]:
 
 
 def should_probe_term(term: str) -> bool:
+    cn_future_exchange_suffixes = {"SHF", "DCE", "CZC", "CFX", "INE", "GFE"}
+    if term.upper() in cn_future_exchange_suffixes:
+        return False
     if re.search(r"[\u4e00-\u9fff]", term):
         return True
     if re.fullmatch(r"\d{6}(?:\.(?:SZ|SH))?", term, flags=re.IGNORECASE):
@@ -893,9 +898,11 @@ def should_probe_term(term: str) -> bool:
         return True
     if re.fullmatch(r"\d{4,5}", term):
         return not is_likely_year(term)
-    if re.fullmatch(r"[A-Z]{1,5}(?:\.US|=F)?", term):
-        return True
     if re.fullmatch(r"[A-Z]{1,4}\d{3,4}\.(?:SHF|DCE|CZC|CFX|INE|GFE)", term):
+        return True
+    if re.fullmatch(r"[A-Z]{1,4}\.(?:SHF|DCE|CZC|CFX|INE|GFE)", term):
+        return True
+    if re.fullmatch(r"[A-Z]{1,5}(?:\.US|=F)?", term):
         return True
     return bool(re.fullmatch(r"[A-Z][A-Za-z]{2,19}", term))
 
