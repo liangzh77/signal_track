@@ -41,6 +41,7 @@ Copy `.env.example` to `.env` and fill provider credentials:
 SIGNAL_TRACK_DB_PATH=data/signal_track.sqlite3
 SIGNAL_TRACK_ENABLE_SCHEDULER=false
 SIGNAL_TRACK_DAILY_PROVIDER=auto
+SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE=true
 SIGNAL_TRACK_API_KEY=<your-signal-track-api-key>
 TUSHARE_TOKEN=<your-tushare-token>
 OPENAI_API_KEY=<your-openai-api-key>
@@ -86,6 +87,8 @@ Useful endpoints:
 
 When publish credentials are configured, `POST /api/inputs`, `POST /api/projects/{project_id}/close`,
 research item updates, and `POST /api/checks/run` automatically publish the refreshed dashboard.
+CLI update commands do the same by default when `SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE=true`;
+use `--no-publish` for a one-off local update.
 Publish responses include `url` when the publish API returns a public dashboard
 address, plus `publish_url` for the API endpoint that was called.
 
@@ -141,7 +144,7 @@ python scripts/healthcheck.py http://127.0.0.1:8765/health
 Run the full daily flow locally:
 
 ```powershell
-python -m signal_track.cli daily-run --provider auto --publish
+python -m signal_track.cli daily-run --provider auto
 ```
 
 Run a non-destructive smoke check with a temporary database:
@@ -161,7 +164,8 @@ The flow is intentionally sequential:
 1. Refresh missing price data when a provider is selected.
 2. Run checks for active projects.
 3. Render the dashboard HTML.
-4. Publish through the demo API when `--publish` is passed.
+4. Publish through the demo API when publish credentials are configured and
+   `SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE=true`, or when `--publish` is passed.
 
 Closed projects keep refreshing prices for 31 days after `closed_date` so charts
 can show the requested post-close window without creating new daily check rows.
@@ -324,6 +328,7 @@ python -m signal_track.cli update-research-item 1 --status contradicted --check 
 python -m signal_track.cli close-project 1 --date 2026-06-10 --reason "manual exit after thesis broke" --publish
 ```
 
-When publish credentials are configured, the API research item update endpoint
-publishes the refreshed dashboard automatically. Pass `run_check: true` to
-recalculate active project status immediately after a research item update.
+When publish credentials are configured, research item updates publish the
+refreshed dashboard automatically unless `--no-publish` is passed. Pass
+`run_check: true` in the API, or `--check` in the CLI, to recalculate active
+project status immediately after a research item update.

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from unittest.mock import patch
 from datetime import date, timedelta
 from pathlib import Path
@@ -11,6 +13,7 @@ from signal_track.config import Settings
 from signal_track.db import Database, Repository
 from signal_track.checker import DailyChecker
 from signal_track.cli import refresh_markets as cli_refresh_markets
+from signal_track.cli import main as cli_main
 from signal_track.cli import run_self_check
 from signal_track.dashboard import render_dashboard
 from signal_track.analytics import project_performance
@@ -797,6 +800,59 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(checked, 0)
             self.assertEqual(events[0]["url"], "https://example.com/demo/signal")
             self.assertEqual(events[0]["status_code"], 200)
+
+    def test_cli_ingest_auto_publishes_when_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "true",
+                "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
+                "GO_SITES_DEMO_API_KEY": "demo-key",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.cli.DemoPublisher", FakeDemoPublisher):
+                    with redirect_stdout(StringIO()):
+                        code = cli_main([
+                            "ingest",
+                            "--source",
+                            "CLI Desk",
+                            "--text",
+                            "00700.HK long, watch ads recovery.",
+                        ])
+
+            self.assertEqual(code, 0)
+            events = Repository(Database(db_path)).list_publish_events()
+            self.assertEqual(events[0]["url"], "https://example.com/demo/signal")
+
+    def test_cli_no_publish_disables_auto_publish(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "true",
+                "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
+                "GO_SITES_DEMO_API_KEY": "demo-key",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.cli.DemoPublisher", FakeDemoPublisher):
+                    with redirect_stdout(StringIO()):
+                        code = cli_main([
+                            "ingest",
+                            "--source",
+                            "CLI Desk",
+                            "--text",
+                            "00700.HK long, watch ads recovery.",
+                            "--no-publish",
+                        ])
+
+            self.assertEqual(code, 0)
+            events = Repository(Database(db_path)).list_publish_events()
+            self.assertEqual(events, [])
 
     def test_daily_logic_evaluator_can_trigger_exit_signal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

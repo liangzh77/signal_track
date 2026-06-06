@@ -92,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
     update_research_parser.add_argument("--check", action="store_true", help="Run a daily check after updating.")
     update_research_parser.add_argument("--provider", choices=["none", "auto", "fixture", "tushare", "yfinance"], default="none")
     update_research_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after updating.")
+    update_research_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     update_research_parser.add_argument("--title", default="Signal Track 投资信号看板")
 
     close_project_parser = subparsers.add_parser("close-project", help="Manually close a tracking project.")
@@ -99,6 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     close_project_parser.add_argument("--date", help="Close date, YYYY-MM-DD. Defaults to today.")
     close_project_parser.add_argument("--reason", help="Close reason recorded as close logic.")
     close_project_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after closing.")
+    close_project_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     close_project_parser.add_argument("--title", default="Signal Track 投资信号看板")
 
     ingest_parser = subparsers.add_parser("ingest", help="Create tracking projects from raw source text.")
@@ -107,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     ingest_parser.add_argument("--file", help="Read raw investment note from a text/markdown file.")
     ingest_parser.add_argument("--portfolio", action="store_true", help="Treat all resolved instruments as one project.")
     ingest_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after ingest.")
+    ingest_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     ingest_parser.add_argument(
         "--extractor",
         choices=["heuristic", "openai"],
@@ -144,6 +147,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     daily_parser.add_argument("--out", default="dist/dashboard.html")
     daily_parser.add_argument("--publish", action="store_true")
+    daily_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     daily_parser.add_argument("--title", default="Signal Track 投资信号看板")
 
     serve_parser = subparsers.add_parser("serve", help="Run the FastAPI backend service.")
@@ -320,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
                 evaluator=build_daily_logic_evaluator(settings.openai_api_key, settings.openai_model),
             ).run()
         publish_result = None
-        if args.publish:
+        if should_publish_update(settings, forced=args.publish, disabled=args.no_publish):
             publish_result = publish_dashboard(
                 repo,
                 settings,
@@ -357,7 +361,7 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({"ok": False, "code": "project_not_found"}, ensure_ascii=False))
             return 2
         publish_result = None
-        if args.publish:
+        if should_publish_update(settings, forced=args.publish, disabled=args.no_publish):
             publish_result = publish_dashboard(
                 repo,
                 settings,
@@ -427,21 +431,13 @@ def main(argv: list[str] | None = None) -> int:
             attachment_path=attachment_path,
         )
         publish_result = None
-        if args.publish:
-            if not settings.demo_publish_url or not settings.demo_api_key:
-                raise SystemExit("GO_SITES_DEMO_PUBLISH_URL and GO_SITES_DEMO_API_KEY are required")
-            html = render_dashboard(repo)
-            publish_result = DemoPublisher(settings.demo_publish_url, settings.demo_api_key).publish(
+        if should_publish_update(settings, forced=args.publish, disabled=args.no_publish):
+            publish_result = publish_dashboard(
+                repo,
+                settings,
                 title="Signal Track 投资信号看板",
-                html=html,
                 feature="新增信息后自动发布",
-            )
-            repo.record_publish_event(
-                title="Signal Track 投资信号看板",
-                url=extract_published_address(publish_result.body) or settings.demo_publish_url,
-                status_code=publish_result.status_code,
-                response_body=publish_result.body,
-                metadata={"ok": publish_result.ok, "flow": "ingest"},
+                flow="ingest",
             )
         print(
             json.dumps(
@@ -534,20 +530,13 @@ def main(argv: list[str] | None = None) -> int:
         html = render_dashboard(repo)
         out_path.write_text(html, encoding="utf-8")
         publish_result = None
-        if args.publish:
-            if not settings.demo_publish_url or not settings.demo_api_key:
-                raise SystemExit("GO_SITES_DEMO_PUBLISH_URL and GO_SITES_DEMO_API_KEY are required")
-            publish_result = DemoPublisher(settings.demo_publish_url, settings.demo_api_key).publish(
+        if should_publish_update(settings, forced=args.publish, disabled=args.no_publish):
+            publish_result = publish_dashboard(
+                repo,
+                settings,
                 title=args.title,
-                html=html,
                 feature=f"每日检查完成，更新 {checked} 个项目",
-            )
-            repo.record_publish_event(
-                title=args.title,
-                url=extract_published_address(publish_result.body) or settings.demo_publish_url,
-                status_code=publish_result.status_code,
-                response_body=publish_result.body,
-                metadata={"ok": publish_result.ok, "flow": "daily-run"},
+                flow="daily-run",
             )
         print(
             json.dumps(
@@ -602,6 +591,14 @@ def refresh_markets(value: str) -> list[Market]:
     if value == "all":
         return [Market.CN_A, Market.HK, Market.CN_FUT, Market.US, Market.US_FUT]
     return [Market(value)]
+
+
+def should_publish_update(settings: Settings, forced: bool = False, disabled: bool = False) -> bool:
+    if disabled:
+        return False
+    if forced:
+        return True
+    return bool(settings.auto_publish_on_update and settings.demo_publish_url and settings.demo_api_key)
 
 
 def publish_dashboard(repo: Repository, settings: Settings, title: str, feature: str, flow: str):

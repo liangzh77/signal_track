@@ -95,13 +95,13 @@ Without token, seed fixture symbols:
 ## Manual Input
 
 ```bash
-/srv/signal-track/venv/bin/python -m signal_track.cli ingest --source 信息源A --text "腾讯 做多，先跟踪。" --publish
+/srv/signal-track/venv/bin/python -m signal_track.cli ingest --source 信息源A --text "腾讯 做多，先跟踪。"
 ```
 
 File input:
 
 ```bash
-/srv/signal-track/venv/bin/python -m signal_track.cli ingest --source 信息源A --file /path/to/note.md --publish
+/srv/signal-track/venv/bin/python -m signal_track.cli ingest --source 信息源A --file /path/to/note.md
 ```
 
 HTTP input with API key:
@@ -126,8 +126,12 @@ tracking projects.
 ## Manual Daily Run
 
 ```bash
-/srv/signal-track/venv/bin/python -m signal_track.cli daily-run --provider auto --publish --out /srv/signal-track/shared/dashboard.html
+/srv/signal-track/venv/bin/python -m signal_track.cli daily-run --provider auto --out /srv/signal-track/shared/dashboard.html
 ```
+
+CLI update commands publish automatically when `GO_SITES_DEMO_PUBLISH_URL`,
+`GO_SITES_DEMO_API_KEY`, and `SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE=true` are set.
+Use `--no-publish` for a one-off local update.
 
 ## Backup
 

@@ -32,6 +32,7 @@ class Settings:
     openai_api_key: str | None
     openai_model: str
     signal_track_api_key: str | None
+    auto_publish_on_update: bool = True
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -46,6 +47,7 @@ class Settings:
             openai_api_key=os.getenv("OPENAI_API_KEY") or None,
             openai_model=os.getenv("SIGNAL_TRACK_OPENAI_MODEL", "gpt-4o-mini"),
             signal_track_api_key=os.getenv("SIGNAL_TRACK_API_KEY") or None,
+            auto_publish_on_update=parse_bool(os.getenv("SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE"), default=True),
         )
 
 
