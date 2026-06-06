@@ -936,6 +936,11 @@ def run_self_check(settings: Settings, provider_name: str = "fixture", out: str 
 
         missing_source = resolve_source_name(None, "00700.HK long, observe ads and games.", None) is None
         scenario_results["requires_source"] = missing_source
+        marker_content = "source: marker-check, 00700.HK long, watch ads."
+        scenario_results["source_marker_inference"] = (
+            resolve_source_name(None, marker_content, None) == "marker-check"
+            and remove_source_marker_lines(marker_content) == "00700.HK long, watch ads."
+        )
 
         ingest_result = SignalIngestor(repo, resolver).ingest(
             source_name="self-check",
@@ -972,8 +977,45 @@ def run_self_check(settings: Settings, provider_name: str = "fixture", out: str 
             and not bool(repo.get_project_row(portfolio.project_ids[0])["weight_needs_review"])
         )
 
+        incomplete_portfolio = SignalIngestor(repo, resolver).ingest(
+            source_name="self-check-incomplete-portfolio",
+            content="portfolio long: 300750.SZ and 600519.SH, watch margin and demand.",
+        )
+        incomplete_project = (
+            repo.get_project_row(incomplete_portfolio.project_ids[0])
+            if incomplete_portfolio.project_ids
+            else None
+        )
+        scenario_results["portfolio_missing_weights_review"] = bool(
+            incomplete_project
+            and incomplete_project["status"] == "needs_review"
+            and bool(incomplete_project["weight_needs_review"])
+        )
+
+        close_open = SignalIngestor(repo, resolver).ingest(
+            source_name="self-check-close",
+            content="AAPL long, watch orders.",
+        )
+        close_result = SignalIngestor(repo, resolver).ingest(
+            source_name="self-check-close",
+            content="AAPL close, thesis failed.",
+        )
+        closed_project = repo.get_project_row(close_open.project_ids[0]) if close_open.project_ids else None
+        scenario_results["close_signal"] = bool(
+            close_result.project_ids == close_open.project_ids
+            and closed_project
+            and closed_project["status"] == "closed"
+        )
+
+        coverage = market_data_coverage(settings, provider_name)
+        scenario_results["market_coverage"] = bool(
+            coverage["markets"]
+            and any(row["market"] == "CN_A" and row["price_available"] for row in coverage["markets"])
+        )
+
         provider = None if provider_name == "none" else build_provider(provider_name, settings)
         check_date = next_business_day(date.today()) if provider_name == "fixture" else date.today()
+        active_project_count = len(repo.list_active_project_ids())
         checked = DailyChecker(repo, provider).run(check_date)
         html = render_dashboard(repo)
         html_path = None
@@ -984,7 +1026,7 @@ def run_self_check(settings: Settings, provider_name: str = "fixture", out: str 
             html_path = str(output)
         projects = repo.list_project_rows()
         checks = repo.list_daily_checks()
-        scenario_results["daily_checks"] = bool(checked == len(projects) and checks)
+        scenario_results["daily_checks"] = bool(checked == active_project_count and checks)
         scenario_results["dashboard"] = bool(
             "Signal Track" in html
             and "source-summary" in html
@@ -1002,6 +1044,7 @@ def run_self_check(settings: Settings, provider_name: str = "fixture", out: str 
             "project_ids": ingest_result.project_ids,
             "resolved_symbols": ingest_result.resolved_symbols,
             "checked_projects": checked,
+            "active_project_count": active_project_count,
             "daily_checks": len(checks),
             "project_count": len(projects),
             "scenario_results": scenario_results,
