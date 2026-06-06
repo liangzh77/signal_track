@@ -6,6 +6,7 @@ from datetime import datetime
 
 from .analytics import project_performance
 from .db import Repository
+from .project_report import build_project_report
 
 
 def render_dashboard(repo: Repository) -> str:
@@ -164,6 +165,18 @@ def render_dashboard(repo: Repository) -> str:
     .research-item strong {{ color: var(--cyan); font-weight: 600; }}
     .research-item span {{ color: var(--muted); }}
     .research-item em {{ color: var(--amber); font-style: normal; text-align: right; }}
+    .report-card {{ display: grid; gap: 10px; margin: 10px 0 14px; border: 1px solid rgba(68,215,200,.2); border-radius: 8px; padding: 12px; background: rgba(68,215,200,.045); }}
+    .report-card-head {{ display: flex; justify-content: space-between; gap: 10px; align-items: start; }}
+    .report-card h4 {{ margin: 0; font-size: 13px; line-height: 19px; }}
+    .report-link {{ color: var(--cyan); text-decoration: none; border: 1px solid rgba(68,215,200,.45); border-radius: 999px; padding: 4px 9px; font-size: 12px; white-space: nowrap; }}
+    .report-link:hover {{ background: rgba(68,215,200,.1); }}
+    .report-stats {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }}
+    .report-stat {{ border: 1px solid rgba(231,238,232,.08); border-radius: 8px; padding: 8px; background: rgba(255,255,255,.018); }}
+    .report-stat span {{ display: block; color: var(--faint); font-size: 11px; line-height: 15px; }}
+    .report-stat strong {{ display: block; margin-top: 3px; font-size: 15px; line-height: 20px; font-variant-numeric: tabular-nums; }}
+    .framework-tags {{ display: flex; flex-wrap: wrap; gap: 6px; }}
+    .framework-tag {{ border: 1px solid rgba(231,238,232,.14); border-radius: 999px; padding: 3px 8px; color: var(--muted); font-size: 11px; line-height: 16px; }}
+    .framework-tag.covered {{ color: var(--cyan); border-color: rgba(68,215,200,.45); background: rgba(68,215,200,.08); }}
     @media (max-width: 900px) {{
       .shell {{ padding: 16px; }}
       .metrics {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
@@ -175,6 +188,8 @@ def render_dashboard(repo: Repository) -> str:
       .research-item {{ grid-template-columns: 1fr; gap: 6px; }}
       .research-item em {{ text-align: left; }}
       .detail-top {{ flex-direction: column; }}
+      .report-card-head {{ flex-direction: column; }}
+      .report-stats {{ grid-template-columns: 1fr; }}
     }}
     @media (max-width: 520px) {{
       .shell {{ padding: 12px; }}
@@ -388,6 +403,7 @@ def render_project_detail(repo: Repository, row, performance) -> str:
     logic_blocks = repo.list_logic_blocks(int(row["id"]))
     logic_html = "\n".join(render_logic_block(block) for block in logic_blocks)
     check_log = render_project_check_log(repo.list_daily_checks(project_id=int(row["id"]), limit=5))
+    report_snapshot = render_report_snapshot(repo, int(row["id"]))
     research_items = render_research_items(repo.list_research_items(project_id=int(row["id"]), limit=8))
     legs = "\n".join(
         f"<span class='leg'>{escape(leg.symbol)} · {leg.weight:.0%} · {format_return(leg.return_pct)}</span>"
@@ -404,10 +420,37 @@ def render_project_detail(repo: Repository, row, performance) -> str:
         f"{render_sparkline(performance.points)}"
         f"<div class='leg-list'>{legs}</div>"
         f"<div class='leg-curves'>{leg_curves}</div>"
+        f"{report_snapshot}"
         f"{research_items}"
         f"{check_log}"
         f"<div class='logic-grid'>{logic_html}</div>"
         "</article>"
+    )
+
+
+def render_report_snapshot(repo: Repository, project_id: int) -> str:
+    report = build_project_report(repo, project_id)
+    if not report:
+        return ""
+    verification = report["data_verification"]
+    covered = {section["name"] for section in report["framework"] if section["items"]}
+    tags = "".join(
+        f"<span class='framework-tag{' covered' if name in covered else ''}'>{escape(name)}</span>"
+        for name in ["3C", "5M", "3D", "3T"]
+    )
+    return (
+        "<section class='report-card' aria-label='project research report'>"
+        "<div class='report-card-head'>"
+        f"<div><h4>{escape(report['title'])}</h4><div class='muted'>Markdown / JSON report available</div></div>"
+        f"<a class='report-link' href='/api/projects/{project_id}/report?format=markdown'>Report</a>"
+        "</div>"
+        "<div class='report-stats'>"
+        f"<div class='report-stat'><span>verified</span><strong>{verification['verified_count']}</strong></div>"
+        f"<div class='report-stat'><span>pending</span><strong>{verification['pending_count']}</strong></div>"
+        f"<div class='report-stat'><span>contradicted</span><strong>{verification['contradicted_count']}</strong></div>"
+        "</div>"
+        f"<div class='framework-tags'>{tags}</div>"
+        "</section>"
     )
 
 

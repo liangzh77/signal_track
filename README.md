@@ -12,7 +12,7 @@ Current implementation status:
 - Unified daily bar interface with fixture, Tushare, yfinance, and auto-routed providers.
 - Heuristic extraction plus optional OpenAI Structured Outputs extraction and low-logic tracking supplement.
 - Daily check flow with price refresh, return calculation, exit-signal thresholding, and HTML rendering.
-- Glassmorphism dashboard with source/status/direction filters, project list, detail cards, logic blocks, and SVG return curves.
+- Glassmorphism dashboard with source/status/direction filters, project list, detail cards, report snapshots, logic blocks, and SVG return curves.
 - CLI and FastAPI backend for ingestion, checking, rendering, publishing, and serving.
 
 ## Quick Start
