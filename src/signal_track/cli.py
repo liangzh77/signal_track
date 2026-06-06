@@ -27,7 +27,7 @@ from .provider_diagnostics import market_data_coverage
 from .project_actions import ProjectActionError, add_project_logic_block, close_tracking_project, update_tracking_project_weights
 from .project_report import build_project_report, render_project_report_markdown
 from .project_summary import project_summaries, project_summary
-from .publisher import DemoPublisher, PublishResult, extract_published_address, publish_payload
+from .publisher import DemoPublisher, PublishResult, publish_payload
 from .providers.factory import build_market_data_provider
 from .resolver import InstrumentResolver, SEED_INSTRUMENTS
 from .signals import SignalIngestor
@@ -483,10 +483,7 @@ def main(argv: list[str] | None = None) -> int:
                     "ok": True,
                     "item": dict(item),
                     "checked_projects": checked,
-                    "published": publish_result.ok if publish_result else False,
-                    "status_code": publish_result.status_code if publish_result else None,
-                    "published_url": extract_published_address(publish_result.body) if publish_result else None,
-                    "publish_url": settings.demo_publish_url if publish_result else None,
+                    **cli_publish_fields(publish_result, settings),
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -519,10 +516,7 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "ok": True,
                     "project": project_summaries(repo, [args.project_id])[0],
-                    "published": publish_result.ok if publish_result else False,
-                    "status_code": publish_result.status_code if publish_result else None,
-                    "published_url": extract_published_address(publish_result.body) if publish_result else None,
-                    "publish_url": settings.demo_publish_url if publish_result else None,
+                    **cli_publish_fields(publish_result, settings),
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -563,10 +557,7 @@ def main(argv: list[str] | None = None) -> int:
                     "ok": True,
                     "project": project_summaries(repo, [args.project_id])[0],
                     "legs": [dict(row) for row in repo.list_project_legs(args.project_id)],
-                    "published": publish_result.ok if publish_result else False,
-                    "status_code": publish_result.status_code if publish_result else None,
-                    "published_url": extract_published_address(publish_result.body) if publish_result else None,
-                    "publish_url": settings.demo_publish_url if publish_result else None,
+                    **cli_publish_fields(publish_result, settings),
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -630,10 +621,7 @@ def main(argv: list[str] | None = None) -> int:
                     "project": project_summaries(repo, [args.project_id])[0],
                     "logic_blocks": [dict(row) for row in repo.list_logic_blocks(args.project_id)],
                     "checked_projects": checked,
-                    "published": publish_result.ok if publish_result else False,
-                    "status_code": publish_result.status_code if publish_result else None,
-                    "published_url": extract_published_address(publish_result.body) if publish_result else None,
-                    "publish_url": settings.demo_publish_url if publish_result else None,
+                    **cli_publish_fields(publish_result, settings),
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -716,10 +704,7 @@ def main(argv: list[str] | None = None) -> int:
                     "projects": project_summaries(repo, result.project_ids),
                     "logic_score": result.logic_score,
                     "system_logic_added": result.system_logic_added,
-                    "published": publish_result.ok if publish_result else False,
-                    "status_code": publish_result.status_code if publish_result else None,
-                    "published_url": extract_published_address(publish_result.body) if publish_result else None,
-                    "publish_url": settings.demo_publish_url if publish_result else None,
+                    **cli_publish_fields(publish_result, settings),
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -746,17 +731,11 @@ def main(argv: list[str] | None = None) -> int:
                 feature=f"每日检查完成，更新 {checked} 个项目",
                 flow="check",
             )
-        publish_status = publish_payload(publish_result, settings.demo_publish_url) if publish_result else None
         print(
             json.dumps(
                 {
                     "checked_projects": checked,
-                    "published": publish_result.ok if publish_result else False,
-                    "status_code": publish_status["status_code"] if publish_status else None,
-                    "published_url": publish_status["url"] if publish_status else None,
-                    "publish_url": publish_status["publish_url"] if publish_status else None,
-                    "error": publish_status["error"] if publish_status else None,
-                    "response_body": publish_status["response_body"] if publish_status else None,
+                    **cli_publish_fields(publish_result, settings),
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -820,18 +799,12 @@ def main(argv: list[str] | None = None) -> int:
                 feature=f"每日检查完成，更新 {checked} 个项目",
                 flow="daily-run",
             )
-        publish_status = publish_payload(publish_result, settings.demo_publish_url) if publish_result else None
         print(
             json.dumps(
                 {
                     "checked_projects": checked,
                     "html": str(out_path),
-                    "published": publish_result.ok if publish_result else False,
-                    "status_code": publish_status["status_code"] if publish_status else None,
-                    "published_url": publish_status["url"] if publish_status else None,
-                    "publish_url": publish_status["publish_url"] if publish_status else None,
-                    "error": publish_status["error"] if publish_status else None,
-                    "response_body": publish_status["response_body"] if publish_status else None,
+                    **cli_publish_fields(publish_result, settings),
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -903,6 +876,27 @@ def should_publish_update(settings: Settings, forced: bool = False, disabled: bo
     if forced:
         return True
     return bool(settings.auto_publish_on_update and settings.demo_publish_url and settings.demo_api_key)
+
+
+def cli_publish_fields(result: PublishResult | None, settings: Settings) -> dict:
+    if result is None:
+        return {
+            "published": False,
+            "status_code": None,
+            "published_url": None,
+            "publish_url": None,
+            "error": None,
+            "response_body": None,
+        }
+    payload = publish_payload(result, settings.demo_publish_url)
+    return {
+        "published": bool(payload["ok"]),
+        "status_code": payload["status_code"],
+        "published_url": payload["url"],
+        "publish_url": payload["publish_url"],
+        "error": payload["error"],
+        "response_body": payload["response_body"],
+    }
 
 
 def publish_dashboard(repo: Repository, settings: Settings, title: str, feature: str, flow: str):

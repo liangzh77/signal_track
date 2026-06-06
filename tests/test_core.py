@@ -2281,6 +2281,8 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertTrue(payload["project_ids"])
             self.assertFalse(payload["published"])
             self.assertIsNone(payload["status_code"])
+            self.assertIn("network exploded", payload["error"])
+            self.assertIn("network exploded", payload["response_body"])
             self.assertEqual(events[0]["url"], "https://example.com/api/publish")
             self.assertIn("network exploded", events[0]["response_body"])
             self.assertFalse(metadata["ok"])
