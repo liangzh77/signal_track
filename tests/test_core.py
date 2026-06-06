@@ -3394,6 +3394,69 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertFalse(health["latest_publish"]["ok"])
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_auto_publish_exception_is_returned_and_recorded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
+                "GO_SITES_DEMO_API_KEY": "demo-key",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.web_app.DemoPublisher", ThrowingDemoPublisher):
+                    client = TestClient(create_app())
+                    created = client.post(
+                        "/api/inputs",
+                        json={"source": "测试源", "content": "腾讯 做多"},
+                    )
+                    events = client.get("/api/publish/events").json()
+                    health = client.get("/health").json()
+
+            publish = created.json()["publish"]
+            metadata = json.loads(events[0]["metadata"])
+            self.assertEqual(created.status_code, 200)
+            self.assertTrue(created.json()["project_ids"])
+            self.assertTrue(publish["attempted"])
+            self.assertFalse(publish["ok"])
+            self.assertIsNone(publish["status_code"])
+            self.assertIn("network exploded", publish["error"])
+            self.assertEqual(events[0]["url"], "https://example.com/api/publish")
+            self.assertIn("network exploded", events[0]["response_body"])
+            self.assertEqual(metadata["exception_type"], "RuntimeError")
+            self.assertFalse(health["ok"])
+            self.assertIn("latest_publish_failed", health["degraded_reasons"])
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_manual_publish_exception_is_recorded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
+                "GO_SITES_DEMO_API_KEY": "demo-key",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.web_app.DemoPublisher", ThrowingDemoPublisher):
+                    client = TestClient(create_app())
+                    response = client.post("/api/publish")
+                    events = client.get("/api/publish/events").json()
+
+            metadata = json.loads(events[0]["metadata"])
+            self.assertEqual(response.status_code, 502)
+            self.assertIn("network exploded", response.json()["detail"])
+            self.assertEqual(events[0]["url"], "https://example.com/api/publish")
+            self.assertIn("network exploded", events[0]["response_body"])
+            self.assertFalse(metadata["ok"])
+            self.assertEqual(metadata["feature"], "Signal Track 手动发布")
+            self.assertEqual(metadata["exception_type"], "RuntimeError")
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_mutating_web_endpoints_require_api_key_when_configured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             env = {

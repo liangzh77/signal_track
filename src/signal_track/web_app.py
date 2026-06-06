@@ -21,7 +21,7 @@ from .provider_diagnostics import market_data_coverage
 from .project_actions import ProjectActionError, add_project_logic_block, close_tracking_project, update_tracking_project_weights
 from .project_report import build_project_report, render_project_report_markdown
 from .project_summary import project_summaries, project_summary
-from .publisher import DemoPublisher, extract_published_address, publish_payload
+from .publisher import DemoPublisher, PublishResult, publish_payload
 from .providers.factory import build_market_data_provider
 from .resolver import InstrumentResolver, SEED_INSTRUMENTS
 from .scheduler import build_scheduler, scheduler_job_summaries
@@ -452,21 +452,15 @@ def create_app():
                 status_code=503,
                 detail="GO_SITES_DEMO_PUBLISH_URL and GO_SITES_DEMO_API_KEY are required",
             )
-        result = DemoPublisher(settings.demo_publish_url, settings.demo_api_key).publish(
-            title="Signal Track 投资信号看板",
-            html=render_dashboard(repo),
+        payload = record_dashboard_publish(
+            repo,
+            settings.demo_publish_url,
+            settings.demo_api_key,
+            feature="Signal Track 手动发布",
         )
-        published_url = extract_published_address(result.body)
-        repo.record_publish_event(
-            title="Signal Track 投资信号看板",
-            url=published_url or settings.demo_publish_url,
-            status_code=result.status_code,
-            response_body=result.body,
-            metadata={"ok": result.ok},
-        )
-        if not result.ok:
-            raise HTTPException(status_code=result.status_code or 502, detail=result.body)
-        return {"ok": True, "status_code": result.status_code, "url": published_url, "publish_url": settings.demo_publish_url}
+        if not payload["ok"]:
+            raise HTTPException(status_code=payload["status_code"] or 502, detail=payload["error"] or payload["response_body"])
+        return payload
 
     return app
 
@@ -579,18 +573,32 @@ def maybe_publish(repo: Repository, settings: Settings, feature: str) -> dict:
             "publish_url": settings.demo_publish_url,
             "reason": "publish credentials not configured",
         }
-    result = DemoPublisher(settings.demo_publish_url, settings.demo_api_key).publish(
-        title="Signal Track 投资信号看板",
-        html=render_dashboard(repo),
-        feature=feature,
-    )
-    payload = publish_payload(result, settings.demo_publish_url)
+    return record_dashboard_publish(repo, settings.demo_publish_url, settings.demo_api_key, feature=feature)
+
+
+def record_dashboard_publish(repo: Repository, publish_url: str, api_key: str, feature: str) -> dict:
+    try:
+        result = DemoPublisher(publish_url, api_key).publish(
+            title="Signal Track 投资信号看板",
+            html=render_dashboard(repo),
+            feature=feature,
+        )
+    except Exception as exc:
+        result = PublishResult(False, None, str(exc))
+        exception_type = type(exc).__name__
+    else:
+        exception_type = None
+
+    payload = publish_payload(result, publish_url)
+    metadata = {"ok": payload["ok"], "feature": feature}
+    if exception_type:
+        metadata["exception_type"] = exception_type
     repo.record_publish_event(
         title="Signal Track 投资信号看板",
-        url=payload["url"] or settings.demo_publish_url,
-        status_code=result.status_code,
-        response_body=result.body,
-        metadata={"ok": result.ok, "feature": feature},
+        url=payload["url"] or publish_url,
+        status_code=payload["status_code"],
+        response_body=payload["response_body"],
+        metadata=metadata,
     )
     return payload
 
