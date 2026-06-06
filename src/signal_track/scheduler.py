@@ -38,6 +38,23 @@ def build_scheduler(
     return ScheduledJobs(scheduler=scheduler)
 
 
+def scheduler_job_summaries(scheduler: object) -> list[dict[str, str | None]]:
+    get_jobs = getattr(scheduler, "get_jobs", None)
+    if not callable(get_jobs):
+        return []
+    summaries = []
+    for job in get_jobs():
+        next_run_time = getattr(job, "next_run_time", None)
+        summaries.append(
+            {
+                "id": str(getattr(job, "id", "")),
+                "trigger": str(getattr(job, "trigger", "")),
+                "next_run_time": next_run_time.isoformat() if next_run_time else None,
+            }
+        )
+    return summaries
+
+
 def execute_daily_check(
     repo: Repository,
     provider: MarketDataProvider | None = None,

@@ -51,7 +51,7 @@ except Exception:
     TestClient = None
     create_app = None
 
-from signal_track.scheduler import build_scheduler, execute_daily_check
+from signal_track.scheduler import build_scheduler, execute_daily_check, scheduler_job_summaries
 
 
 def next_fixture_trading_day(current: date) -> date:
@@ -1784,6 +1784,26 @@ class SignalTrackCoreTests(unittest.TestCase):
 
         job_ids = {job.id for job in scheduled.scheduler.get_jobs()}
         self.assertEqual(job_ids, {"asia_evening_daily_check", "us_morning_daily_check"})
+        summaries = scheduler_job_summaries(scheduled.scheduler)
+        self.assertEqual({summary["id"] for summary in summaries}, job_ids)
+        self.assertTrue(any("19" in summary["trigger"] for summary in summaries))
+        self.assertTrue(any("7" in summary["trigger"] for summary in summaries))
+
+    def test_scheduler_job_summaries_handles_scheduler_like_objects(self) -> None:
+        fake_time = types.SimpleNamespace(isoformat=lambda: "2026-06-06T19:00:00+08:00")
+        fake_scheduler = types.SimpleNamespace(
+            get_jobs=lambda: [
+                types.SimpleNamespace(id="asia_evening_daily_check", trigger="cron[hour='19', minute='0']", next_run_time=fake_time),
+                types.SimpleNamespace(id="us_morning_daily_check", trigger="cron[hour='7', minute='0']", next_run_time=None),
+            ]
+        )
+
+        summaries = scheduler_job_summaries(fake_scheduler)
+
+        self.assertEqual(summaries[0]["id"], "asia_evening_daily_check")
+        self.assertEqual(summaries[0]["next_run_time"], "2026-06-06T19:00:00+08:00")
+        self.assertEqual(summaries[1]["id"], "us_morning_daily_check")
+        self.assertIsNone(summaries[1]["next_run_time"])
 
     def test_cli_ingest_auto_publishes_when_configured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2976,6 +2996,8 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["degraded_reasons"], [])
         self.assertTrue(payload["database"]["ok"])
+        self.assertFalse(payload["scheduler_enabled"])
+        self.assertEqual(payload["scheduler_jobs"], [])
         self.assertEqual(payload["projects"]["total"], 1)
         self.assertEqual(payload["projects"]["needs_review"], 1)
         self.assertEqual(payload["latest_check"]["check_date"], check_date)

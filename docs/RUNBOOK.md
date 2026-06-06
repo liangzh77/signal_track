@@ -64,6 +64,10 @@ given project/date; the later run updates the same daily check row when needed.
 python scripts/healthcheck.py http://127.0.0.1:8765/health
 ```
 
+When the in-process scheduler is enabled, `/health` includes `scheduler_jobs`.
+Verify that `asia_evening_daily_check` and `us_morning_daily_check` are both
+present before relying on the backend scheduler instead of the systemd timer.
+
 Expected shape:
 
 ```json

@@ -68,7 +68,9 @@ backend process. The built-in scheduler runs at 19:00 Asia/Shanghai for A shares
 Hong Kong, and China futures, plus 07:00 Asia/Shanghai as a US-market catch-up
 pass. `SIGNAL_TRACK_DAILY_PROVIDER` controls the provider used by those jobs and
 defaults to `auto`; set it to `none` only when you want checks to evaluate
-already-stored prices without refreshing market data.
+already-stored prices without refreshing market data. `/health` includes
+`scheduler_jobs` so deployments can verify that the 19:00 and 07:00 jobs are
+registered.
 
 Useful endpoints:
 

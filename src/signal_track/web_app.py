@@ -23,7 +23,7 @@ from .project_summary import project_summaries, project_summary
 from .publisher import DemoPublisher, extract_published_address, publish_payload
 from .providers.factory import build_market_data_provider
 from .resolver import InstrumentResolver, SEED_INSTRUMENTS
-from .scheduler import build_scheduler
+from .scheduler import build_scheduler, scheduler_job_summaries
 from .signals import SignalIngestor
 from .source_detection import remove_source_marker_lines, resolve_source_name
 
@@ -116,7 +116,8 @@ def create_app():
 
     @app.get("/health")
     def health():
-        return health_payload(repo, scheduler_enabled=settings.enable_scheduler)
+        scheduler_jobs = scheduler_job_summaries(scheduled_jobs.scheduler) if scheduled_jobs else []
+        return health_payload(repo, scheduler_enabled=settings.enable_scheduler, scheduler_jobs=scheduler_jobs)
 
     @app.get("/api/market-data/coverage")
     def market_coverage(provider: str = "auto"):
@@ -525,7 +526,11 @@ def maybe_publish(repo: Repository, settings: Settings, feature: str) -> dict:
     return payload
 
 
-def health_payload(repo: Repository, scheduler_enabled: bool = False) -> dict:
+def health_payload(
+    repo: Repository,
+    scheduler_enabled: bool = False,
+    scheduler_jobs: list[dict[str, str | None]] | None = None,
+) -> dict:
     try:
         projects = repo.list_project_rows()
         checks = repo.list_daily_checks(limit=1)
@@ -535,6 +540,7 @@ def health_payload(repo: Repository, scheduler_enabled: bool = False) -> dict:
             "ok": False,
             "database": {"ok": False, "error": str(exc)},
             "scheduler_enabled": scheduler_enabled,
+            "scheduler_jobs": scheduler_jobs or [],
         }
 
     active = sum(1 for row in projects if row["status"] in {"active", "needs_review"})
@@ -550,6 +556,7 @@ def health_payload(repo: Repository, scheduler_enabled: bool = False) -> dict:
         "ok": not degraded_reasons,
         "database": {"ok": True},
         "scheduler_enabled": scheduler_enabled,
+        "scheduler_jobs": scheduler_jobs or [],
         "degraded_reasons": degraded_reasons,
         "projects": {
             "total": len(projects),
