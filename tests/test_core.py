@@ -2834,6 +2834,9 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(input_detail["projects"][0]["title"], projects[0]["title"])
             self.assertEqual(client.get("/api/inputs/999999").status_code, 404)
             project_detail = client.get(f"/api/projects/{projects[0]['id']}").json()
+            self.assertEqual(project_detail["source_input"]["id"], inputs[0]["id"])
+            self.assertIn("00700.HK 做多", project_detail["source_input"]["content"])
+            self.assertEqual(project_detail["source_input"]["project_ids"], [projects[0]["id"]])
             self.assertEqual(project_detail["research_items"][0]["item_type"], "verification_note")
             item_id = project_detail["research_items"][0]["id"]
             listed_items = client.get("/api/research-items", params={"project_id": projects[0]["id"]}).json()
