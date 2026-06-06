@@ -127,6 +127,13 @@ class SignalIngestor:
             if signal.observation_logic:
                 source_logic = f"{source_logic}\n\n观察逻辑：{signal.observation_logic}"
 
+            if is_extracted_close_action(signal, source_logic, original_content) and resolutions:
+                closed_project_ids = self._close_existing_projects(raw_input_id, source_logic, resolutions, logic_score)
+                if closed_project_ids:
+                    project_ids.extend(closed_project_ids)
+                    resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
+                    continue
+
             if not resolutions:
                 project_id = self.repo.create_tracking_project(
                     title="未识别标的跟踪项目",
@@ -512,6 +519,13 @@ def detect_direction(content: str) -> Direction:
 def is_close_action(content: str) -> bool:
     lowered = content.lower()
     return any(word in lowered for word in EXIT_WORDS)
+
+
+def is_extracted_close_action(signal: ExtractedSignal, source_logic: str, original_content: str) -> bool:
+    action = (signal.action or "").strip().lower()
+    if action == "close":
+        return True
+    return is_close_action(source_logic) or is_close_action(original_content)
 
 
 def score_tracking_logic(content: str) -> float:

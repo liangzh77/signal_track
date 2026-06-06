@@ -11,6 +11,7 @@ class ExtractedSignal:
     source_logic: str
     observation_logic: str
     logic_score: float
+    action: str = "open"
     is_portfolio: bool = False
     weights: dict[str, float] = field(default_factory=dict)
 
@@ -38,6 +39,7 @@ SIGNAL_EXTRACTION_SCHEMA = {
                 "additionalProperties": False,
                 "required": [
                     "instruments",
+                    "action",
                     "direction",
                     "source_logic",
                     "observation_logic",
@@ -47,6 +49,7 @@ SIGNAL_EXTRACTION_SCHEMA = {
                 ],
                 "properties": {
                     "instruments": {"type": "array", "items": {"type": "string"}},
+                    "action": {"type": "string", "enum": ["open", "close", "none"]},
                     "direction": {"type": "string", "enum": ["long", "short", "neutral"]},
                     "source_logic": {"type": "string"},
                     "observation_logic": {"type": "string"},
@@ -76,6 +79,7 @@ class OpenAISignalExtractor:
         prompt = (
             "你是投资信号抽取器。请从用户提供的中文/英文投资信息中抽取可跟踪信号。"
             "如果逻辑不足，也要创建信号，并把 logic_score 设低。"
+            "如果原文是平仓、止盈、止损、退出已有标的，action=close；如果是开仓/做多/做空/观察，action=open。"
             "如果多个标的是一个明确组合，is_portfolio=true；否则拆成多个信号。"
             "weights 只在原文给出权重时填写，不能编造。"
             "source_logic 必须忠实于原文，observation_logic 必须忠实于原文，不要在这里补充研究逻辑。"
@@ -113,6 +117,7 @@ def extracted_input_from_dict(data: dict) -> ExtractedInput:
         signals=[
             ExtractedSignal(
                 instruments=[str(item) for item in signal.get("instruments", [])],
+                action=str(signal.get("action") or "open"),
                 direction=str(signal.get("direction") or "neutral"),
                 source_logic=str(signal.get("source_logic") or ""),
                 observation_logic=str(signal.get("observation_logic") or ""),
@@ -123,4 +128,3 @@ def extracted_input_from_dict(data: dict) -> ExtractedInput:
             for signal in data.get("signals", [])
         ],
     )
-

@@ -583,6 +583,55 @@ class SignalTrackCoreTests(unittest.TestCase):
             logic = repo.list_logic_blocks(opened.project_ids[0])
             self.assertTrue(any(block["logic_type"] == "close_logic" for block in logic))
 
+    def test_structured_close_signal_updates_existing_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+            opened = ingestor.ingest(
+                "测试源",
+                "腾讯 做多，观察广告和游戏恢复。",
+                extraction=ExtractedInput(
+                    signals=[
+                        ExtractedSignal(
+                            instruments=["腾讯"],
+                            direction="long",
+                            source_logic="腾讯 做多，观察广告和游戏恢复。",
+                            observation_logic="观察广告和游戏恢复。",
+                            logic_score=7,
+                            action="open",
+                        )
+                    ],
+                ),
+            )
+
+            closed = ingestor.ingest(
+                "测试源",
+                "腾讯 平仓，广告低于预期。",
+                extraction=ExtractedInput(
+                    signals=[
+                        ExtractedSignal(
+                            instruments=["腾讯"],
+                            direction="neutral",
+                            source_logic="腾讯 平仓，广告低于预期。",
+                            observation_logic="",
+                            logic_score=6,
+                            action="close",
+                        )
+                    ],
+                ),
+            )
+
+            self.assertEqual(closed.project_ids, opened.project_ids)
+            rows = repo.list_project_rows()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["status"], "closed")
+            logic = repo.list_logic_blocks(opened.project_ids[0])
+            self.assertTrue(any(block["logic_type"] == "close_logic" for block in logic))
+
     def test_closed_project_prices_refresh_during_post_close_window(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")

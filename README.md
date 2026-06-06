@@ -280,10 +280,11 @@ python -m signal_track.cli ingest --extractor openai --source 信息源A --text 
 ```
 
 The OpenAI path uses Structured Outputs with a JSON Schema so the system can receive
-multiple signals, portfolio flags, directions, weights, source logic, observation
-logic, and logic scores in a predictable shape. When the raw source logic is weak,
-Signal Track still creates the tracking project and stores a system-supplemented
-3C-5M-3D-3T logic block.
+multiple signals, open/close actions, portfolio flags, directions, weights,
+source logic, observation logic, and logic scores in a predictable shape. Close
+actions update matching active projects instead of creating duplicate tracking
+items. When the raw source logic is weak, Signal Track still creates the tracking
+project and stores a system-supplemented 3C-5M-3D-3T logic block.
 
 When `OPENAI_API_KEY` is configured, weak-logic projects also get a structured
 tracking supplement with concrete metrics, exit/review conditions, and data
