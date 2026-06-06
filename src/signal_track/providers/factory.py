@@ -19,9 +19,15 @@ def build_market_data_provider(name: str, settings: Settings) -> MarketDataProvi
     if name == "tushare":
         if not settings.tushare_token:
             raise ValueError("TUSHARE_TOKEN is required for the tushare provider")
-        return TushareMarketDataProvider(settings.tushare_token)
+        try:
+            return TushareMarketDataProvider(settings.tushare_token)
+        except RuntimeError as exc:
+            raise ValueError(str(exc)) from exc
     if name == "yfinance":
-        return YFinanceMarketDataProvider()
+        try:
+            return YFinanceMarketDataProvider()
+        except RuntimeError as exc:
+            raise ValueError(str(exc)) from exc
     raise ValueError(f"Unknown market data provider: {name}")
 
 
@@ -30,9 +36,13 @@ def build_auto_provider(settings: Settings) -> AutoMarketDataProvider:
     errors: list[str] = []
 
     if settings.tushare_token:
-        tushare = TushareMarketDataProvider(settings.tushare_token)
-        for market in (Market.CN_A, Market.HK, Market.CN_FUT, Market.US):
-            routes[market] = tushare
+        try:
+            tushare = TushareMarketDataProvider(settings.tushare_token)
+        except RuntimeError as exc:
+            errors.append(str(exc))
+        else:
+            for market in (Market.CN_A, Market.HK, Market.CN_FUT, Market.US):
+                routes[market] = tushare
 
     try:
         yfinance = YFinanceMarketDataProvider()

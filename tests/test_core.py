@@ -32,6 +32,7 @@ from signal_track.publisher import PublishResult
 from signal_track.providers.auto import AutoMarketDataProvider
 from signal_track.providers.base import MarketDataProvider
 from signal_track.providers.factory import build_auto_provider
+from signal_track.providers.factory import build_market_data_provider
 from signal_track.providers.fixture import FixtureMarketDataProvider
 from signal_track.providers.yfinance_provider import get_price_field
 from signal_track.project_actions import ProjectActionError, update_tracking_project_weights
@@ -413,6 +414,50 @@ class SignalTrackCoreTests(unittest.TestCase):
 
         self.assertEqual(tushare_provider.calls, ["00700.HK"])
         self.assertEqual(yfinance_provider.calls, ["HSI", "NQ"])
+
+    def test_auto_provider_falls_back_when_tushare_dependency_missing(self) -> None:
+        yfinance_provider = RecordingMarketDataProvider("yfinance")
+        settings = Settings(
+            db_path=Path(":memory:"),
+            tushare_token="token",
+            demo_publish_url=None,
+            demo_api_key=None,
+            enable_scheduler=False,
+            daily_provider="auto",
+            openai_api_key=None,
+            openai_model="model",
+            signal_track_api_key=None,
+        )
+
+        with patch("signal_track.providers.factory.TushareMarketDataProvider", side_effect=RuntimeError("missing tushare")):
+            with patch("signal_track.providers.factory.YFinanceMarketDataProvider", return_value=yfinance_provider):
+                provider = build_auto_provider(settings)
+
+        provider.get_daily_bars(SEED_INSTRUMENTS[2], date(2026, 6, 1), date(2026, 6, 5))
+        provider.get_daily_bars(next(item for item in SEED_INSTRUMENTS if item.symbol == "NQ"), date(2026, 6, 1), date(2026, 6, 5))
+        self.assertEqual(yfinance_provider.calls, ["00700.HK", "NQ"])
+        with self.assertRaisesRegex(ValueError, "CN_A"):
+            provider.get_daily_bars(SEED_INSTRUMENTS[0], date(2026, 6, 1), date(2026, 6, 5))
+
+    def test_provider_factory_wraps_dependency_errors_as_value_errors(self) -> None:
+        settings = Settings(
+            db_path=Path(":memory:"),
+            tushare_token="token",
+            demo_publish_url=None,
+            demo_api_key=None,
+            enable_scheduler=False,
+            daily_provider="auto",
+            openai_api_key=None,
+            openai_model="model",
+            signal_track_api_key=None,
+        )
+
+        with patch("signal_track.providers.factory.TushareMarketDataProvider", side_effect=RuntimeError("missing tushare")):
+            with self.assertRaisesRegex(ValueError, "missing tushare"):
+                build_market_data_provider("tushare", settings)
+        with patch("signal_track.providers.factory.YFinanceMarketDataProvider", side_effect=RuntimeError("missing yfinance")):
+            with self.assertRaisesRegex(ValueError, "missing yfinance"):
+                build_market_data_provider("yfinance", settings)
 
     def test_yfinance_price_field_handles_multiindex_shapes(self) -> None:
         normal_row = {"Close": 101.5}
