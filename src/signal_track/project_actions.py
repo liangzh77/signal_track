@@ -101,6 +101,14 @@ def update_tracking_project_weights(
 
     normalized = normalize_weight_values(matched)
     repo.update_project_leg_weights(project_id, normalized)
+    refreshed = repo.get_project_row(project_id)
+    if (
+        refreshed
+        and refreshed["status"] == "needs_review"
+        and not bool(refreshed["needs_review"])
+        and not bool(refreshed["weight_needs_review"])
+    ):
+        repo.update_project_status(project_id, "active", needs_review=False)
     repo.add_logic_block(
         project_id,
         "weight_update",

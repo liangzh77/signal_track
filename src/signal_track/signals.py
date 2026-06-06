@@ -661,12 +661,13 @@ class SignalIngestor:
         weights_complete = has_complete_weights(weights, resolutions)
         effective_weights = normalize_weights(weights) if weights_complete else {}
         weight_needs_review = not weights_complete
+        review_required = needs_review or weight_needs_review
         title = "组合跟踪：" + " / ".join(resolution.instrument.name for resolution in resolutions)
         project_id = self.repo.create_tracking_project(
             title=title,
             source_id=source_id,
             raw_input_id=raw_input_id,
-            status=(ProjectStatus.NEEDS_REVIEW if needs_review else ProjectStatus.ACTIVE).value,
+            status=(ProjectStatus.NEEDS_REVIEW if review_required else ProjectStatus.ACTIVE).value,
             direction=direction.value,
             entry_date=date.today().isoformat(),
             logic_score=logic_score,
@@ -679,7 +680,7 @@ class SignalIngestor:
             weight = resolve_weight_for_instrument(effective_weights, resolution.instrument, default_weight)
             self.repo.add_project_leg(project_id, instrument_id, direction.value, weight)
         self.repo.add_logic_block(project_id, "source_logic", summarize_source_logic(content), logic_score / 10, [content[:240]])
-        if needs_review or weight_needs_review:
+        if review_required:
             self._add_system_logic_block(
                 project_id,
                 title,
@@ -889,6 +890,23 @@ def extract_probe_terms(content: str) -> list[str]:
 def should_probe_term(term: str) -> bool:
     cn_future_exchange_suffixes = {"SHF", "DCE", "CZC", "CFX", "INE", "GFE"}
     if term.upper() in cn_future_exchange_suffixes:
+        return False
+    financial_metric_terms = {
+        "PE",
+        "PB",
+        "PS",
+        "PEG",
+        "ROE",
+        "ROA",
+        "ROIC",
+        "OPM",
+        "TAM",
+        "EPS",
+        "FCF",
+        "EBIT",
+        "EBITDA",
+    }
+    if term.upper() in financial_metric_terms:
         return False
     if re.search(r"[\u4e00-\u9fff]", term):
         return True

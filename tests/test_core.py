@@ -1492,6 +1492,43 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("待复核 1", html)
             self.assertIn("<td>是</td>", html)
 
+    def test_missing_portfolio_weights_mark_status_review_until_confirmed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+
+            strong_logic = (
+                "portfolio long: 300750.SZ and 600519.SH. Watch PE, PB, ROE, order recovery, "
+                "margin trend, cash flow quality, valuation sentiment, policy changes, channel inventory, "
+                "and exit if the original thesis is contradicted by verified data. Continue tracking revenue, "
+                "profit margin, market share, management execution, free cash flow, leverage, and price behavior "
+                "against the opening thesis across short, medium, and long-term checkpoints."
+            )
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                source_name="Portfolio Desk",
+                content=strong_logic,
+                as_portfolio=True,
+            )
+
+            project = repo.get_project_row(result.project_ids[0])
+            self.assertGreaterEqual(project["logic_score"], 6)
+            self.assertFalse(bool(project["needs_review"]))
+            self.assertTrue(bool(project["weight_needs_review"]))
+            self.assertEqual(project["status"], "needs_review")
+
+            update_tracking_project_weights(
+                repo,
+                result.project_ids[0],
+                {"300750.SZ": 60, "600519.SH": 40},
+            )
+            updated = repo.get_project_row(result.project_ids[0])
+            self.assertFalse(bool(updated["weight_needs_review"]))
+            self.assertFalse(bool(updated["needs_review"]))
+            self.assertEqual(updated["status"], "active")
+
     def test_portfolio_does_not_treat_return_percentages_as_weights(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
@@ -1875,6 +1912,13 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertNotIn("CFX", terms)
         self.assertIsNone(resolver.resolve("SHF"))
         self.assertIsNone(resolver.resolve("CFX"))
+
+    def test_extract_probe_terms_ignores_financial_metric_acronyms(self) -> None:
+        terms = extract_probe_terms("Watch PE, PB, ROE, TAM, FCF, EBITDA and margin trend for 300750.SZ.")
+
+        self.assertIn("300750.SZ", terms)
+        for metric in ["PE", "PB", "ROE", "TAM", "FCF", "EBITDA"]:
+            self.assertNotIn(metric, terms)
 
     def test_heuristic_china_future_contract_code_creates_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
