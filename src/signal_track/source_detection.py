@@ -7,7 +7,7 @@ from .extraction import ExtractedInput
 
 
 MISSING_SOURCE_NAMES = {"", "manual", "unknown", "none", "null", "未提供", "未知", "手动"}
-SOURCE_MARKER_RE = re.compile(r"\s*(?:信息源|来源|source)\s*[:：]\s*(?P<source>.+?)\s*$", flags=re.I)
+SOURCE_MARKER_RE = re.compile(r"\s*(?:信息来源|信息源|信号源|消息源|来源|source)\s*[:：]\s*(?P<source>.+?)\s*$", flags=re.I)
 INLINE_SOURCE_SEPARATORS = ("；", ";", "｜", "|", "，", ",")
 
 

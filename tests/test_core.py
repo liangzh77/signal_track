@@ -990,6 +990,9 @@ class SignalTrackCoreTests(unittest.TestCase):
     def test_source_name_can_be_inferred_from_content_marker(self) -> None:
         self.assertEqual(resolve_source_name(None, "信息源：Alpha Desk\n00700.HK 做多"), "Alpha Desk")
         self.assertEqual(resolve_source_name("manual", "来源：Beta\nAAPL 做空"), "Beta")
+        self.assertEqual(resolve_source_name(None, "信息来源：Gamma Desk\n00700.HK 做多"), "Gamma Desk")
+        self.assertEqual(resolve_source_name(None, "信号源：Delta Desk\n00700.HK 做多"), "Delta Desk")
+        self.assertEqual(resolve_source_name(None, "消息源：Echo Desk\n00700.HK 做多"), "Echo Desk")
         self.assertIsNone(resolve_source_name("manual", "00700.HK 做多"))
 
     def test_inline_source_marker_preserves_body_after_separator(self) -> None:
