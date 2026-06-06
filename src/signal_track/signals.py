@@ -98,21 +98,16 @@ class SignalIngestor:
         if updated_project_ids:
             new_project_ids: list[int] = []
             if not as_portfolio and has_tracking_intent(content, direction, as_portfolio):
-                updated_symbols = self._project_leg_symbols(updated_project_ids)
-                for resolution in resolutions:
-                    if resolution.instrument.symbol in updated_symbols:
-                        continue
-                    new_project_ids.append(
-                        self._create_single_project(
-                            source_id,
-                            raw_input_id,
-                            content,
-                            resolution,
-                            direction,
-                            logic_score,
-                            needs_review,
-                        )
-                    )
+                new_project_ids = self._create_missing_single_projects(
+                    source_id,
+                    raw_input_id,
+                    content,
+                    resolutions,
+                    direction,
+                    logic_score,
+                    needs_review,
+                    updated_project_ids,
+                )
             return self._result(
                 raw_input_id=raw_input_id,
                 project_ids=sorted(set(updated_project_ids + new_project_ids)),
@@ -285,9 +280,21 @@ class SignalIngestor:
                     logic_score,
                 )
                 if updated_project_ids:
+                    new_project_ids = self._create_missing_single_projects(
+                        source_id,
+                        raw_input_id,
+                        source_logic,
+                        resolutions,
+                        direction,
+                        logic_score,
+                        needs_review,
+                        updated_project_ids,
+                    )
                     project_ids.extend(updated_project_ids)
+                    project_ids.extend(new_project_ids)
                     resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
-                    input_actions.append("update")
+                    system_logic_added = system_logic_added or bool(new_project_ids and needs_review)
+                    input_actions.append("mixed" if new_project_ids else "update")
                     continue
 
             resolved_unresolved_ids = self._resolve_unresolved_project(
@@ -442,6 +449,35 @@ class SignalIngestor:
                 )
                 updated_ids.append(project_id)
         return sorted(set(updated_ids))
+
+    def _create_missing_single_projects(
+        self,
+        source_id: int,
+        raw_input_id: int,
+        content: str,
+        resolutions,
+        direction: Direction,
+        logic_score: float,
+        needs_review: bool,
+        existing_project_ids: list[int],
+    ) -> list[int]:
+        updated_symbols = self._project_leg_symbols(existing_project_ids)
+        project_ids: list[int] = []
+        for resolution in resolutions:
+            if resolution.instrument.symbol in updated_symbols:
+                continue
+            project_ids.append(
+                self._create_single_project(
+                    source_id,
+                    raw_input_id,
+                    content,
+                    resolution,
+                    direction,
+                    logic_score,
+                    needs_review,
+                )
+            )
+        return project_ids
 
     def _project_leg_symbols(self, project_ids: list[int]) -> set[str]:
         symbols: set[str] = set()

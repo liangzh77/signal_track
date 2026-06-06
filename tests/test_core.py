@@ -1934,6 +1934,47 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(rows[0]["symbols"], "NVDA")
             self.assertEqual(rows[0]["status"], "active")
 
+    def test_structured_partial_overlap_signal_updates_and_creates_projects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+
+            existing = ingestor.ingest(
+                "Structured Desk",
+                "300750.SZ long, watch battery margin.",
+            )
+            mixed = ingestor.ingest(
+                "Structured Desk",
+                "raw structured note",
+                extraction=ExtractedInput(
+                    signals=[
+                        ExtractedSignal(
+                            instruments=["300750.SZ", "600519.SH"],
+                            direction="long",
+                            source_logic="300750.SZ update and 600519.SH new long, track margin and demand.",
+                            observation_logic="Exit if margin or demand breaks.",
+                            logic_score=7,
+                        )
+                    ],
+                ),
+            )
+
+            rows = repo.list_project_rows()
+            self.assertEqual(mixed.input_action, "mixed")
+            self.assertEqual(len(mixed.project_ids), 2)
+            self.assertIn(existing.project_ids[0], mixed.project_ids)
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(mixed.resolved_symbols, ["300750.SZ", "600519.SH"])
+            new_project_id = next(project_id for project_id in mixed.project_ids if project_id != existing.project_ids[0])
+            new_legs = repo.list_project_legs(new_project_id)
+            self.assertEqual([leg["symbol"] for leg in new_legs], ["600519.SH"])
+            existing_logic_types = [block["logic_type"] for block in repo.list_logic_blocks(existing.project_ids[0])]
+            self.assertIn("source_update", existing_logic_types)
+
     def test_heuristic_open_note_with_exit_condition_creates_tracking_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
