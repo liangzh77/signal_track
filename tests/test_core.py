@@ -16,7 +16,7 @@ from signal_track.cli import refresh_markets as cli_refresh_markets
 from signal_track.cli import main as cli_main
 from signal_track.cli import run_self_check
 from signal_track.dashboard import render_dashboard
-from signal_track.analytics import project_performance
+from signal_track.analytics import LegPerformance, combine_weighted_points, project_performance
 from signal_track.daily_evaluator import DailyEvaluation, DailyLogicEvaluator
 from signal_track.exit_signals import exit_signal_summaries
 from signal_track.extraction import ExtractedInput, ExtractedSignal
@@ -672,6 +672,43 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("300750.SZ 价格曲线", html)
             self.assertIn("600519.SH 价格曲线", html)
             self.assertNotIn("300750.SZ 收益曲线", html)
+
+    def test_portfolio_curve_carries_forward_missing_leg_dates(self) -> None:
+        leg_a = LegPerformance(
+            leg_id=1,
+            symbol="A",
+            name="A",
+            direction="long",
+            weight=0.6,
+            entry_date=None,
+            entry_price=None,
+            latest_date=None,
+            latest_price=None,
+            return_pct=None,
+            points=[("2026-06-01", 0.0), ("2026-06-02", 0.1), ("2026-06-03", 0.2)],
+            price_points=[],
+        )
+        leg_b = LegPerformance(
+            leg_id=2,
+            symbol="B",
+            name="B",
+            direction="long",
+            weight=0.4,
+            entry_date=None,
+            entry_price=None,
+            latest_date=None,
+            latest_price=None,
+            return_pct=None,
+            points=[("2026-06-01", 0.0), ("2026-06-03", -0.1)],
+            price_points=[],
+        )
+
+        points = combine_weighted_points([leg_a, leg_b])
+
+        self.assertEqual(points[0], ("2026-06-01", 0.0))
+        self.assertAlmostEqual(points[1][1], 0.06)
+        self.assertEqual(points[1][0], "2026-06-02")
+        self.assertAlmostEqual(points[2][1], 0.08)
 
     def test_heuristic_portfolio_weight_parsing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

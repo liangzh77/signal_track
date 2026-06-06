@@ -132,14 +132,31 @@ def directed_return(price: float, entry_price: float, direction: str) -> float:
 
 
 def combine_weighted_points(legs: list[LegPerformance]) -> list[tuple[str, float]]:
-    by_date: dict[str, float] = {}
-    weights_by_date: dict[str, float] = {}
-    for leg in legs:
-        for point_date, value in leg.points:
-            by_date[point_date] = by_date.get(point_date, 0) + value * leg.weight
-            weights_by_date[point_date] = weights_by_date.get(point_date, 0) + leg.weight
-    return [
-        (point_date, by_date[point_date])
-        for point_date in sorted(by_date)
-        if weights_by_date.get(point_date, 0) > 0
-    ]
+    if not legs:
+        return []
+    all_dates = sorted({point_date for leg in legs for point_date, _ in leg.points})
+    latest_by_leg: dict[int, float] = {}
+    values_by_leg = {
+        leg.leg_id: {point_date: value for point_date, value in leg.points}
+        for leg in legs
+    }
+    points: list[tuple[str, float]] = []
+    total_weight = sum(leg.weight for leg in legs)
+    if total_weight <= 0:
+        return []
+
+    weights_by_leg = {leg.leg_id: leg.weight / total_weight for leg in legs}
+    for point_date in all_dates:
+        for leg in legs:
+            leg_value = values_by_leg[leg.leg_id].get(point_date)
+            if leg_value is not None:
+                latest_by_leg[leg.leg_id] = leg_value
+        if len(latest_by_leg) != len(legs):
+            continue
+        points.append(
+            (
+                point_date,
+                sum(latest_by_leg[leg.leg_id] * weights_by_leg[leg.leg_id] for leg in legs),
+            )
+        )
+    return points
