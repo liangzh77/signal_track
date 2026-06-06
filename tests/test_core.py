@@ -1067,6 +1067,46 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(repo.list_project_rows(), [])
             self.assertEqual(len(repo.list_raw_inputs()), 1)
 
+    def test_structured_open_signal_is_not_closed_by_other_signal_text(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                "Mixed Source",
+                "00700.HK open long, watch ads recovery. NVDA close, order signal failed.",
+                extraction=ExtractedInput(
+                    signals=[
+                        ExtractedSignal(
+                            instruments=["00700.HK"],
+                            direction="long",
+                            source_logic="00700.HK open long, watch ads recovery.",
+                            observation_logic="watch ads recovery",
+                            logic_score=7,
+                            action="open",
+                        ),
+                        ExtractedSignal(
+                            instruments=["NVDA"],
+                            direction="neutral",
+                            source_logic="NVDA close, order signal failed.",
+                            observation_logic="",
+                            logic_score=7,
+                            action="close",
+                        ),
+                    ],
+                ),
+            )
+
+            self.assertEqual(result.project_ids, [1])
+            self.assertEqual(result.resolved_symbols, ["00700.HK", "NVDA"])
+            rows = repo.list_project_rows()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["symbols"], "00700.HK")
+            self.assertEqual(rows[0]["direction"], "long")
+
     def test_structured_none_action_does_not_create_tracking_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")

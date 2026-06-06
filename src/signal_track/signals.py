@@ -680,6 +680,8 @@ def is_extracted_close_action(signal: ExtractedSignal, source_logic: str, origin
     action = (signal.action or "").strip().lower()
     if action == "close":
         return True
+    if action in {"open", "none"}:
+        return False
     return is_close_action(source_logic) or is_close_action(original_content)
 
 

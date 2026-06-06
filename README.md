@@ -331,8 +331,11 @@ The OpenAI path uses Structured Outputs with a JSON Schema so the system can rec
 multiple signals, open/close actions, portfolio flags, directions, weights,
 source logic, observation logic, and logic scores in a predictable shape. Close
 actions update matching active projects instead of creating duplicate tracking
-items. When the raw source logic is weak, Signal Track still creates the tracking
-project and stores a system-supplemented 3C-5M-3D-3T logic block.
+items. In mixed notes, each structured signal's own `action` is handled
+independently, so a close signal for one symbol does not turn other open signals
+in the same input into closes. When the raw source logic is weak, Signal Track
+still creates the tracking project and stores a system-supplemented 3C-5M-3D-3T
+logic block.
 
 When `OPENAI_API_KEY` is configured, weak-logic projects also get a structured
 tracking supplement with concrete metrics, exit/review conditions, and data
