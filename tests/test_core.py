@@ -1844,7 +1844,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             with patch.dict("os.environ", env, clear=False):
                 with redirect_stdout(StringIO()):
                     cli_main(["ingest", "--source", "CLI Desk A", "--text", "00700.HK long, watch ads recovery."])
-                    cli_main(["ingest", "--source", "CLI Desk B", "--text", "NVDA long, watch orders."])
+                    cli_main(["ingest", "--source", "CLI Desk B", "--text", "NVDA short, watch orders."])
                     cli_main([
                         "check",
                         "--provider",
@@ -1855,8 +1855,12 @@ class SignalTrackCoreTests(unittest.TestCase):
                 output = StringIO()
                 with redirect_stdout(output):
                     code = cli_main(["list-projects", "--source", "CLI Desk A", "--status", "needs_review"])
+                short_output = StringIO()
+                with redirect_stdout(short_output):
+                    short_code = cli_main(["list-projects", "--direction", "short"])
 
         payload = json.loads(output.getvalue())
+        short_payload = json.loads(short_output.getvalue())
         self.assertEqual(code, 0)
         self.assertEqual(len(payload["projects"]), 1)
         project = payload["projects"][0]
@@ -1867,6 +1871,10 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(project["performance"]["legs"][0]["symbol"], "00700.HK")
         self.assertEqual(project["latest_check"]["conclusion"], "watch")
         self.assertEqual(project["next_action"], "review_logic")
+        self.assertEqual(short_code, 0)
+        self.assertEqual(len(short_payload["projects"]), 1)
+        self.assertEqual(short_payload["projects"][0]["source_name"], "CLI Desk B")
+        self.assertEqual(short_payload["projects"][0]["direction"], "short")
 
     def test_cli_ingest_auto_extractor_uses_openai_when_configured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2363,12 +2371,15 @@ class SignalTrackCoreTests(unittest.TestCase):
             with patch.dict("os.environ", env, clear=False):
                 client = TestClient(create_app())
                 client.post("/api/inputs", json={"source": "Desk A", "content": "00700.HK long, watch ads recovery."})
-                client.post("/api/inputs", json={"source": "Desk B", "content": "NVDA long, watch orders."})
+                client.post("/api/inputs", json={"source": "Desk B", "content": "NVDA short, watch orders."})
                 check_date = next_fixture_trading_day(date.today()).isoformat()
                 checked = client.post("/api/checks/run", json={"provider": "fixture", "date": check_date})
                 projects = client.get("/api/projects").json()
                 desk_a = client.get("/api/projects", params={"source": "Desk A"}).json()
                 active = client.get("/api/projects", params={"status": "needs_review"}).json()
+                long_projects = client.get("/api/projects", params={"direction": "long"}).json()
+                short_projects = client.get("/api/projects", params={"direction": "short"}).json()
+                invalid_direction = client.get("/api/projects", params={"direction": "sideways"})
 
         self.assertEqual(checked.status_code, 200)
         self.assertEqual(len(projects), 2)
@@ -2381,6 +2392,9 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIn(projects[0]["next_action"], {"review_logic", "review_exit", "keep_tracking"})
         self.assertEqual([project["source_name"] for project in desk_a], ["Desk A"])
         self.assertEqual(len(active), 2)
+        self.assertEqual([project["source_name"] for project in long_projects], ["Desk A"])
+        self.assertEqual([project["source_name"] for project in short_projects], ["Desk B"])
+        self.assertEqual(invalid_direction.status_code, 422)
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_auto_extractor_falls_back_when_openai_fails(self) -> None:

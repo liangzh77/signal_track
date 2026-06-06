@@ -15,7 +15,7 @@ from .instrument_master import InstrumentMasterService
 from .input_summary import input_detail, input_summaries
 from .logic_supplement import build_logic_supplementer
 from .market_smoke import market_data_smoke
-from .models import Market
+from .models import Direction, Market
 from .provider_diagnostics import market_data_coverage
 from .project_actions import ProjectActionError, close_tracking_project, update_tracking_project_weights
 from .project_summary import project_summaries, project_summary
@@ -189,12 +189,14 @@ def create_app():
         return result_response(repo, result, publish_result)
 
     @app.get("/api/projects")
-    def list_projects(source: str | None = None, status: str | None = None):
+    def list_projects(source: str | None = None, status: str | None = None, direction: Direction | None = None):
         rows = repo.list_project_rows()
         if source:
             rows = [row for row in rows if str(row["source_name"]) == source]
         if status:
             rows = [row for row in rows if str(row["status"]) == status]
+        if direction:
+            rows = [row for row in rows if str(row["direction"]) == direction.value]
         performances = {int(row["id"]): project_performance(repo, int(row["id"])) for row in rows}
         return [
             project_summary(

@@ -81,7 +81,7 @@ Useful endpoints:
 - `POST /api/inputs/file` multipart upload with `file`, `source`, `portfolio`, `extractor`
 - `GET /api/instruments`
 - `POST /api/instruments/refresh` with `{ "provider": "auto", "market": "CN_A" }`
-- `GET /api/projects?source=Alpha%20Desk&status=needs_review`
+- `GET /api/projects?source=Alpha%20Desk&status=needs_review&direction=long`
 - `GET /api/exit-signals`
 - `GET /api/projects/{project_id}`
 - `POST /api/projects/{project_id}/close` with `{ "closed_date": "2026-06-10", "reason": "..." }`
@@ -107,7 +107,8 @@ see whether the input created a tracking item or closed one, plus each project's
 status, direction, symbols, source, logic score, and review flags.
 `GET /api/projects` returns the same normalized project summary plus current
 performance, curve points, missing price symbols, and leg-level return snapshots;
-use `source` and `status` query parameters to drive filtered project lists.
+use `source`, `status`, and `direction` query parameters to drive filtered
+project lists.
 Project summaries also include `latest_check` and `next_action` so callers can
 surface the current decision without fetching full project details.
 `GET /api/exit-signals` and `list-exit-signals` use the same performance-bearing
@@ -330,7 +331,7 @@ List recent raw inputs and uploaded attachment paths:
 ```powershell
 python -m signal_track.cli list-inputs --limit 20
 python -m signal_track.cli show-input 1
-python -m signal_track.cli list-projects --source 信息源A --status needs_review
+python -m signal_track.cli list-projects --source 信息源A --status needs_review --direction long
 ```
 
 If `--source` is omitted, the first few lines of the note must include a marker

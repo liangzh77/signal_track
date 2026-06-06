@@ -171,7 +171,7 @@ If a portfolio was created with equal weights and `weight_needs_review`, update
 the weights after confirmation:
 
 ```bash
-/srv/signal-track/venv/bin/python -m signal_track.cli list-projects --status needs_review
+/srv/signal-track/venv/bin/python -m signal_track.cli list-projects --status needs_review --direction long
 /srv/signal-track/venv/bin/python -m signal_track.cli update-project-weights 1 --weights-json '{"300750.SZ":60,"600519.SH":40}'
 ```
 

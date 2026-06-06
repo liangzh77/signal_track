@@ -21,7 +21,7 @@ from .input_summary import input_detail, input_summaries
 from .logic_supplement import build_logic_supplementer
 from .market_data import MarketDataService
 from .market_smoke import market_data_smoke
-from .models import Market, ProjectStatus
+from .models import Direction, Market, ProjectStatus
 from .provider_diagnostics import market_data_coverage
 from .project_actions import ProjectActionError, close_tracking_project, update_tracking_project_weights
 from .project_summary import project_summaries, project_summary
@@ -90,6 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     list_projects_parser = subparsers.add_parser("list-projects", help="List tracking projects with performance snapshots.")
     list_projects_parser.add_argument("--source", help="Filter by exact source name.")
     list_projects_parser.add_argument("--status", choices=[status.value for status in ProjectStatus], help="Filter by project status.")
+    list_projects_parser.add_argument("--direction", choices=[direction.value for direction in Direction], help="Filter by project direction.")
     list_projects_parser.add_argument("--no-performance", action="store_true", help="Omit return curves and leg performance.")
     list_projects_parser.add_argument("--limit", type=int, default=100)
 
@@ -331,6 +332,8 @@ def main(argv: list[str] | None = None) -> int:
             rows = [row for row in rows if str(row["source_name"]) == args.source]
         if args.status:
             rows = [row for row in rows if str(row["status"]) == args.status]
+        if args.direction:
+            rows = [row for row in rows if str(row["direction"]) == args.direction]
         rows = rows[: args.limit]
         performances = (
             {int(row["id"]): project_performance(repo, int(row["id"])) for row in rows}
