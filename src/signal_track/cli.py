@@ -644,22 +644,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             content = args.text if args.text is not None else sys.stdin.read()
         resolver = InstrumentResolver(repo.list_instruments())
-        extraction = None
-        if args.extractor in {"auto", "openai"}:
-            if not settings.openai_api_key:
-                if args.extractor == "openai":
-                    raise SystemExit("OPENAI_API_KEY is required for --extractor openai")
-            else:
-                try:
-                    extraction = OpenAISignalExtractor(settings.openai_api_key, settings.openai_model).extract(
-                        content,
-                        source_hint=args.source,
-                    )
-                except Exception as exc:
-                    if args.extractor == "openai":
-                        raise SystemExit(f"OpenAI extractor failed: {exc}") from exc
-                    extraction = None
-        source_name = resolve_source_name(args.source, content, extraction)
+        source_name = resolve_source_name(args.source, content, None)
         if not source_name:
             print(
                 json.dumps(
@@ -674,6 +659,21 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 3
         ingest_body = remove_source_marker_lines(content) or content
+        extraction = None
+        if args.extractor in {"auto", "openai"}:
+            if not settings.openai_api_key:
+                if args.extractor == "openai":
+                    raise SystemExit("OPENAI_API_KEY is required for --extractor openai")
+            else:
+                try:
+                    extraction = OpenAISignalExtractor(settings.openai_api_key, settings.openai_model).extract(
+                        ingest_body,
+                        source_hint=source_name,
+                    )
+                except Exception as exc:
+                    if args.extractor == "openai":
+                        raise SystemExit(f"OpenAI extractor failed: {exc}") from exc
+                    extraction = None
         result = SignalIngestor(
             repo,
             resolver,

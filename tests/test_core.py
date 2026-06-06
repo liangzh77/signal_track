@@ -2627,6 +2627,37 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(projects[0]["symbols"], "NVDA")
             self.assertEqual(projects[0]["direction"], "short")
 
+    def test_cli_missing_source_does_not_call_openai_extractor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "openai-key",
+            }
+            FakeOpenAIExtractor.calls = []
+            output = StringIO()
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.cli.OpenAISignalExtractor", FakeOpenAIExtractor):
+                    with redirect_stdout(output):
+                        code = cli_main([
+                            "ingest",
+                            "--extractor",
+                            "auto",
+                            "--text",
+                            "00700.HK long, watch ads recovery.",
+                        ])
+
+            payload = json.loads(output.getvalue())
+            repo = Repository(Database(db_path))
+            self.assertEqual(code, 3)
+            self.assertEqual(payload["code"], "source_required")
+            self.assertEqual(FakeOpenAIExtractor.calls, [])
+            self.assertEqual(repo.list_raw_inputs(), [])
+
     def test_cli_auto_extractor_falls_back_to_heuristic_when_openai_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"
@@ -3408,6 +3439,36 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["resolved_symbols"], ["00700.HK"])
             self.assertEqual(response.json()["projects"][0]["direction"], "long")
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_missing_source_does_not_call_openai_extractor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "openai-key",
+            }
+            FakeOpenAIExtractor.calls = []
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.web_app.OpenAISignalExtractor", FakeOpenAIExtractor):
+                    client = TestClient(create_app())
+                    response = client.post(
+                        "/api/inputs",
+                        json={
+                            "content": "00700.HK long, watch ads recovery.",
+                            "extractor": "auto",
+                        },
+                    )
+
+            repo = Repository(Database(db_path))
+            self.assertEqual(response.status_code, 422)
+            self.assertEqual(response.json()["detail"]["code"], "source_required")
+            self.assertEqual(FakeOpenAIExtractor.calls, [])
+            self.assertEqual(repo.list_raw_inputs(), [])
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_forced_openai_extractor_reports_failure(self) -> None:

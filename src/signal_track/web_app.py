@@ -492,25 +492,7 @@ def ingest_content(
     attachment_path: str | None = None,
 ):
     resolver = InstrumentResolver(repo.list_instruments())
-    extraction = None
-    extractor = normalize_extractor(extractor)
-    if extractor in {"auto", "openai"}:
-        from fastapi import HTTPException
-
-        if not settings.openai_api_key:
-            if extractor == "openai":
-                raise HTTPException(status_code=503, detail="OPENAI_API_KEY is required for extractor=openai")
-        else:
-            try:
-                extraction = OpenAISignalExtractor(settings.openai_api_key, settings.openai_model).extract(
-                    content,
-                    source_hint=source,
-                )
-            except Exception as exc:
-                if extractor == "openai":
-                    raise HTTPException(status_code=503, detail=f"OpenAI extractor failed: {exc}") from exc
-                extraction = None
-    source_name = resolve_source_name(source, content, extraction)
+    source_name = resolve_source_name(source, content, None)
     if not source_name:
         from fastapi import HTTPException
 
@@ -522,6 +504,24 @@ def ingest_content(
             },
         )
     ingest_body = remove_source_marker_lines(content) or content
+    extraction = None
+    extractor = normalize_extractor(extractor)
+    if extractor in {"auto", "openai"}:
+        from fastapi import HTTPException
+
+        if not settings.openai_api_key:
+            if extractor == "openai":
+                raise HTTPException(status_code=503, detail="OPENAI_API_KEY is required for extractor=openai")
+        else:
+            try:
+                extraction = OpenAISignalExtractor(settings.openai_api_key, settings.openai_model).extract(
+                    ingest_body,
+                    source_hint=source_name,
+                )
+            except Exception as exc:
+                if extractor == "openai":
+                    raise HTTPException(status_code=503, detail=f"OpenAI extractor failed: {exc}") from exc
+                extraction = None
     return SignalIngestor(
         repo,
         resolver,
