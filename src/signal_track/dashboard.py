@@ -725,6 +725,8 @@ def render_publish_stamp(row) -> str:
 
 
 def project_needs_review(row) -> bool:
+    if str(row["status"]) == "closed":
+        return False
     return bool(row["needs_review"]) or bool(row["weight_needs_review"])
 
 

@@ -1817,6 +1817,33 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(metadata["closed_by_signal"], True)
             self.assertIn("thesis failed", metadata["close_reason"])
 
+    def test_closing_incomplete_weight_portfolio_clears_review_flags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+            portfolio = ingestor.ingest(
+                "Desk",
+                "portfolio long: 300750.SZ and 600519.SH, watch margin and demand.",
+            )
+
+            before_close = repo.get_project_row(portfolio.project_ids[0])
+            self.assertEqual(before_close["status"], "needs_review")
+            self.assertTrue(bool(before_close["weight_needs_review"]))
+
+            closed = ingestor.ingest("Desk", "portfolio close: 300750.SZ and 600519.SH, thesis failed.")
+
+            self.assertEqual(closed.project_ids, portfolio.project_ids)
+            row = repo.get_project_row(portfolio.project_ids[0])
+            self.assertEqual(row["status"], "closed")
+            self.assertFalse(bool(row["needs_review"]))
+            self.assertFalse(bool(row["weight_needs_review"]))
+            html = render_dashboard(repo)
+            self.assertIn("待复核 0", html)
+
     def test_unmatched_close_signal_does_not_create_tracking_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
@@ -4625,6 +4652,43 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(payload["latest_publish"]["status_code"], 200)
         self.assertTrue(payload["latest_publish"]["ok"])
         self.assertEqual(payload["latest_publish"]["url"], "https://example.com/signal")
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_health_ignores_closed_project_review_flags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            db = Database(db_path)
+            db.init()
+            repo = Repository(db)
+            source_id = repo.get_or_create_source("Closed Portfolio Desk")
+            repo.create_tracking_project(
+                title="Closed portfolio with legacy weight flag",
+                source_id=source_id,
+                raw_input_id=None,
+                status="closed",
+                direction="long",
+                entry_date="2026-06-01",
+                logic_score=8,
+                needs_review=False,
+                weight_needs_review=True,
+                metadata={"portfolio": True},
+            )
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+                response = client.get("/health")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["projects"]["total"], 1)
+        self.assertEqual(payload["projects"]["needs_review"], 0)
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_market_coverage_endpoint(self) -> None:

@@ -648,7 +648,11 @@ def health_payload(
 
     active = sum(1 for row in projects if row["status"] in {"active", "needs_review"})
     exit_signals = sum(1 for row in projects if row["status"] == "exit_signal")
-    review = sum(1 for row in projects if bool(row["needs_review"]) or bool(row["weight_needs_review"]))
+    review = sum(
+        1
+        for row in projects
+        if row["status"] != "closed" and (bool(row["needs_review"]) or bool(row["weight_needs_review"]))
+    )
     latest_check = checks[0] if checks else None
     latest_publish = publish_events[0] if publish_events else None
     publish_metadata = parse_json_dict(latest_publish["metadata"]) if latest_publish else {}

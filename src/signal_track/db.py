@@ -776,6 +776,7 @@ class Repository:
                 SET status = 'closed',
                     closed_date = ?,
                     needs_review = 0,
+                    weight_needs_review = 0,
                     metadata = CASE
                       WHEN ? IS NULL THEN metadata
                       ELSE ?
