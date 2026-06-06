@@ -695,6 +695,49 @@ class Repository:
                 params,
             ).fetchall()
 
+    def get_research_item(self, item_id: int) -> sqlite3.Row | None:
+        with self.db.session() as conn:
+            return conn.execute(
+                """
+                SELECT r.*, p.title
+                FROM research_items r
+                JOIN tracking_projects p ON p.id = r.project_id
+                WHERE r.id = ?
+                """,
+                (item_id,),
+            ).fetchone()
+
+    def update_research_item(
+        self,
+        item_id: int,
+        status: str,
+        source_note: str | None = None,
+        metadata: dict | None = None,
+    ) -> sqlite3.Row | None:
+        assignments = ["status = ?", "updated_at = CURRENT_TIMESTAMP"]
+        params: list[object] = [status]
+        if source_note is not None:
+            assignments.append("source_note = ?")
+            params.append(source_note)
+        if metadata is not None:
+            assignments.append("metadata = ?")
+            params.append(json.dumps(metadata, ensure_ascii=False))
+        params.append(item_id)
+        with self.db.session() as conn:
+            conn.execute(
+                f"UPDATE research_items SET {', '.join(assignments)} WHERE id = ?",
+                params,
+            )
+            return conn.execute(
+                """
+                SELECT r.*, p.title
+                FROM research_items r
+                JOIN tracking_projects p ON p.id = r.project_id
+                WHERE r.id = ?
+                """,
+                (item_id,),
+            ).fetchone()
+
     def list_price_bars(
         self,
         instrument_id: int,

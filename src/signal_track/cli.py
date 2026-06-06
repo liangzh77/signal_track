@@ -57,6 +57,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     refresh_parser.add_argument("--sample", type=int, default=0, help="Print the first N refreshed symbols.")
 
+    list_research_parser = subparsers.add_parser("list-research-items", help="List pending research verification items.")
+    list_research_parser.add_argument("--project-id", type=int)
+    list_research_parser.add_argument("--limit", type=int, default=50)
+
+    update_research_parser = subparsers.add_parser("update-research-item", help="Update a research verification item.")
+    update_research_parser.add_argument("item_id", type=int)
+    update_research_parser.add_argument(
+        "--status",
+        required=True,
+        choices=["pending", "unverified", "verified", "contradicted", "ignored"],
+    )
+    update_research_parser.add_argument("--source-note")
+    update_research_parser.add_argument("--metadata-json")
+
     ingest_parser = subparsers.add_parser("ingest", help="Create tracking projects from raw source text.")
     ingest_parser.add_argument("--source")
     ingest_parser.add_argument("--text", help="Raw investment note. Reads stdin if omitted.")
@@ -216,6 +230,36 @@ def main(argv: list[str] | None = None) -> int:
                 indent=2,
             )
         )
+        return 0
+
+    if args.command == "list-research-items":
+        db.init()
+        items = [dict(row) for row in repo.list_research_items(project_id=args.project_id, limit=args.limit)]
+        print(json.dumps({"items": items}, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "update-research-item":
+        db.init()
+        try:
+            metadata = json.loads(args.metadata_json) if args.metadata_json else None
+        except json.JSONDecodeError as exc:
+            print(
+                json.dumps(
+                    {"ok": False, "code": "invalid_metadata_json", "message": str(exc)},
+                    ensure_ascii=False,
+                )
+            )
+            return 2
+        item = repo.update_research_item(
+            args.item_id,
+            status=args.status,
+            source_note=args.source_note,
+            metadata=metadata,
+        )
+        if not item:
+            print(json.dumps({"ok": False, "code": "research_item_not_found"}, ensure_ascii=False))
+            return 2
+        print(json.dumps({"ok": True, "item": dict(item)}, ensure_ascii=False, indent=2))
         return 0
 
     if args.command == "ingest":

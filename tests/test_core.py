@@ -357,6 +357,15 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("tracking_metric", research_by_type)
             self.assertIn("exit_condition", research_by_type)
             self.assertIn("verification_note", research_by_type)
+            updated = repo.update_research_item(
+                int(research_items[0]["id"]),
+                status="verified",
+                source_note="checked public filings",
+                metadata={"source": "manual"},
+            )
+            self.assertIsNotNone(updated)
+            self.assertEqual(updated["status"], "verified")
+            self.assertEqual(updated["source_note"], "checked public filings")
 
             html = render_dashboard(repo)
             self.assertIn("Evidence / verification", html)
@@ -599,6 +608,15 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(projects[0]["source_name"], "Alpha Desk")
             project_detail = client.get(f"/api/projects/{projects[0]['id']}").json()
             self.assertEqual(project_detail["research_items"][0]["item_type"], "verification_note")
+            item_id = project_detail["research_items"][0]["id"]
+            listed_items = client.get("/api/research-items", params={"project_id": projects[0]["id"]}).json()
+            self.assertEqual(listed_items[0]["id"], item_id)
+            updated_item = client.patch(
+                f"/api/research-items/{item_id}",
+                json={"status": "verified", "source_note": "manual verification"},
+            )
+            self.assertEqual(updated_item.status_code, 200)
+            self.assertEqual(updated_item.json()["status"], "verified")
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_mutating_web_endpoints_require_api_key_when_configured(self) -> None:
@@ -616,6 +634,8 @@ class SignalTrackCoreTests(unittest.TestCase):
 
             denied = client.post("/api/inputs", json={"source": "测试源", "content": "腾讯 做多"})
             self.assertEqual(denied.status_code, 401)
+            denied_research = client.patch("/api/research-items/1", json={"status": "verified"})
+            self.assertEqual(denied_research.status_code, 401)
 
             allowed = client.post(
                 "/api/inputs",

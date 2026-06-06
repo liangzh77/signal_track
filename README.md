@@ -72,6 +72,8 @@ Useful endpoints:
 - `POST /api/instruments/refresh` with `{ "provider": "auto", "market": "CN_A" }`
 - `GET /api/projects`
 - `GET /api/projects/{project_id}`
+- `GET /api/research-items`
+- `PATCH /api/research-items/{item_id}` with `{ "status": "verified" }`
 - `POST /api/checks/run` with optional `{ "provider": "auto" }`
 - `GET /dashboard`
 - `POST /api/publish`
@@ -261,3 +263,11 @@ tracking supplement with concrete metrics, exit/review conditions, and data
 verification notes. These are saved as `research_items` so the dashboard and
 project API can expose pending metrics, exit conditions, and unverified data
 requirements. Without an API key, the local 3C-5M-3D-3T fallback is used.
+
+Research item statuses can be maintained manually while the research automation is
+being expanded:
+
+```powershell
+python -m signal_track.cli list-research-items --project-id 1
+python -m signal_track.cli update-research-item 1 --status verified --source-note "checked filing"
+```

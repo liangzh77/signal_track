@@ -56,6 +56,11 @@ def create_app():
         provider: str = "tushare"
         market: str = "all"
 
+    class ResearchItemUpdatePayload(BaseModel):
+        status: str
+        source_note: str | None = None
+        metadata: dict | None = None
+
     app = FastAPI(title="Signal Track", version="0.1.0")
 
     def require_write_auth(
@@ -192,6 +197,24 @@ def create_app():
                 "legs": [leg.__dict__ for leg in performance.legs],
             },
         }
+
+    @app.get("/api/research-items")
+    def list_research_items(project_id: int | None = None, limit: int = 100):
+        return [dict(row) for row in repo.list_research_items(project_id=project_id, limit=limit)]
+
+    @app.patch("/api/research-items/{item_id}", dependencies=[Depends(require_write_auth)])
+    def update_research_item(item_id: int, payload: ResearchItemUpdatePayload):
+        if payload.status not in {"pending", "unverified", "verified", "contradicted", "ignored"}:
+            raise HTTPException(status_code=400, detail="Invalid research item status")
+        item = repo.update_research_item(
+            item_id,
+            status=payload.status,
+            source_note=payload.source_note,
+            metadata=payload.metadata,
+        )
+        if not item:
+            raise HTTPException(status_code=404, detail="Research item not found")
+        return dict(item)
 
     @app.post("/api/checks/run", dependencies=[Depends(require_write_auth)])
     def run_checks(payload: CheckPayload = Body(default=CheckPayload())):
