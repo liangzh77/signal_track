@@ -6,7 +6,7 @@ from datetime import datetime
 
 from .analytics import project_performance
 from .db import Repository
-from .input_summary import input_summaries
+from .input_summary import input_summaries, project_input_history
 from .project_report import build_project_report, render_project_report_markdown
 
 
@@ -180,6 +180,8 @@ def render_dashboard(repo: Repository) -> str:
     .research-item strong {{ color: var(--cyan); font-weight: 600; }}
     .research-item span {{ color: var(--muted); }}
     .research-item em {{ color: var(--amber); font-style: normal; text-align: right; }}
+    .project-inputs {{ display: grid; gap: 8px; margin: 10px 0 14px; }}
+    .project-inputs h4 {{ margin: 0; font-size: 12px; line-height: 18px; color: var(--muted); }}
     .report-card {{ display: grid; gap: 10px; margin: 10px 0 14px; border: 1px solid rgba(68,215,200,.2); border-radius: 8px; padding: 12px; background: rgba(68,215,200,.045); }}
     .report-card-head {{ display: flex; justify-content: space-between; gap: 10px; align-items: start; }}
     .report-card h4 {{ margin: 0; font-size: 13px; line-height: 19px; }}
@@ -444,12 +446,20 @@ def render_input_item(item: dict) -> str:
     )
 
 
+def render_project_inputs(inputs: list[dict]) -> str:
+    if not inputs:
+        return "<div class='project-inputs'><h4>Input history</h4><div class='check-log-item empty'>No linked inputs</div></div>"
+    items = "".join(render_input_item(item) for item in inputs)
+    return f"<div class='project-inputs'><h4>Input history</h4><ul class='recent-inputs'>{items}</ul></div>"
+
+
 def render_project_detail(repo: Repository, row, performance) -> str:
     logic_blocks = repo.list_logic_blocks(int(row["id"]))
     logic_html = "\n".join(render_logic_block(block) for block in logic_blocks)
     check_log = render_project_check_log(repo.list_daily_checks(project_id=int(row["id"]), limit=5))
     report_snapshot = render_report_snapshot(repo, int(row["id"]))
     research_items = render_research_items(repo.list_research_items(project_id=int(row["id"]), limit=8))
+    input_history = render_project_inputs(project_input_history(repo, int(row["id"]), limit=5))
     legs = "\n".join(
         f"<span class='leg'>{escape(leg.symbol)} · {leg.weight:.0%} · {format_return(leg.return_pct)}</span>"
         for leg in performance.legs
@@ -466,6 +476,7 @@ def render_project_detail(repo: Repository, row, performance) -> str:
         f"<div class='leg-list'>{legs}</div>"
         f"<div class='leg-curves'>{leg_curves}</div>"
         f"{report_snapshot}"
+        f"{input_history}"
         f"{research_items}"
         f"{check_log}"
         f"<div class='logic-grid'>{logic_html}</div>"

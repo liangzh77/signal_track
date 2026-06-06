@@ -1089,6 +1089,7 @@ class SignalTrackCoreTests(unittest.TestCase):
 
             self.assertIn("recent-inputs", html)
             self.assertIn("data-input-action='close'", html)
+            self.assertIn("Input history", html)
             self.assertIn("Input Desk", html)
             self.assertIn("00700.HK", html)
             self.assertIn("projects 1", html)
@@ -2876,6 +2877,8 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(project_detail["source_input"]["id"], inputs[0]["id"])
             self.assertIn("00700.HK 做多", project_detail["source_input"]["content"])
             self.assertEqual(project_detail["source_input"]["project_ids"], [projects[0]["id"]])
+            self.assertEqual(len(project_detail["input_history"]), 1)
+            self.assertEqual(project_detail["input_history"][0]["input_action"], "track")
             self.assertEqual(project_detail["research_items"][0]["item_type"], "verification_note")
             item_id = project_detail["research_items"][0]["id"]
             listed_items = client.get("/api/research-items", params={"project_id": projects[0]["id"]}).json()
@@ -2902,6 +2905,11 @@ class SignalTrackCoreTests(unittest.TestCase):
             close_detail = client.get(f"/api/inputs/{inputs_after_close[0]['id']}").json()
             self.assertEqual(close_detail["project_ids"], [projects[0]["id"]])
             self.assertEqual(close_detail["input_action"], "close")
+            project_after_close = client.get(f"/api/projects/{projects[0]['id']}").json()
+            self.assertEqual(
+                [item["input_action"] for item in project_after_close["input_history"]],
+                ["close", "track"],
+            )
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_projects_list_includes_performance_and_filters(self) -> None:

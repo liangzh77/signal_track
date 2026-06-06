@@ -13,7 +13,7 @@ from .extraction import OpenAISignalExtractor
 from .exit_signals import exit_signal_summaries
 from .instrument_master import InstrumentMasterService
 from .input_files import UnsupportedInputFileError, decode_input_file
-from .input_summary import input_detail, input_summaries
+from .input_summary import input_detail, input_summaries, project_input_history
 from .logic_supplement import build_logic_supplementer
 from .market_smoke import market_data_smoke
 from .models import Direction, Market
@@ -291,6 +291,7 @@ def create_app():
             "project": dict(project),
             "summary": project_summary(summary_row, performance=performance, latest_check=latest_check),
             "source_input": input_detail(repo, int(project["raw_input_id"])) if project["raw_input_id"] else None,
+            "input_history": project_input_history(repo, project_id),
             "legs": [dict(row) for row in repo.list_project_legs(project_id)],
             "logic_blocks": [dict(row) for row in repo.list_logic_blocks(project_id)],
             "research_items": [dict(row) for row in repo.list_research_items(project_id=project_id)],

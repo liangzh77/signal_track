@@ -127,7 +127,8 @@ to drive filtered project lists.
 Project summaries also include `latest_check` and `next_action` so callers can
 surface the current decision without fetching full project details.
 `GET /api/projects/{project_id}` includes the same normalized summary under
-`summary`, plus legs, logic blocks, research items, checks, and full performance.
+`summary`, the opening `source_input`, linked follow-up `input_history`, plus
+legs, logic blocks, research items, checks, and full performance.
 `GET /api/projects/{project_id}/report` exports a Markdown or JSON project
 research report assembled from source logic, system-supplemented
 3C-5M-3D-3T tracking logic, research verification items, latest checks, and
