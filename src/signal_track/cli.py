@@ -18,6 +18,7 @@ from .logic_supplement import build_logic_supplementer
 from .market_data import MarketDataService
 from .models import Market
 from .provider_diagnostics import market_data_coverage
+from .project_summary import project_summaries
 from .publisher import DemoPublisher, extract_published_address
 from .providers.factory import build_market_data_provider
 from .resolver import InstrumentResolver, SEED_INSTRUMENTS
@@ -381,6 +382,7 @@ def main(argv: list[str] | None = None) -> int:
                     "raw_input_id": result.raw_input_id,
                     "project_ids": result.project_ids,
                     "resolved_symbols": result.resolved_symbols,
+                    "projects": project_summaries(repo, result.project_ids),
                     "logic_score": result.logic_score,
                     "system_logic_added": result.system_logic_added,
                     "published": publish_result.ok if publish_result else False,

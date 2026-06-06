@@ -731,6 +731,9 @@ class SignalTrackCoreTests(unittest.TestCase):
             inferred = client.post("/api/inputs", json={"content": "信息源：Alpha Desk\n00700.HK 做多，观察广告"})
             self.assertEqual(inferred.status_code, 200)
             self.assertEqual(inferred.json()["resolved_symbols"], ["00700.HK"])
+            self.assertEqual(inferred.json()["projects"][0]["action"], "track")
+            self.assertEqual(inferred.json()["projects"][0]["direction"], "long")
+            self.assertEqual(inferred.json()["projects"][0]["symbols"], ["00700.HK"])
 
             projects = client.get("/api/projects").json()
             self.assertEqual(projects[0]["source_name"], "Alpha Desk")
@@ -746,6 +749,12 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(updated_item.status_code, 200)
             self.assertEqual(updated_item.json()["item"]["status"], "verified")
             self.assertFalse(updated_item.json()["publish"]["attempted"])
+
+            closed = client.post("/api/inputs", json={"source": "Alpha Desk", "content": "00700.HK 平仓，广告低于预期"})
+            self.assertEqual(closed.status_code, 200)
+            self.assertEqual(closed.json()["project_ids"], [projects[0]["id"]])
+            self.assertEqual(closed.json()["projects"][0]["action"], "close")
+            self.assertEqual(closed.json()["projects"][0]["status"], "closed")
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_research_item_update_publishes_when_configured(self) -> None:

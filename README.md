@@ -84,6 +84,10 @@ Useful endpoints:
 When publish credentials are configured, `POST /api/inputs` and `POST /api/checks/run`
 automatically publish the refreshed dashboard.
 
+Ingestion responses include a `projects` summary so the caller can immediately
+see whether the input created a tracking item or closed one, plus each project's
+status, direction, symbols, source, logic score, and review flags.
+
 Inputs require a real source name. Pass `source`, or put a marker in the first
 few lines of the note, for example `source: Alpha Desk` or `信息源：Alpha Desk`.
 If no source can be determined, ingestion returns `source_required` and does not

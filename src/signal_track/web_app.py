@@ -12,6 +12,7 @@ from .instrument_master import InstrumentMasterService
 from .logic_supplement import build_logic_supplementer
 from .models import Market
 from .provider_diagnostics import market_data_coverage
+from .project_summary import project_summaries
 from .publisher import DemoPublisher, extract_published_address
 from .providers.factory import build_market_data_provider
 from .resolver import InstrumentResolver, SEED_INSTRUMENTS
@@ -119,7 +120,7 @@ def create_app():
             extractor=payload.extractor,
         )
         publish_result = maybe_publish(repo, settings, "新增信息后自动发布")
-        return result_response(result, publish_result)
+        return result_response(repo, result, publish_result)
 
     @app.post("/api/inputs/file", dependencies=[Depends(require_write_auth)])
     async def ingest_file(
@@ -145,7 +146,7 @@ def create_app():
             attachment_path=str(attachment_path),
         )
         publish_result = maybe_publish(repo, settings, "上传文件后自动发布")
-        return result_response(result, publish_result)
+        return result_response(repo, result, publish_result)
 
     @app.get("/api/projects")
     def list_projects():
@@ -330,11 +331,12 @@ def ingest_content(
     )
 
 
-def result_response(result, publish_result: dict) -> dict:
+def result_response(repo: Repository, result, publish_result: dict) -> dict:
     return {
         "raw_input_id": result.raw_input_id,
         "project_ids": result.project_ids,
         "resolved_symbols": result.resolved_symbols,
+        "projects": project_summaries(repo, result.project_ids),
         "logic_score": result.logic_score,
         "system_logic_added": result.system_logic_added,
         "publish": publish_result,
