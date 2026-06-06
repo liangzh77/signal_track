@@ -122,7 +122,9 @@ surface the current decision without fetching full project details.
 `GET /api/projects/{project_id}/report` exports a Markdown or JSON project
 research report assembled from source logic, system-supplemented
 3C-5M-3D-3T tracking logic, research verification items, latest checks, and
-price performance. It marks unverified data as review material rather than
+price performance. The Markdown report follows the eight-part research structure:
+opening judgment, 3C, 5M, 3D, 3T, Fenghe-style perspective, scoring card, and
+data sources/disclaimer. It marks unverified data as review material rather than
 confirmed facts. The published dashboard also embeds the Markdown report body in
 each project detail card so the static uploaded page remains usable without a
 live backend.
