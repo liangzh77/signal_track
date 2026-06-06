@@ -2223,8 +2223,9 @@ class SignalTrackCoreTests(unittest.TestCase):
         service = Path("deploy/systemd/signal-track-daily.service").read_text(encoding="utf-8")
         timer = Path("deploy/systemd/signal-track-daily.timer").read_text(encoding="utf-8")
 
-        self.assertIn("daily-run --publish", service)
+        self.assertIn("daily-run --out", service)
         self.assertNotIn("--provider auto", service)
+        self.assertNotIn("--publish", service)
         self.assertIn("OnCalendar=*-*-* 19:00:00", timer)
         self.assertIn("OnCalendar=*-*-* 07:00:00", timer)
         self.assertIn("Timezone=Asia/Shanghai", timer)

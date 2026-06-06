@@ -58,7 +58,11 @@ The timer runs at 19:00 Asia/Shanghai for the China/Hong Kong trading day and at
 07:00 Asia/Shanghai as a US-market catch-up pass. The CLI job is idempotent for a
 given project/date; the later run updates the same daily check row when needed.
 Provider selection comes from `SIGNAL_TRACK_DAILY_PROVIDER` in
-`signal-track.env`; the systemd service does not hard-code `auto`.
+`signal-track.env`; the systemd service does not hard-code `auto`. Publishing is
+also controlled by `SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE`,
+`GO_SITES_DEMO_PUBLISH_URL`, and `GO_SITES_DEMO_API_KEY`; the unit file does not
+force `--publish`, so a fresh deployment can still complete daily checks before
+publish credentials are filled.
 
 ## Health Check
 
