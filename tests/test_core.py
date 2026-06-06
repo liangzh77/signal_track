@@ -75,6 +75,20 @@ def minimal_docx_bytes(text: str) -> bytes:
     return buffer.getvalue()
 
 
+class FakePdfPage:
+    def __init__(self, text: str):
+        self.text = text
+
+    def extract_text(self) -> str:
+        return self.text
+
+
+class FakePdfReader:
+    def __init__(self, stream):
+        del stream
+        self.pages = [FakePdfPage("NVDA long, watch orders.")]
+
+
 class RecordingMarketDataProvider(MarketDataProvider):
     def __init__(self, name: str, instruments: list[Instrument] | None = None):
         self.name = name
@@ -2853,10 +2867,16 @@ class SignalTrackCoreTests(unittest.TestCase):
                     data={"source": "File Source"},
                     files={"file": ("note.docx", minimal_docx_bytes("00700.HK long, watch ads."), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
                 )
+                with patch.dict("sys.modules", {"pypdf": types.SimpleNamespace(PdfReader=FakePdfReader)}):
+                    pdf = client.post(
+                        "/api/inputs/file",
+                        data={"source": "File Source"},
+                        files={"file": ("note.pdf", b"%PDF-1.7\nfake", "application/pdf")},
+                    )
                 binary = client.post(
                     "/api/inputs/file",
                     data={"source": "File Source"},
-                    files={"file": ("note.pdf", b"%PDF-1.7\nbinary", "application/pdf")},
+                    files={"file": ("note.zip", b"PK\x03\x04binary", "application/zip")},
                 )
 
             raw_inputs = Repository(Database(db_path)).list_raw_inputs()
@@ -2866,9 +2886,11 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(utf16.json()["resolved_symbols"], ["NVDA"])
             self.assertEqual(docx.status_code, 200)
             self.assertEqual(docx.json()["resolved_symbols"], ["00700.HK"])
+            self.assertEqual(pdf.status_code, 200)
+            self.assertEqual(pdf.json()["resolved_symbols"], ["NVDA"])
             self.assertEqual(binary.status_code, 415)
             self.assertEqual(binary.json()["detail"]["code"], "unsupported_input_file")
-            self.assertEqual(len(raw_inputs), 3)
+            self.assertEqual(len(raw_inputs), 4)
             self.assertTrue(any("腾讯" in row["content"] for row in raw_inputs))
             self.assertTrue(any("NVDA" in row["content"] for row in raw_inputs))
             self.assertTrue(any("watch ads" in row["content"] for row in raw_inputs))
@@ -2876,8 +2898,8 @@ class SignalTrackCoreTests(unittest.TestCase):
     def test_cli_file_ingest_rejects_unsupported_binary_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"
-            pdf_path = Path(tmp) / "note.pdf"
-            pdf_path.write_bytes(b"%PDF-1.7\nbinary")
+            pdf_path = Path(tmp) / "note.zip"
+            pdf_path.write_bytes(b"PK\x03\x04binary")
             env = {
                 "SIGNAL_TRACK_DB_PATH": str(db_path),
                 "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",

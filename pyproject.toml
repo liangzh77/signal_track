@@ -21,6 +21,9 @@ web = [
 llm = [
   "openai>=1.82.0",
 ]
+files = [
+  "pypdf>=5.0.0",
+]
 
 [project.scripts]
 signal-track = "signal_track.cli:main"

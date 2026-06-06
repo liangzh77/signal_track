@@ -343,9 +343,10 @@ python -m signal_track.cli ingest --source 信息源A --file .\notes\source-note
 
 File ingestion supports text-like files such as `.txt`, `.md`, `.csv`, `.tsv`,
 and `.html`, with UTF-8/UTF-16/GB18030 decoding. Modern Word `.docx` files are
-parsed for document text. Binary formats such as PDF, legacy `.doc`, Excel,
-PowerPoint, images, and zip archives are rejected with `unsupported_input_file`;
-convert those documents to text before ingestion.
+parsed for document text. PDF text extraction is available when installed with
+`pip install -e .[files]`; otherwise PDFs return `unsupported_input_file`.
+Legacy `.doc`, Excel, PowerPoint, images, and zip archives are rejected; convert
+those documents to text before ingestion.
 
 List recent raw inputs and uploaded attachment paths:
 

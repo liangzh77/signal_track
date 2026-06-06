@@ -24,7 +24,6 @@ UNSUPPORTED_BINARY_SUFFIXES = {
     ".gif",
     ".jpeg",
     ".jpg",
-    ".pdf",
     ".png",
     ".ppt",
     ".pptx",
@@ -43,6 +42,8 @@ def decode_input_file(content: bytes, filename: str | None = None) -> str:
     suffix = Path(filename or "").suffix.lower()
     if suffix == ".docx":
         return extract_docx_text(content)
+    if suffix == ".pdf":
+        return extract_pdf_text(content)
     if suffix in UNSUPPORTED_BINARY_SUFFIXES:
         raise UnsupportedInputFileError(f"Unsupported file type for text ingestion: {suffix}")
     if suffix not in TEXT_SUFFIXES:
@@ -93,6 +94,22 @@ def extract_docx_text(content: bytes) -> str:
     extracted = "\n".join(paragraphs).strip()
     if not extracted:
         raise UnsupportedInputFileError("Uploaded .docx does not contain readable text")
+    return extracted
+
+
+def extract_pdf_text(content: bytes) -> str:
+    try:
+        from pypdf import PdfReader  # type: ignore
+    except ImportError as exc:
+        raise UnsupportedInputFileError("PDF ingestion requires pypdf; install the files extra") from exc
+    try:
+        reader = PdfReader(BytesIO(content))
+        pages = [page.extract_text() or "" for page in reader.pages]
+    except Exception as exc:
+        raise UnsupportedInputFileError("Could not read PDF document text") from exc
+    extracted = "\n".join(page.strip() for page in pages if page.strip()).strip()
+    if not extracted:
+        raise UnsupportedInputFileError("Uploaded PDF does not contain readable text")
     return extracted
 
 
