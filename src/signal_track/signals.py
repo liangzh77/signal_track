@@ -60,14 +60,22 @@ class SignalIngestor:
 
         if is_close_action(content) and resolutions:
             closed_project_ids = self._close_existing_projects(source_id, content, resolutions, logic_score)
+            resolved_symbols = [resolution.instrument.symbol for resolution in resolutions]
             if closed_project_ids:
                 return IngestResult(
                     raw_input_id=raw_input_id,
                     project_ids=closed_project_ids,
-                    resolved_symbols=[resolution.instrument.symbol for resolution in resolutions],
+                    resolved_symbols=resolved_symbols,
                     logic_score=logic_score,
                     system_logic_added=False,
                 )
+            return IngestResult(
+                raw_input_id=raw_input_id,
+                project_ids=[],
+                resolved_symbols=resolved_symbols,
+                logic_score=logic_score,
+                system_logic_added=False,
+            )
 
         weights = weights or parse_weight_hints(content, resolutions)
         as_portfolio = as_portfolio or should_treat_as_portfolio(content, resolutions, weights)
@@ -145,10 +153,10 @@ class SignalIngestor:
 
             if is_extracted_close_action(signal, source_logic, original_content) and resolutions:
                 closed_project_ids = self._close_existing_projects(source_id, source_logic, resolutions, logic_score)
+                resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
                 if closed_project_ids:
                     project_ids.extend(closed_project_ids)
-                    resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
-                    continue
+                continue
 
             if signal.is_portfolio:
                 updated_project_ids = self._append_existing_portfolio_updates(

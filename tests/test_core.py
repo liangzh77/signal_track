@@ -788,6 +788,23 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(repo.get_project_row(source_a.project_ids[0])["status"], "closed")
             self.assertIn(repo.get_project_row(source_b.project_ids[0])["status"], {"active", "needs_review"})
 
+    def test_unmatched_close_signal_does_not_create_tracking_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                "No Position Source",
+                "00700.HK close, no longer tracking.",
+            )
+
+            self.assertEqual(result.project_ids, [])
+            self.assertEqual(result.resolved_symbols, ["00700.HK"])
+            self.assertEqual(repo.list_project_rows(), [])
+            self.assertEqual(len(repo.list_raw_inputs()), 1)
+
     def test_same_source_followup_updates_existing_project_without_duplicate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
@@ -888,6 +905,35 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(closed.project_ids, source_a.project_ids)
             self.assertEqual(repo.get_project_row(source_a.project_ids[0])["status"], "closed")
             self.assertIn(repo.get_project_row(source_b.project_ids[0])["status"], {"active", "needs_review"})
+
+    def test_structured_unmatched_close_signal_does_not_create_tracking_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                "No Position Source",
+                "00700.HK close, no longer tracking.",
+                extraction=ExtractedInput(
+                    signals=[
+                        ExtractedSignal(
+                            instruments=["00700.HK"],
+                            direction="neutral",
+                            source_logic="00700.HK close, no longer tracking.",
+                            observation_logic="",
+                            logic_score=7,
+                            action="close",
+                        )
+                    ],
+                ),
+            )
+
+            self.assertEqual(result.project_ids, [])
+            self.assertEqual(result.resolved_symbols, ["00700.HK"])
+            self.assertEqual(repo.list_project_rows(), [])
+            self.assertEqual(len(repo.list_raw_inputs()), 1)
 
     def test_closed_project_prices_refresh_during_post_close_window(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1279,6 +1325,30 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(signals[0]["id"], created.json()["project_ids"][0])
             self.assertEqual(signals[0]["action"], "exit_signal")
             self.assertEqual(signals[0]["latest_check"]["conclusion"], "exit_signal")
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_unmatched_close_signal_does_not_create_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+                response = client.post(
+                    "/api/inputs",
+                    json={"source": "No Position Source", "content": "00700.HK close, no longer tracking."},
+                )
+                projects = client.get("/api/projects").json()
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["project_ids"], [])
+            self.assertEqual(response.json()["resolved_symbols"], ["00700.HK"])
+            self.assertEqual(projects, [])
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_close_project_endpoint_records_close_logic(self) -> None:

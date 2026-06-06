@@ -291,7 +291,9 @@ markers still split into separate tracking projects.
 If a later input contains close words such as `平仓`, `止盈`, `止损`, `退出`, or
 `exit`, Signal Track first looks for active projects from the same source that
 contain the resolved instrument and closes those projects instead of creating
-duplicates. Other sources tracking the same symbol remain independent:
+duplicates. Other sources tracking the same symbol remain independent. If no
+same-source active project matches the close signal, Signal Track records the
+raw input but does not create a new tracking project:
 
 ```powershell
 python -m signal_track.cli ingest --source 信息源A --text "腾讯 平仓，游戏复苏低于预期。"
