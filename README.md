@@ -402,6 +402,10 @@ extractor results with `action: "none"` behave the same way. Weak open/tracking
 signals still create tracking projects and receive system-supplemented logic.
 Conditional exit rules inside an opening note, such as `Exit if price breaks 20
 day moving average`, are stored as tracking logic and do not close the project.
+Raw input list/detail responses include `project_ids`, `projects`,
+`input_action`, `resolved_symbols`, `logic_score`, and `system_logic_added`.
+For later update or close inputs, `project_ids` points to the affected existing
+projects, not only projects originally created by that input.
 
 If a later input contains close words such as `平仓`, `止盈`, `止损`, `退出`, or
 `exit`, Signal Track first looks for active projects from the same source that

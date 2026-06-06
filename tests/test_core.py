@@ -2165,6 +2165,8 @@ class SignalTrackCoreTests(unittest.TestCase):
             with patch.dict("os.environ", env, clear=False):
                 with redirect_stdout(StringIO()):
                     cli_main(["ingest", "--source", "CLI Input Desk", "--text", "00700.HK long, watch ads recovery."])
+                with redirect_stdout(StringIO()):
+                    cli_main(["ingest", "--source", "CLI Input Desk", "--text", "00700.HK close, ads failed."])
                 list_output = StringIO()
                 with redirect_stdout(list_output):
                     list_code = cli_main(["list-inputs", "--limit", "1"])
@@ -2179,9 +2181,12 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(show_code, 0)
         self.assertEqual(listed["source_name"], "CLI Input Desk")
         self.assertEqual(len(listed["project_ids"]), 1)
+        self.assertEqual(listed["input_action"], "close")
         self.assertEqual(listed["projects"][0]["symbols"], ["00700.HK"])
+        self.assertEqual(listed["projects"][0]["action"], "close")
         self.assertEqual(shown["project_ids"], listed["project_ids"])
-        self.assertIn("00700.HK long", shown["content"])
+        self.assertEqual(shown["input_action"], "close")
+        self.assertIn("00700.HK close", shown["content"])
 
     def test_cli_list_projects_includes_performance_and_filters(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2853,8 +2858,16 @@ class SignalTrackCoreTests(unittest.TestCase):
             closed = client.post("/api/inputs", json={"source": "Alpha Desk", "content": "00700.HK 平仓，广告低于预期"})
             self.assertEqual(closed.status_code, 200)
             self.assertEqual(closed.json()["project_ids"], [projects[0]["id"]])
+            self.assertEqual(closed.json()["input_action"], "close")
             self.assertEqual(closed.json()["projects"][0]["action"], "close")
             self.assertEqual(closed.json()["projects"][0]["status"], "closed")
+            inputs_after_close = client.get("/api/inputs").json()
+            self.assertEqual(inputs_after_close[0]["project_ids"], [projects[0]["id"]])
+            self.assertEqual(inputs_after_close[0]["input_action"], "close")
+            self.assertEqual(inputs_after_close[0]["projects"][0]["action"], "close")
+            close_detail = client.get(f"/api/inputs/{inputs_after_close[0]['id']}").json()
+            self.assertEqual(close_detail["project_ids"], [projects[0]["id"]])
+            self.assertEqual(close_detail["input_action"], "close")
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_projects_list_includes_performance_and_filters(self) -> None:

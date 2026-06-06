@@ -33,6 +33,7 @@ class IngestResult:
     resolved_symbols: list[str]
     logic_score: float
     system_logic_added: bool
+    input_action: str
 
 
 class SignalIngestor:
@@ -70,19 +71,21 @@ class SignalIngestor:
             closed_project_ids = self._close_existing_projects(source_id, content, resolutions, logic_score)
             resolved_symbols = [resolution.instrument.symbol for resolution in resolutions]
             if closed_project_ids:
-                return IngestResult(
+                return self._result(
                     raw_input_id=raw_input_id,
                     project_ids=closed_project_ids,
                     resolved_symbols=resolved_symbols,
                     logic_score=logic_score,
                     system_logic_added=False,
+                    input_action="close",
                 )
-            return IngestResult(
+            return self._result(
                 raw_input_id=raw_input_id,
                 project_ids=[],
                 resolved_symbols=resolved_symbols,
                 logic_score=logic_score,
                 system_logic_added=False,
+                input_action="close_unmatched",
             )
 
         weights = weights or parse_weight_hints(content, resolutions)
@@ -93,21 +96,23 @@ class SignalIngestor:
             else self._append_existing_project_updates(source_id, content, resolutions, direction, logic_score)
         )
         if updated_project_ids:
-            return IngestResult(
+            return self._result(
                 raw_input_id=raw_input_id,
                 project_ids=updated_project_ids,
                 resolved_symbols=[resolution.instrument.symbol for resolution in resolutions],
                 logic_score=logic_score,
                 system_logic_added=False,
+                input_action="update",
             )
 
         if not has_tracking_intent(content, direction, as_portfolio):
-            return IngestResult(
+            return self._result(
                 raw_input_id=raw_input_id,
                 project_ids=[],
                 resolved_symbols=[resolution.instrument.symbol for resolution in resolutions],
                 logic_score=logic_score,
                 system_logic_added=False,
+                input_action="none",
             )
 
         system_logic_added = needs_review
@@ -126,7 +131,7 @@ class SignalIngestor:
             )
             self.repo.add_logic_block(project_id, "source_logic", content, logic_score / 10, [content[:240]])
             self._add_system_logic_block(project_id, "未识别标的", direction, content, [], 0.35)
-            return IngestResult(raw_input_id, [project_id], [], logic_score, True)
+            return self._result(raw_input_id, [project_id], [], logic_score, True, "track")
 
         project_ids: list[int] = []
         if as_portfolio:
@@ -141,12 +146,41 @@ class SignalIngestor:
                 )
                 project_ids.append(project_id)
 
-        return IngestResult(
+        return self._result(
             raw_input_id=raw_input_id,
             project_ids=project_ids,
             resolved_symbols=[resolution.instrument.symbol for resolution in resolutions],
             logic_score=logic_score,
             system_logic_added=system_logic_added,
+            input_action="track",
+        )
+
+    def _result(
+        self,
+        raw_input_id: int,
+        project_ids: list[int],
+        resolved_symbols: list[str],
+        logic_score: float,
+        system_logic_added: bool,
+        input_action: str,
+    ) -> IngestResult:
+        self.repo.update_raw_input_metadata(
+            raw_input_id,
+            {
+                "project_ids": project_ids,
+                "resolved_symbols": resolved_symbols,
+                "logic_score": logic_score,
+                "system_logic_added": system_logic_added,
+                "input_action": input_action,
+            },
+        )
+        return IngestResult(
+            raw_input_id=raw_input_id,
+            project_ids=project_ids,
+            resolved_symbols=resolved_symbols,
+            logic_score=logic_score,
+            system_logic_added=system_logic_added,
+            input_action=input_action,
         )
 
     def _ingest_extraction(
@@ -159,6 +193,7 @@ class SignalIngestor:
         project_ids: list[int] = []
         resolved_symbols: list[str] = []
         system_logic_added = False
+        input_actions: list[str] = []
 
         for signal in extraction.signals:
             resolutions = self._resolve_extracted_signal(signal)
@@ -171,6 +206,7 @@ class SignalIngestor:
 
             if is_noop_action(signal):
                 resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
+                input_actions.append("none")
                 continue
 
             if is_extracted_close_action(signal, source_logic, original_content):
@@ -179,6 +215,11 @@ class SignalIngestor:
                     closed_project_ids = self._close_existing_projects(source_id, source_logic, resolutions, logic_score)
                     if closed_project_ids:
                         project_ids.extend(closed_project_ids)
+                        input_actions.append("close")
+                    else:
+                        input_actions.append("close_unmatched")
+                else:
+                    input_actions.append("close_unmatched")
                 continue
 
             if signal.is_portfolio:
@@ -192,6 +233,7 @@ class SignalIngestor:
                 if updated_project_ids:
                     project_ids.extend(updated_project_ids)
                     resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
+                    input_actions.append("update")
                     continue
             else:
                 updated_project_ids = self._append_existing_project_updates(
@@ -204,6 +246,7 @@ class SignalIngestor:
                 if updated_project_ids:
                     project_ids.extend(updated_project_ids)
                     resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
+                    input_actions.append("update")
                     continue
 
             system_logic_added = system_logic_added or needs_review
@@ -224,6 +267,7 @@ class SignalIngestor:
                 self._add_system_logic_block(project_id, "未识别标的", direction, source_logic, [], 0.35)
                 project_ids.append(project_id)
                 system_logic_added = True
+                input_actions.append("track")
                 continue
 
             if signal.is_portfolio:
@@ -251,18 +295,20 @@ class SignalIngestor:
                     )
                     project_ids.append(project_id)
             resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
+            input_actions.append("track")
 
         average_score = (
             sum(signal.logic_score for signal in extraction.signals) / len(extraction.signals)
             if extraction.signals
             else 0.0
         )
-        return IngestResult(
+        return self._result(
             raw_input_id=raw_input_id,
             project_ids=project_ids,
             resolved_symbols=resolved_symbols,
             logic_score=round(average_score, 2),
             system_logic_added=system_logic_added,
+            input_action=collapse_input_actions(input_actions),
         )
 
     def _resolve_extracted_signal(self, signal: ExtractedSignal):
@@ -697,6 +743,15 @@ def is_extracted_close_action(signal: ExtractedSignal, source_logic: str, origin
 
 def is_noop_action(signal: ExtractedSignal) -> bool:
     return (signal.action or "").strip().lower() == "none"
+
+
+def collapse_input_actions(actions: list[str]) -> str:
+    unique = [action for action in dict.fromkeys(actions) if action]
+    if not unique:
+        return "none"
+    if len(unique) == 1:
+        return unique[0]
+    return "mixed"
 
 
 def has_tracking_intent(content: str, direction: Direction, as_portfolio: bool = False) -> bool:

@@ -546,6 +546,7 @@ def result_response(repo: Repository, result, publish_result: dict) -> dict:
         "raw_input_id": result.raw_input_id,
         "project_ids": result.project_ids,
         "resolved_symbols": result.resolved_symbols,
+        "input_action": result.input_action,
         "projects": project_summaries(repo, result.project_ids),
         "logic_score": result.logic_score,
         "system_logic_added": result.system_logic_added,

@@ -518,6 +518,27 @@ class Repository:
             )
             return int(cur.lastrowid)
 
+    def update_raw_input_metadata(self, input_id: int, metadata: dict) -> None:
+        existing = self.get_raw_input(input_id)
+        if not existing:
+            return
+        try:
+            current_metadata = json.loads(existing["metadata"] or "{}")
+        except json.JSONDecodeError:
+            current_metadata = {}
+        if not isinstance(current_metadata, dict):
+            current_metadata = {}
+        merged_metadata = {**current_metadata, **metadata}
+        with self.db.session() as conn:
+            conn.execute(
+                """
+                UPDATE raw_inputs
+                SET metadata = ?
+                WHERE id = ?
+                """,
+                (json.dumps(merged_metadata, ensure_ascii=False), input_id),
+            )
+
     def list_raw_inputs(self, limit: int = 100) -> list[sqlite3.Row]:
         with self.db.session() as conn:
             return conn.execute(
