@@ -107,6 +107,8 @@ Inputs require a real source name. Pass `source`, or put a marker in the first
 few lines of the note, for example `source: Alpha Desk` or `信息源：Alpha Desk`.
 If no source can be determined, ingestion returns `source_required` and does not
 create a tracking project.
+If you put the source and note on one line, separate them with `;`, `；`, or `|`,
+for example `信息源：Alpha Desk；00700.HK 做多，观察广告`.
 
 If `SIGNAL_TRACK_API_KEY` is configured, mutating endpoints require either:
 
@@ -292,6 +294,8 @@ python -m signal_track.cli show-input 1
 If `--source` is omitted, the first few lines of the note must include a marker
 such as `source: Alpha Desk`, `来源：Alpha Desk`, or `信息源：Alpha Desk`.
 Otherwise the CLI returns `source_required` and skips ingestion.
+Inline markers are also supported when separated from the note body with `;`,
+`；`, or `|`, for example `source: Alpha Desk; 00700.HK long`.
 
 For portfolio notes, either pass `--portfolio` or write an explicit portfolio
 marker in the note, such as `组合`, `portfolio`, `权重`, or `占比`. If the note

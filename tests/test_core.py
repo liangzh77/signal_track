@@ -38,7 +38,7 @@ from signal_track.providers.yfinance_provider import get_price_field
 from signal_track.project_actions import ProjectActionError, update_tracking_project_weights
 from signal_track.resolver import InstrumentResolver, SEED_INSTRUMENTS
 from signal_track.signals import SignalIngestor
-from signal_track.source_detection import resolve_source_name
+from signal_track.source_detection import remove_source_marker_lines, resolve_source_name
 
 try:
     from fastapi.testclient import TestClient
@@ -547,6 +547,12 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(resolve_source_name(None, "信息源：Alpha Desk\n00700.HK 做多"), "Alpha Desk")
         self.assertEqual(resolve_source_name("manual", "来源：Beta\nAAPL 做空"), "Beta")
         self.assertIsNone(resolve_source_name("manual", "00700.HK 做多"))
+
+    def test_inline_source_marker_preserves_body_after_separator(self) -> None:
+        content = "信息源：Alpha Desk；00700.HK 做多，观察广告"
+
+        self.assertEqual(resolve_source_name(None, content), "Alpha Desk")
+        self.assertEqual(remove_source_marker_lines(content), "00700.HK 做多，观察广告")
 
     def test_ingest_low_logic_signal_creates_tracking_project_with_system_logic(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1733,7 +1739,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(missing.status_code, 422)
             self.assertEqual(missing.json()["detail"]["code"], "source_required")
 
-            inferred = client.post("/api/inputs", json={"content": "信息源：Alpha Desk\n00700.HK 做多，观察广告"})
+            inferred = client.post("/api/inputs", json={"content": "信息源：Alpha Desk；00700.HK 做多，观察广告"})
             self.assertEqual(inferred.status_code, 200)
             self.assertEqual(inferred.json()["resolved_symbols"], ["00700.HK"])
             self.assertEqual(inferred.json()["projects"][0]["action"], "track")
