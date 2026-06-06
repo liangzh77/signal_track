@@ -7,9 +7,11 @@ import types
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
+from io import BytesIO
 from unittest.mock import patch
 from datetime import date, timedelta
 from pathlib import Path
+from zipfile import ZipFile
 
 from signal_track.config import Settings
 from signal_track.db import Database, Repository
@@ -58,6 +60,19 @@ def next_fixture_trading_day(current: date) -> date:
     while current.weekday() >= 5:
         current += timedelta(days=1)
     return current
+
+
+def minimal_docx_bytes(text: str) -> bytes:
+    document = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        f"<w:body><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:body>"
+        "</w:document>"
+    )
+    buffer = BytesIO()
+    with ZipFile(buffer, "w") as archive:
+        archive.writestr("word/document.xml", document.encode("utf-8"))
+    return buffer.getvalue()
 
 
 class RecordingMarketDataProvider(MarketDataProvider):
@@ -2833,6 +2848,11 @@ class SignalTrackCoreTests(unittest.TestCase):
                     data={"source": "File Source"},
                     files={"file": ("utf16.txt", "NVDA long, watch orders.".encode("utf-16"), "text/plain")},
                 )
+                docx = client.post(
+                    "/api/inputs/file",
+                    data={"source": "File Source"},
+                    files={"file": ("note.docx", minimal_docx_bytes("00700.HK long, watch ads."), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+                )
                 binary = client.post(
                     "/api/inputs/file",
                     data={"source": "File Source"},
@@ -2844,11 +2864,14 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(cjk.json()["resolved_symbols"], ["00700.HK"])
             self.assertEqual(utf16.status_code, 200)
             self.assertEqual(utf16.json()["resolved_symbols"], ["NVDA"])
+            self.assertEqual(docx.status_code, 200)
+            self.assertEqual(docx.json()["resolved_symbols"], ["00700.HK"])
             self.assertEqual(binary.status_code, 415)
             self.assertEqual(binary.json()["detail"]["code"], "unsupported_input_file")
-            self.assertEqual(len(raw_inputs), 2)
+            self.assertEqual(len(raw_inputs), 3)
             self.assertTrue(any("腾讯" in row["content"] for row in raw_inputs))
             self.assertTrue(any("NVDA" in row["content"] for row in raw_inputs))
+            self.assertTrue(any("watch ads" in row["content"] for row in raw_inputs))
 
     def test_cli_file_ingest_rejects_unsupported_binary_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
