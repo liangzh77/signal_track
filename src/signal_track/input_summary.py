@@ -4,24 +4,27 @@ from .db import Repository
 
 
 def input_summaries(repo: Repository, limit: int = 100) -> list[dict]:
-    return [input_summary(row) for row in repo.list_raw_inputs(limit=limit)]
+    return [input_summary(repo, row) for row in repo.list_raw_inputs(limit=limit)]
 
 
 def input_detail(repo: Repository, input_id: int) -> dict | None:
     row = repo.get_raw_input(input_id)
     if not row:
         return None
-    detail = input_summary(row)
+    detail = input_summary(repo, row)
     detail["content"] = row["content"]
     return detail
 
 
-def input_summary(row) -> dict:
+def input_summary(repo: Repository, row) -> dict:
     content = str(row["content"] or "")
+    projects = input_project_summaries(repo, int(row["id"]))
     return {
         "id": int(row["id"]),
         "source_id": int(row["source_id"]),
         "source_name": row["source_name"],
+        "project_ids": [project["id"] for project in projects],
+        "projects": projects,
         "content_preview": compact_preview(content),
         "content_length": len(content),
         "attachment_path": row["attachment_path"],
@@ -35,3 +38,34 @@ def compact_preview(content: str, limit: int = 240) -> str:
     if len(normalized) <= limit:
         return normalized
     return normalized[: limit - 3].rstrip() + "..."
+
+
+def input_project_summaries(repo: Repository, raw_input_id: int) -> list[dict]:
+    return [
+        {
+            "id": int(row["id"]),
+            "action": input_project_action(str(row["status"])),
+            "title": row["title"],
+            "status": row["status"],
+            "direction": row["direction"],
+            "symbols": split_joined(row["symbols"]),
+            "instrument_names": split_joined(row["instrument_names"]),
+            "entry_date": row["entry_date"],
+            "closed_date": row["closed_date"],
+        }
+        for row in repo.list_project_rows_by_raw_input_id(raw_input_id)
+    ]
+
+
+def input_project_action(status: str) -> str:
+    if status == "closed":
+        return "close"
+    if status == "exit_signal":
+        return "exit_signal"
+    return "track"
+
+
+def split_joined(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [part.strip() for part in value.split(",") if part.strip()]

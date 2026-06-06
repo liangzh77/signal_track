@@ -2151,6 +2151,38 @@ class SignalTrackCoreTests(unittest.TestCase):
             events = Repository(Database(db_path)).list_publish_events()
             self.assertEqual(events, [])
 
+    def test_cli_list_and_show_inputs_include_project_links(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with redirect_stdout(StringIO()):
+                    cli_main(["ingest", "--source", "CLI Input Desk", "--text", "00700.HK long, watch ads recovery."])
+                list_output = StringIO()
+                with redirect_stdout(list_output):
+                    list_code = cli_main(["list-inputs", "--limit", "1"])
+                input_id = json.loads(list_output.getvalue())["inputs"][0]["id"]
+                show_output = StringIO()
+                with redirect_stdout(show_output):
+                    show_code = cli_main(["show-input", str(input_id)])
+
+        listed = json.loads(list_output.getvalue())["inputs"][0]
+        shown = json.loads(show_output.getvalue())["input"]
+        self.assertEqual(list_code, 0)
+        self.assertEqual(show_code, 0)
+        self.assertEqual(listed["source_name"], "CLI Input Desk")
+        self.assertEqual(len(listed["project_ids"]), 1)
+        self.assertEqual(listed["projects"][0]["symbols"], ["00700.HK"])
+        self.assertEqual(shown["project_ids"], listed["project_ids"])
+        self.assertIn("00700.HK long", shown["content"])
+
     def test_cli_list_projects_includes_performance_and_filters(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"
@@ -2792,9 +2824,14 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(inputs[0]["source_name"], "Alpha Desk")
             self.assertIn("00700.HK", inputs[0]["content_preview"])
             self.assertGreater(inputs[0]["content_length"], 0)
+            self.assertEqual(inputs[0]["project_ids"], [projects[0]["id"]])
+            self.assertEqual(inputs[0]["projects"][0]["symbols"], ["00700.HK"])
+            self.assertEqual(inputs[0]["projects"][0]["action"], "track")
             self.assertNotIn("content", inputs[0])
             input_detail = client.get(f"/api/inputs/{inputs[0]['id']}").json()
             self.assertIn("00700.HK 做多", input_detail["content"])
+            self.assertEqual(input_detail["project_ids"], [projects[0]["id"]])
+            self.assertEqual(input_detail["projects"][0]["title"], projects[0]["title"])
             self.assertEqual(client.get("/api/inputs/999999").status_code, 404)
             project_detail = client.get(f"/api/projects/{projects[0]['id']}").json()
             self.assertEqual(project_detail["research_items"][0]["item_type"], "verification_note")
