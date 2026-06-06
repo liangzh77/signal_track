@@ -642,7 +642,35 @@ class SignalTrackCoreTests(unittest.TestCase):
                 json={"status": "verified", "source_note": "manual verification"},
             )
             self.assertEqual(updated_item.status_code, 200)
-            self.assertEqual(updated_item.json()["status"], "verified")
+            self.assertEqual(updated_item.json()["item"]["status"], "verified")
+            self.assertFalse(updated_item.json()["publish"]["attempted"])
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_research_item_update_publishes_when_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
+                "GO_SITES_DEMO_API_KEY": "demo-key",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.web_app.DemoPublisher", FakeDemoPublisher):
+                    client = TestClient(create_app())
+                    created = client.post(
+                        "/api/inputs",
+                        json={"source": "测试源", "content": "腾讯 做多"},
+                    )
+                    project_id = created.json()["project_ids"][0]
+                    item_id = client.get(f"/api/projects/{project_id}").json()["research_items"][0]["id"]
+                    updated = client.patch(f"/api/research-items/{item_id}", json={"status": "verified"})
+                    events = client.get("/api/publish/events").json()
+
+            self.assertEqual(updated.status_code, 200)
+            self.assertTrue(updated.json()["publish"]["ok"])
+            self.assertEqual(events[0]["url"], "https://example.com/demo/signal")
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_mutating_web_endpoints_require_api_key_when_configured(self) -> None:

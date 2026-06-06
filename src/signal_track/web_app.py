@@ -214,7 +214,8 @@ def create_app():
         )
         if not item:
             raise HTTPException(status_code=404, detail="Research item not found")
-        return dict(item)
+        publish_result = maybe_publish(repo, settings, f"研究验证项更新：{payload.status}")
+        return {"item": dict(item), "publish": publish_result}
 
     @app.post("/api/checks/run", dependencies=[Depends(require_write_auth)])
     def run_checks(payload: CheckPayload = Body(default=CheckPayload())):

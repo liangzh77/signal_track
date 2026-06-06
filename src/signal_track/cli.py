@@ -70,6 +70,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     update_research_parser.add_argument("--source-note")
     update_research_parser.add_argument("--metadata-json")
+    update_research_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after updating.")
+    update_research_parser.add_argument("--title", default="Signal Track 投资信号看板")
 
     ingest_parser = subparsers.add_parser("ingest", help="Create tracking projects from raw source text.")
     ingest_parser.add_argument("--source")
@@ -259,8 +261,28 @@ def main(argv: list[str] | None = None) -> int:
         if not item:
             print(json.dumps({"ok": False, "code": "research_item_not_found"}, ensure_ascii=False))
             return 2
-        print(json.dumps({"ok": True, "item": dict(item)}, ensure_ascii=False, indent=2))
-        return 0
+        publish_result = None
+        if args.publish:
+            publish_result = publish_dashboard(
+                repo,
+                settings,
+                title=args.title,
+                feature=f"研究验证项更新：{args.status}",
+                flow="research-item-update",
+            )
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "item": dict(item),
+                    "published": publish_result.ok if publish_result else False,
+                    "status_code": publish_result.status_code if publish_result else None,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0 if publish_result is None or publish_result.ok else 1
 
     if args.command == "ingest":
         db.init()
@@ -467,6 +489,24 @@ def refresh_markets(value: str) -> list[Market]:
     if value == "all":
         return [Market.CN_A, Market.HK, Market.CN_FUT, Market.US, Market.US_FUT]
     return [Market(value)]
+
+
+def publish_dashboard(repo: Repository, settings: Settings, title: str, feature: str, flow: str):
+    if not settings.demo_publish_url or not settings.demo_api_key:
+        raise SystemExit("GO_SITES_DEMO_PUBLISH_URL and GO_SITES_DEMO_API_KEY are required")
+    result = DemoPublisher(settings.demo_publish_url, settings.demo_api_key).publish(
+        title=title,
+        html=render_dashboard(repo),
+        feature=feature,
+    )
+    repo.record_publish_event(
+        title=title,
+        url=extract_published_address(result.body) or settings.demo_publish_url,
+        status_code=result.status_code,
+        response_body=result.body,
+        metadata={"ok": result.ok, "flow": flow},
+    )
+    return result
 
 
 def default_backup_path(db_path: Path) -> Path:
