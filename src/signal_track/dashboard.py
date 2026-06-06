@@ -455,6 +455,10 @@ def logic_label(value: str) -> str:
         return "系统补充逻辑"
     if value == "source_update":
         return "后续信息更新"
+    if value == "close_logic":
+        return "平仓逻辑"
+    if value == "weight_update":
+        return "权重更新"
     return value
 
 

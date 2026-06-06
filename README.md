@@ -78,6 +78,7 @@ Useful endpoints:
 - `GET /api/projects`
 - `GET /api/projects/{project_id}`
 - `POST /api/projects/{project_id}/close` with `{ "closed_date": "2026-06-10", "reason": "..." }`
+- `PATCH /api/projects/{project_id}/weights` with `{ "weights": { "300750.SZ": 60, "600519.SH": 40 } }`
 - `GET /api/research-items`
 - `PATCH /api/research-items/{item_id}` with `{ "status": "verified" }`
 - `POST /api/checks/run` with optional `{ "provider": "auto" }`
@@ -330,6 +331,7 @@ being expanded:
 python -m signal_track.cli list-research-items --project-id 1
 python -m signal_track.cli update-research-item 1 --status verified --source-note "checked filing"
 python -m signal_track.cli update-research-item 1 --status contradicted --check --provider auto --publish
+python -m signal_track.cli update-project-weights 1 --weights-json '{"300750.SZ":60,"600519.SH":40}'
 python -m signal_track.cli close-project 1 --date 2026-06-10 --reason "manual exit after thesis broke" --publish
 ```
 

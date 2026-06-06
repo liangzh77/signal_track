@@ -14,7 +14,7 @@ from .input_summary import input_detail, input_summaries
 from .logic_supplement import build_logic_supplementer
 from .models import Market
 from .provider_diagnostics import market_data_coverage
-from .project_actions import close_tracking_project
+from .project_actions import ProjectActionError, close_tracking_project, update_tracking_project_weights
 from .project_summary import project_summaries
 from .publisher import DemoPublisher, extract_published_address, publish_payload
 from .providers.factory import build_market_data_provider
@@ -71,6 +71,10 @@ def create_app():
     class CloseProjectPayload(BaseModel):
         closed_date: str | None = None
         reason: str | None = None
+
+    class ProjectWeightsPayload(BaseModel):
+        weights: dict[str, float]
+        note: str | None = None
 
     app = FastAPI(title="Signal Track", version="0.1.0")
 
@@ -243,6 +247,26 @@ def create_app():
             raise HTTPException(status_code=404, detail="Project not found")
         publish_result = maybe_publish(repo, settings, f"Project {project_id} closed")
         return {"project": project_summaries(repo, [project_id])[0], "publish": publish_result}
+
+    @app.patch("/api/projects/{project_id}/weights", dependencies=[Depends(require_write_auth)])
+    def update_project_weights(project_id: int, payload: ProjectWeightsPayload):
+        try:
+            project = update_tracking_project_weights(
+                repo,
+                project_id,
+                payload.weights,
+                note=payload.note,
+            )
+        except ProjectActionError as exc:
+            raise HTTPException(status_code=400, detail={"code": exc.code, "message": exc.message}) from exc
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        publish_result = maybe_publish(repo, settings, f"Project {project_id} weights updated")
+        return {
+            "project": project_summaries(repo, [project_id])[0],
+            "legs": [dict(row) for row in repo.list_project_legs(project_id)],
+            "publish": publish_result,
+        }
 
     @app.get("/api/research-items")
     def list_research_items(project_id: int | None = None, limit: int = 100):

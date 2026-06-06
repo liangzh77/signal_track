@@ -31,6 +31,7 @@ from signal_track.providers.base import MarketDataProvider
 from signal_track.providers.factory import build_auto_provider
 from signal_track.providers.fixture import FixtureMarketDataProvider
 from signal_track.providers.yfinance_provider import get_price_field
+from signal_track.project_actions import ProjectActionError, update_tracking_project_weights
 from signal_track.resolver import InstrumentResolver, SEED_INSTRUMENTS
 from signal_track.signals import SignalIngestor
 from signal_track.source_detection import resolve_source_name
@@ -689,6 +690,39 @@ class SignalTrackCoreTests(unittest.TestCase):
             logic = repo.list_logic_blocks(opened.project_ids[0])
             self.assertTrue(any(block["logic_type"] == "source_update" for block in logic))
 
+    def test_update_tracking_project_weights_normalizes_and_clears_review_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                source_name="Portfolio Desk",
+                content="portfolio long: 300750.SZ, 600519.SH, watch margin and demand.",
+            )
+            self.assertTrue(bool(repo.get_project_row(result.project_ids[0])["weight_needs_review"]))
+
+            updated = update_tracking_project_weights(
+                repo,
+                result.project_ids[0],
+                {"300750.SZ": 70, "600519.SH": 30},
+                note="user supplied portfolio weights",
+            )
+
+            self.assertIsNotNone(updated)
+            self.assertFalse(bool(repo.get_project_row(result.project_ids[0])["weight_needs_review"]))
+            legs = repo.list_project_legs(result.project_ids[0])
+            weights = {leg["symbol"]: leg["weight"] for leg in legs}
+            self.assertAlmostEqual(weights["300750.SZ"], 0.7)
+            self.assertAlmostEqual(weights["600519.SH"], 0.3)
+            logic = repo.list_logic_blocks(result.project_ids[0])
+            self.assertTrue(any(block["logic_type"] == "weight_update" for block in logic))
+
+            with self.assertRaises(ProjectActionError) as ctx:
+                update_tracking_project_weights(repo, result.project_ids[0], {"300750.SZ": 1.0})
+            self.assertEqual(ctx.exception.code, "incomplete_weights")
+
     def test_close_signal_updates_existing_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
@@ -958,6 +992,43 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(projects[0]["symbols"], "NVDA")
             self.assertEqual(projects[0]["direction"], "short")
 
+    def test_cli_update_project_weights(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with redirect_stdout(StringIO()):
+                    create_code = cli_main([
+                        "ingest",
+                        "--source",
+                        "CLI Desk",
+                        "--text",
+                        "portfolio long: 300750.SZ, 600519.SH, watch margin.",
+                    ])
+                repo = Repository(Database(db_path))
+                project_id = int(repo.list_project_rows()[0]["id"])
+                with redirect_stdout(StringIO()):
+                    update_code = cli_main([
+                        "update-project-weights",
+                        str(project_id),
+                        "--weights-json",
+                        '{"300750.SZ": 65, "600519.SH": 35}',
+                    ])
+
+            legs = Repository(Database(db_path)).list_project_legs(project_id)
+            weights = {leg["symbol"]: leg["weight"] for leg in legs}
+            self.assertEqual(create_code, 0)
+            self.assertEqual(update_code, 0)
+            self.assertAlmostEqual(weights["300750.SZ"], 0.65)
+            self.assertAlmostEqual(weights["600519.SH"], 0.35)
+
     def test_daily_logic_evaluator_can_trigger_exit_signal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
@@ -1144,6 +1215,48 @@ class SignalTrackCoreTests(unittest.TestCase):
             )
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_update_project_weights_endpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+
+            created = client.post(
+                "/api/inputs",
+                json={
+                    "source": "Portfolio Desk",
+                    "content": "portfolio long: 300750.SZ, 600519.SH, watch margin.",
+                },
+            )
+            project_id = created.json()["project_ids"][0]
+            updated = client.patch(
+                f"/api/projects/{project_id}/weights",
+                json={"weights": {"300750.SZ": 55, "600519.SH": 45}, "note": "confirmed weights"},
+            )
+            incomplete = client.patch(
+                f"/api/projects/{project_id}/weights",
+                json={"weights": {"300750.SZ": 100}},
+            )
+            detail = client.get(f"/api/projects/{project_id}").json()
+
+            self.assertEqual(updated.status_code, 200)
+            weights = {leg["symbol"]: leg["weight"] for leg in updated.json()["legs"]}
+            self.assertAlmostEqual(weights["300750.SZ"], 0.55)
+            self.assertAlmostEqual(weights["600519.SH"], 0.45)
+            self.assertFalse(updated.json()["project"]["weight_needs_review"])
+            self.assertFalse(updated.json()["publish"]["attempted"])
+            self.assertEqual(incomplete.status_code, 400)
+            self.assertEqual(incomplete.json()["detail"]["code"], "incomplete_weights")
+            self.assertTrue(any(block["logic_type"] == "weight_update" for block in detail["logic_blocks"]))
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_file_ingest_preserves_same_named_attachments(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"
@@ -1240,6 +1353,8 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(denied_research.status_code, 401)
             denied_close = client.post("/api/projects/1/close", json={})
             self.assertEqual(denied_close.status_code, 401)
+            denied_weights = client.patch("/api/projects/1/weights", json={"weights": {"00700.HK": 1}})
+            self.assertEqual(denied_weights.status_code, 401)
 
             allowed = client.post(
                 "/api/inputs",

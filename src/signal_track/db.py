@@ -518,6 +518,29 @@ class Repository:
                 (entry_price, entry_date, leg_id),
             )
 
+    def update_project_leg_weights(self, project_id: int, weights_by_leg_id: dict[int, float]) -> None:
+        if not weights_by_leg_id:
+            return
+        with self.db.session() as conn:
+            for leg_id, weight in weights_by_leg_id.items():
+                conn.execute(
+                    """
+                    UPDATE project_legs
+                    SET weight = ?
+                    WHERE id = ? AND project_id = ?
+                    """,
+                    (weight, leg_id, project_id),
+                )
+            conn.execute(
+                """
+                UPDATE tracking_projects
+                SET weight_needs_review = 0,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (project_id,),
+            )
+
     def update_project_status(self, project_id: int, status: str, needs_review: bool | None = None) -> None:
         assignments = ["status = ?", "updated_at = CURRENT_TIMESTAMP"]
         params: list[object] = [status]

@@ -19,7 +19,7 @@ from .logic_supplement import build_logic_supplementer
 from .market_data import MarketDataService
 from .models import Market
 from .provider_diagnostics import market_data_coverage
-from .project_actions import close_tracking_project
+from .project_actions import ProjectActionError, close_tracking_project, update_tracking_project_weights
 from .project_summary import project_summaries
 from .publisher import DemoPublisher, extract_published_address
 from .providers.factory import build_market_data_provider
@@ -102,6 +102,14 @@ def main(argv: list[str] | None = None) -> int:
     close_project_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after closing.")
     close_project_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     close_project_parser.add_argument("--title", default="Signal Track 投资信号看板")
+
+    weights_parser = subparsers.add_parser("update-project-weights", help="Update all leg weights for a portfolio project.")
+    weights_parser.add_argument("project_id", type=int)
+    weights_parser.add_argument("--weights-json", required=True, help='JSON map, e.g. {"300750.SZ":60,"600519.SH":40}.')
+    weights_parser.add_argument("--note", help="Reason recorded as a weight_update logic block.")
+    weights_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after updating weights.")
+    weights_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
+    weights_parser.add_argument("--title", default="Signal Track 投资信号看板")
 
     ingest_parser = subparsers.add_parser("ingest", help="Create tracking projects from raw source text.")
     ingest_parser.add_argument("--source")
@@ -374,6 +382,50 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "ok": True,
                     "project": project_summaries(repo, [args.project_id])[0],
+                    "published": publish_result.ok if publish_result else False,
+                    "status_code": publish_result.status_code if publish_result else None,
+                    "published_url": extract_published_address(publish_result.body) if publish_result else None,
+                    "publish_url": settings.demo_publish_url if publish_result else None,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0 if publish_result is None or publish_result.ok else 1
+
+    if args.command == "update-project-weights":
+        db.init()
+        try:
+            weights = json.loads(args.weights_json)
+            if not isinstance(weights, dict):
+                raise ValueError("weights-json must be a JSON object")
+            weights = {str(key): float(value) for key, value in weights.items()}
+        except (json.JSONDecodeError, ValueError, TypeError) as exc:
+            print(json.dumps({"ok": False, "code": "invalid_weights_json", "message": str(exc)}, ensure_ascii=False))
+            return 2
+        try:
+            project = update_tracking_project_weights(repo, args.project_id, weights, note=args.note)
+        except ProjectActionError as exc:
+            print(json.dumps({"ok": False, "code": exc.code, "message": exc.message}, ensure_ascii=False))
+            return 2
+        if not project:
+            print(json.dumps({"ok": False, "code": "project_not_found"}, ensure_ascii=False))
+            return 2
+        publish_result = None
+        if should_publish_update(settings, forced=args.publish, disabled=args.no_publish):
+            publish_result = publish_dashboard(
+                repo,
+                settings,
+                title=args.title,
+                feature=f"Project {args.project_id} weights updated",
+                flow="update-project-weights",
+            )
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "project": project_summaries(repo, [args.project_id])[0],
+                    "legs": [dict(row) for row in repo.list_project_legs(args.project_id)],
                     "published": publish_result.ok if publish_result else False,
                     "status_code": publish_result.status_code if publish_result else None,
                     "published_url": extract_published_address(publish_result.body) if publish_result else None,
