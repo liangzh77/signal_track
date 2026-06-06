@@ -55,6 +55,7 @@ def render_dashboard(repo: Repository) -> str:
       --red: #FF6B6B;
     }}
     * {{ box-sizing: border-box; }}
+    html {{ overflow-x: hidden; }}
     body {{
       margin: 0;
       background:
@@ -64,6 +65,7 @@ def render_dashboard(repo: Repository) -> str:
       background-size: 32px 32px;
       color: var(--text);
       font-family: Geist, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      overflow-x: hidden;
     }}
     .shell {{ max-width: 1440px; margin: 0 auto; padding: 24px; }}
     .topbar {{
@@ -97,6 +99,7 @@ def render_dashboard(repo: Repository) -> str:
     .panel {{ overflow: hidden; }}
     .panel-header {{ display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border); }}
     .panel-header h2 {{ margin: 0; font-size: 18px; line-height: 26px; }}
+    .table-wrap {{ width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }}
     table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
     th, td {{ padding: 11px 12px; border-bottom: 1px solid rgba(231,238,232,.08); text-align: left; vertical-align: middle; }}
     th {{ color: var(--muted); font-weight: 600; position: sticky; top: 0; background: rgba(13,15,14,.92); }}
@@ -150,6 +153,20 @@ def render_dashboard(repo: Repository) -> str:
       .grid {{ grid-template-columns: 1fr; }}
       .details {{ grid-template-columns: 1fr; }}
       .topbar {{ align-items: start; flex-direction: column; }}
+      table {{ min-width: 720px; }}
+      .research-item {{ grid-template-columns: 1fr; gap: 6px; }}
+      .research-item em {{ text-align: left; }}
+      .detail-top {{ flex-direction: column; }}
+    }}
+    @media (max-width: 520px) {{
+      .shell {{ padding: 12px; }}
+      h1 {{ font-size: 22px; line-height: 30px; }}
+      .metrics {{ gap: 8px; }}
+      .metric {{ padding: 12px; }}
+      .metric strong {{ font-size: 22px; line-height: 28px; }}
+      .source-card-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+      .panel-header {{ padding: 12px; }}
+      .detail-card {{ padding: 12px; }}
     }}
   </style>
 </head>
@@ -173,10 +190,12 @@ def render_dashboard(repo: Repository) -> str:
     <section class="grid">
       <div class="card panel">
         <div class="panel-header"><h2>跟踪项目</h2><span class="muted">按更新时间排序</span></div>
-        <table>
-          <thead><tr><th>状态</th><th>信息源</th><th>项目</th><th>标的</th><th>方向</th><th>逻辑分</th><th>收益</th><th>复核</th></tr></thead>
-          <tbody>{project_rows}</tbody>
-        </table>
+        <div class="table-wrap" tabindex="0" aria-label="跟踪项目表格">
+          <table>
+            <thead><tr><th>状态</th><th>信息源</th><th>项目</th><th>标的</th><th>方向</th><th>逻辑分</th><th>收益</th><th>复核</th></tr></thead>
+            <tbody>{project_rows}</tbody>
+          </table>
+        </div>
       </div>
       <aside class="card rail">
         <div class="panel-header"><h2>每日检查</h2></div>
@@ -464,7 +483,7 @@ def logic_label(value: str) -> str:
 
 def render_publish_stamp(row) -> str:
     if not row:
-        return "Card based layered dashboard · Futuristic minimalism"
+        return "尚未发布"
     status = row["status_code"] or "--"
     url = row["url"] or ""
     if url:

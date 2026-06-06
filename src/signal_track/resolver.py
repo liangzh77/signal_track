@@ -156,6 +156,8 @@ class InstrumentResolver:
         query = normalize(raw)
         if not query:
             return None
+        if is_ambiguous_lowercase_symbol(raw, market_hint):
+            return None
 
         candidates = [
             instrument for instrument in self.instruments
@@ -183,13 +185,23 @@ class InstrumentResolver:
             if best is None or score > best[0]:
                 best = (score, instrument)
 
-        if best and best[0] >= 0.62:
+        threshold = 0.62 if contains_cjk(raw) else 0.82
+        if best and best[0] >= threshold:
             return Resolution(best[1], round(best[0], 3), "fuzzy name/alias match")
         return None
 
 
 def normalize(value: str) -> str:
     return re.sub(r"[\s_\-。．.]+", "", value.strip().upper())
+
+
+def contains_cjk(value: str) -> bool:
+    return bool(re.search(r"[\u4e00-\u9fff]", value))
+
+
+def is_ambiguous_lowercase_symbol(value: str, market_hint: Market | None = None) -> bool:
+    raw = value.strip()
+    return market_hint is None and bool(re.fullmatch(r"[a-z]{1,3}", raw))
 
 
 def infer_symbol(value: str, market_hint: Market | None = None) -> str | None:
@@ -321,7 +333,27 @@ def synthesize_instrument(raw_value: str, symbol: str, market_hint: Market | Non
     if not (raw == upper or upper.endswith(".US") or market_hint == Market.US):
         return None
     symbol = upper.removesuffix(".US")
-    if symbol in {"LONG", "SHORT", "BUY", "SELL", "HOLD", "WATCH", "EXIT", "CLOSE", "HK", "US", "SZ", "SH"}:
+    if symbol in {
+        "LONG",
+        "SHORT",
+        "BUY",
+        "SELL",
+        "HOLD",
+        "WATCH",
+        "EXIT",
+        "CLOSE",
+        "HK",
+        "US",
+        "SZ",
+        "SH",
+        "IF",
+        "CU",
+        "ES",
+        "NQ",
+        "HSI",
+        "HHI",
+        "MHI",
+    }:
         return None
     return Instrument(
         symbol=symbol,

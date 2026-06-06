@@ -17,6 +17,13 @@ EXIT_WORDS = ("平仓", "止盈", "止损", "退出", "close", "exit")
 LOGIC_WORDS = ("因为", "逻辑", "观察", "跟踪", "如果", "若", "触发", "催化", "风险", "验证")
 PORTFOLIO_WORDS = ("组合", "一篮子", "篮子", "配对", "权重", "占比", "portfolio", "basket", "pair trade")
 TRACK_WORDS = ("开仓", "建仓", "观察", "跟踪", "关注", "open", "track", "watch")
+CONDITIONAL_EXIT_PATTERNS = (
+    r"\b(?:exit|close)\s+if\b",
+    r"\bif\b[^.;。；\n]{0,100}\b(?:exit|close)\b",
+    r"(?:平仓|退出|止盈|止损)条件",
+    r"(?:如果|若|如)[^。；;\n]{0,80}(?:平仓|退出|止盈|止损)",
+    r"(?:跌破|突破|低于|高于)[^。；;\n]{0,80}(?:平仓|退出|止盈|止损)",
+)
 
 
 @dataclass(frozen=True)
@@ -614,17 +621,31 @@ def fallback_research_items(name: str) -> list[dict[str, object]]:
 def extract_probe_terms(content: str) -> list[str]:
     terms: list[str] = []
     patterns = [
-        r"\b\d{6}(?:\.(?:SZ|SH))?\b",
-        r"\b\d{1,5}\.HK\b",
-        r"\b[A-Z]{1,5}(?:\.US|=F)?\b",
-        r"[\u4e00-\u9fffA-Za-z0-9\-]{2,20}",
+        (r"\b\d{6}(?:\.(?:SZ|SH))?\b", re.IGNORECASE),
+        (r"\b\d{1,5}\.HK\b", re.IGNORECASE),
+        (r"\b[A-Z]{1,5}(?:\.US|=F)?\b", 0),
+        (r"[\u4e00-\u9fffA-Za-z0-9\-]{2,20}", 0),
     ]
-    for pattern in patterns:
-        for match in re.finditer(pattern, content, flags=re.IGNORECASE):
+    for pattern, flags in patterns:
+        for match in re.finditer(pattern, content, flags=flags):
             term = match.group(0).strip("，。；;：:（）()[]【】")
-            if term and term not in terms:
+            if term and should_probe_term(term) and term not in terms:
                 terms.append(term)
     return terms
+
+
+def should_probe_term(term: str) -> bool:
+    if re.search(r"[\u4e00-\u9fff]", term):
+        return True
+    if re.fullmatch(r"\d{6}(?:\.(?:SZ|SH))?", term, flags=re.IGNORECASE):
+        return True
+    if re.fullmatch(r"\d{1,5}\.HK", term, flags=re.IGNORECASE):
+        return True
+    if re.fullmatch(r"[A-Z]{1,5}(?:\.US|=F)?", term):
+        return True
+    if re.fullmatch(r"[A-Z]{1,4}\d{3,4}\.(?:SHF|DCE|CZC|CFX|INE|GFE)", term):
+        return True
+    return bool(re.fullmatch(r"[A-Z][A-Za-z]{2,19}", term))
 
 
 def detect_direction(content: str) -> Direction:
@@ -638,7 +659,21 @@ def detect_direction(content: str) -> Direction:
 
 def is_close_action(content: str) -> bool:
     lowered = content.lower()
-    return any(word in lowered for word in EXIT_WORDS)
+    if not any(word in lowered for word in EXIT_WORDS):
+        return False
+    if has_entry_context(content) and has_conditional_exit_context(content):
+        return False
+    return True
+
+
+def has_entry_context(content: str) -> bool:
+    lowered = content.lower()
+    return any(word in lowered for word in LONG_WORDS + SHORT_WORDS + TRACK_WORDS)
+
+
+def has_conditional_exit_context(content: str) -> bool:
+    lowered = content.lower()
+    return any(re.search(pattern, lowered, flags=re.IGNORECASE) for pattern in CONDITIONAL_EXIT_PATTERNS)
 
 
 def is_extracted_close_action(signal: ExtractedSignal, source_logic: str, original_content: str) -> bool:

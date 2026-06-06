@@ -202,6 +202,10 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIsNone(resolver.resolve("60"))
         self.assertIsNone(resolver.resolve("long"))
         self.assertIsNone(resolver.resolve("HK"))
+        self.assertIsNone(resolver.resolve("if"))
+        self.assertIsNone(resolver.resolve("pipeline"))
+        self.assertIsNone(resolver.resolve("IF"))
+        self.assertEqual(InstrumentResolver().resolve("IF").instrument.symbol, "IF.CFX")
 
     def test_database_initialization_and_fixture_bar_storage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -566,6 +570,7 @@ class SignalTrackCoreTests(unittest.TestCase):
 
             self.assertIn("source-summary", html)
             self.assertIn("data-source-filter", html)
+            self.assertIn("table-wrap", html)
             self.assertIn("source-chip", html)
             self.assertIn("data-source='信息源A'", html)
             self.assertIn("class='card detail-card' data-source='信息源B'", html)
@@ -573,6 +578,8 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("信息源A", html)
             self.assertIn("信息源B", html)
             self.assertIn("待复核", html)
+            self.assertIn("尚未发布", html)
+            self.assertNotIn("Futuristic minimalism", html)
 
     def test_structured_extraction_can_create_portfolio_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -842,6 +849,46 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertFalse(result.system_logic_added)
             self.assertEqual(repo.list_project_rows(), [])
             self.assertEqual(len(repo.list_raw_inputs()), 1)
+
+    def test_heuristic_open_note_with_exit_condition_creates_tracking_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                "Alpha Desk",
+                "00700.HK long, watch ads recovery and game pipeline. Exit if price breaks 20 day moving average.",
+            )
+
+            self.assertEqual(len(result.project_ids), 1)
+            self.assertEqual(result.resolved_symbols, ["00700.HK"])
+            self.assertTrue(result.system_logic_added)
+            rows = repo.list_project_rows()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["direction"], "long")
+            self.assertIn(rows[0]["status"], {"active", "needs_review"})
+
+    def test_heuristic_short_note_with_exit_condition_creates_tracking_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                "Short Book",
+                "NVDA short, watch capex slowdown and margin pressure. Close if order data reaccelerates.",
+            )
+
+            self.assertEqual(len(result.project_ids), 1)
+            self.assertEqual(result.resolved_symbols, ["NVDA"])
+            rows = repo.list_project_rows()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["direction"], "short")
 
     def test_same_source_followup_updates_existing_project_without_duplicate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
