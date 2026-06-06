@@ -66,7 +66,7 @@ def create_app():
         date: str | None = None
 
     class RefreshInstrumentsPayload(BaseModel):
-        provider: str = "tushare"
+        provider: str = "auto"
         market: str = "all"
 
     class ResearchItemUpdatePayload(BaseModel):

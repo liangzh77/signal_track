@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     bars_parser.add_argument("--market", choices=[market.value for market in Market])
 
     refresh_parser = subparsers.add_parser("refresh-instruments", help="Refresh instrument master records.")
-    refresh_parser.add_argument("--provider", choices=["auto", "fixture", "tushare"], default="tushare")
+    refresh_parser.add_argument("--provider", choices=["auto", "fixture", "tushare"], default="auto")
     refresh_parser.add_argument(
         "--market",
         choices=["all", *[market.value for market in Market]],

@@ -613,6 +613,23 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIsNotNone(repo.get_instrument("HSI"))
             self.assertIsNotNone(repo.get_instrument("NQ"))
 
+    def test_cli_refresh_instruments_defaults_to_auto_provider(self) -> None:
+        calls: list[str] = []
+
+        def fake_build_provider(name: str, settings: Settings) -> MarketDataProvider:
+            del settings
+            calls.append(name)
+            return RecordingMarketDataProvider(name, SEED_INSTRUMENTS)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            with patch("signal_track.cli.build_market_data_provider", side_effect=fake_build_provider):
+                with redirect_stdout(StringIO()):
+                    code = cli_main(["--db", str(db_path), "refresh-instruments", "--market", "CN_A"])
+
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, ["auto"])
+
     def test_auto_market_provider_routes_by_market_and_falls_back_to_seed_master(self) -> None:
         cn_provider = RecordingMarketDataProvider("cn")
         hk_future_provider = RecordingMarketDataProvider("hk-fut")
@@ -4020,6 +4037,37 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(refresh_bad_market.status_code, 400)
             self.assertEqual(refresh_bad_market.json()["detail"], "Unknown market: BAD")
             self.assertEqual(repo.list_daily_checks(), [])
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_refresh_instruments_defaults_to_auto_provider(self) -> None:
+        calls: list[str] = []
+
+        def fake_build_provider(name: str, settings: Settings) -> MarketDataProvider:
+            del settings
+            calls.append(name)
+            return RecordingMarketDataProvider(name, SEED_INSTRUMENTS)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.web_app.build_market_data_provider", side_effect=fake_build_provider):
+                    client = TestClient(create_app())
+                    response = client.post("/api/instruments/refresh", json={"market": "CN_A"})
+
+        payload = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(calls, ["auto"])
+        self.assertEqual(payload["provider"], "auto")
+        self.assertEqual(payload["results"][0]["market"], "CN_A")
+        self.assertGreaterEqual(payload["results"][0]["count"], 2)
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_research_item_update_publishes_when_configured(self) -> None:
