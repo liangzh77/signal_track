@@ -64,10 +64,20 @@ given project/date; the later run updates the same daily check row when needed.
 python scripts/healthcheck.py http://127.0.0.1:8765/health
 ```
 
-Expected:
+Expected shape:
 
 ```json
-{"ok": true, "status": 200, "body": {"ok": true}}
+{
+  "ok": true,
+  "status": 200,
+  "body": {
+    "ok": true,
+    "database": {"ok": true},
+    "projects": {"total": 0, "active_or_review": 0, "exit_signal": 0, "needs_review": 0},
+    "latest_check": null,
+    "latest_publish": null
+  }
+}
 ```
 
 Local smoke check without touching the production database:

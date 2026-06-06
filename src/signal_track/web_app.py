@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -113,7 +114,7 @@ def create_app():
 
     @app.get("/health")
     def health():
-        return {"ok": True}
+        return health_payload(repo, scheduler_enabled=settings.enable_scheduler)
 
     @app.get("/api/market-data/coverage")
     def market_coverage(provider: str = "auto"):
@@ -484,6 +485,67 @@ def maybe_publish(repo: Repository, settings: Settings, feature: str) -> dict:
         metadata={"ok": result.ok, "feature": feature},
     )
     return payload
+
+
+def health_payload(repo: Repository, scheduler_enabled: bool = False) -> dict:
+    try:
+        projects = repo.list_project_rows()
+        checks = repo.list_daily_checks(limit=1)
+        publish_events = repo.list_publish_events(limit=1)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "database": {"ok": False, "error": str(exc)},
+            "scheduler_enabled": scheduler_enabled,
+        }
+
+    active = sum(1 for row in projects if row["status"] in {"active", "needs_review"})
+    exit_signals = sum(1 for row in projects if row["status"] == "exit_signal")
+    review = sum(1 for row in projects if bool(row["needs_review"]) or bool(row["weight_needs_review"]))
+    latest_check = checks[0] if checks else None
+    latest_publish = publish_events[0] if publish_events else None
+    publish_metadata = parse_json_dict(latest_publish["metadata"]) if latest_publish else {}
+    return {
+        "ok": True,
+        "database": {"ok": True},
+        "scheduler_enabled": scheduler_enabled,
+        "projects": {
+            "total": len(projects),
+            "active_or_review": active,
+            "exit_signal": exit_signals,
+            "needs_review": review,
+        },
+        "latest_check": (
+            {
+                "project_id": int(latest_check["project_id"]),
+                "project_title": latest_check["title"],
+                "check_date": latest_check["check_date"],
+                "conclusion": latest_check["conclusion"],
+            }
+            if latest_check
+            else None
+        ),
+        "latest_publish": (
+            {
+                "published_at": latest_publish["published_at"],
+                "status_code": latest_publish["status_code"],
+                "ok": publish_metadata.get("ok"),
+                "url": latest_publish["url"],
+            }
+            if latest_publish
+            else None
+        ),
+    }
+
+
+def parse_json_dict(value: str | None) -> dict:
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def build_daily_evaluator_from_settings(settings: Settings):

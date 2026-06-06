@@ -2564,6 +2564,44 @@ class SignalTrackCoreTests(unittest.TestCase):
 
             health = client.get("/health")
             self.assertEqual(health.status_code, 200)
+            self.assertTrue(health.json()["ok"])
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_health_reports_operational_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+                client.post("/api/inputs", json={"source": "Health Desk", "content": "00700.HK long, watch ads."})
+                check_date = next_fixture_trading_day(date.today()).isoformat()
+                client.post("/api/checks/run", json={"provider": "fixture", "date": check_date})
+                Repository(Database(db_path)).record_publish_event(
+                    title="Signal Track 投资信号看板",
+                    url="https://example.com/signal",
+                    status_code=200,
+                    response_body='{"address":"https://example.com/signal"}',
+                    metadata={"ok": True, "flow": "test"},
+                )
+                response = client.get("/health")
+
+        payload = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["database"]["ok"])
+        self.assertEqual(payload["projects"]["total"], 1)
+        self.assertEqual(payload["projects"]["needs_review"], 1)
+        self.assertEqual(payload["latest_check"]["check_date"], check_date)
+        self.assertEqual(payload["latest_publish"]["status_code"], 200)
+        self.assertTrue(payload["latest_publish"]["ok"])
+        self.assertEqual(payload["latest_publish"]["url"], "https://example.com/signal")
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_market_coverage_endpoint(self) -> None:
