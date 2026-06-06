@@ -14,6 +14,7 @@ from .exit_signals import exit_signal_summaries
 from .instrument_master import InstrumentMasterService
 from .input_summary import input_detail, input_summaries
 from .logic_supplement import build_logic_supplementer
+from .market_smoke import market_data_smoke
 from .models import Market
 from .provider_diagnostics import market_data_coverage
 from .project_actions import ProjectActionError, close_tracking_project, update_tracking_project_weights
@@ -122,6 +123,22 @@ def create_app():
             return market_data_coverage(settings, provider)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/market-data/smoke")
+    def market_smoke(provider: str = "auto", market: str = "all", days: int = 30, sample_size: int = 1):
+        try:
+            market_provider = build_market_data_provider(provider, settings)
+        except ValueError as exc:
+            raise provider_http_exception(exc) from exc
+        if market_provider is None:
+            raise HTTPException(status_code=400, detail="A concrete provider is required")
+        return market_data_smoke(
+            repo,
+            market_provider,
+            markets=refresh_markets(market),
+            days=days,
+            sample_size=sample_size,
+        )
 
     @app.get("/api/inputs")
     def list_inputs(limit: int = 100):

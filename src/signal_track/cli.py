@@ -20,6 +20,7 @@ from .instrument_master import InstrumentMasterService
 from .input_summary import input_detail, input_summaries
 from .logic_supplement import build_logic_supplementer
 from .market_data import MarketDataService
+from .market_smoke import market_data_smoke
 from .models import Market, ProjectStatus
 from .provider_diagnostics import market_data_coverage
 from .project_actions import ProjectActionError, close_tracking_project, update_tracking_project_weights
@@ -72,6 +73,16 @@ def main(argv: list[str] | None = None) -> int:
         default="auto",
         help="Provider configuration to inspect without calling remote market APIs.",
     )
+
+    smoke_parser = subparsers.add_parser("market-smoke", help="Fetch sample daily bars for configured markets.")
+    smoke_parser.add_argument("--provider", choices=["auto", "fixture", "tushare", "yfinance"], default="auto")
+    smoke_parser.add_argument(
+        "--market",
+        choices=["all", *[market.value for market in Market]],
+        default="all",
+    )
+    smoke_parser.add_argument("--days", type=int, default=30)
+    smoke_parser.add_argument("--sample-size", type=int, default=1)
 
     list_inputs_parser = subparsers.add_parser("list-inputs", help="List recent raw inputs and attachment paths.")
     list_inputs_parser.add_argument("--limit", type=int, default=50)
@@ -293,6 +304,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "market-coverage":
         print(json.dumps(market_data_coverage(settings, args.provider), ensure_ascii=False, indent=2))
         return 0
+
+    if args.command == "market-smoke":
+        db.init()
+        seed_if_empty(repo)
+        provider = build_provider(args.provider, settings)
+        result = market_data_smoke(
+            repo,
+            provider,
+            markets=refresh_markets(args.market),
+            days=args.days,
+            sample_size=args.sample_size,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result["ok"] else 1
 
     if args.command == "list-inputs":
         db.init()

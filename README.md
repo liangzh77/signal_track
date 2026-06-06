@@ -74,6 +74,7 @@ Useful endpoints:
 
 - `GET /health`
 - `GET /api/market-data/coverage?provider=auto`
+- `GET /api/market-data/smoke?provider=fixture&market=US_FUT&days=30`
 - `GET /api/inputs`
 - `GET /api/inputs/{input_id}`
 - `POST /api/inputs` with `{ "source": "...", "content": "...", "portfolio": false, "extractor": "auto" }`
@@ -269,6 +270,17 @@ python -m signal_track.cli market-coverage --provider auto
 The report shows, per market, the configured daily-price provider, whether real
 instrument-master refresh is available, and which dependency or credential is
 missing when a market is not price-ready.
+
+After credentials and dependencies are configured, run a real sample fetch before
+trusting scheduled checks:
+
+```powershell
+python -m signal_track.cli market-smoke --provider auto --market all --days 30
+```
+
+The smoke check fetches representative daily bars for each selected market and
+returns `ok`, `bar_count`, `latest_date`, and any provider error per sample. Use
+`--provider fixture` for an offline wiring check.
 
 ## Instrument Master
 

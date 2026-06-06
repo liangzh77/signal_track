@@ -24,6 +24,7 @@ from signal_track.exit_signals import exit_signal_summaries
 from signal_track.extraction import ExtractedInput, ExtractedSignal
 from signal_track.instrument_master import InstrumentMasterService
 from signal_track.logic_supplement import LogicSupplement, LogicSupplementer, OpenAILogicSupplementer
+from signal_track.market_smoke import market_data_smoke
 from signal_track.market_data import MarketDataService
 from signal_track.models import DailyBar, Direction, Instrument, Market
 from signal_track.provider_diagnostics import market_data_coverage
@@ -639,6 +640,76 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIn("TUSHARE_TOKEN", by_market["CN_A"]["notes"][1])
         self.assertFalse(by_market["HK_FUT"]["price_available"])
         self.assertFalse(by_market["US_FUT"]["price_available"])
+
+    def test_market_smoke_fetches_sample_bars_across_markets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            provider = RecordingMarketDataProvider("recording")
+
+            result = market_data_smoke(
+                repo,
+                provider,
+                days=5,
+                end_date=date(2026, 6, 5),
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["provider"], "recording")
+        self.assertEqual(
+            {row["market"] for row in result["markets"]},
+            {"CN_A", "HK", "CN_FUT", "HK_FUT", "US", "US_FUT"},
+        )
+        self.assertEqual({row["bar_count"] for row in result["markets"]}, {1})
+        self.assertEqual(provider.calls, ["300750.SZ", "00700.HK", "CU.SHF", "HSI", "AAPL", "ES"])
+
+    def test_market_smoke_reports_provider_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+
+            result = market_data_smoke(
+                repo,
+                PartiallyFailingMarketDataProvider({"HSI"}),
+                markets=[Market.HK_FUT],
+                end_date=date(2026, 6, 5),
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["markets"][0]["symbol"], "HSI")
+        self.assertIn("provider unavailable", result["markets"][0]["error"])
+
+    def test_cli_market_smoke_uses_fixture_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            output = StringIO()
+            with redirect_stdout(output):
+                code = cli_main(
+                    [
+                        "--db",
+                        str(db_path),
+                        "market-smoke",
+                        "--provider",
+                        "fixture",
+                        "--market",
+                        "US_FUT",
+                        "--days",
+                        "5",
+                    ]
+                )
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["markets"][0]["market"], "US_FUT")
+        self.assertEqual(payload["markets"][0]["symbol"], "ES")
+        self.assertGreater(payload["markets"][0]["bar_count"], 0)
 
     def test_cli_self_check_runs_non_destructive_smoke_flow(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2747,6 +2818,33 @@ class SignalTrackCoreTests(unittest.TestCase):
             {row["market"] for row in response.json()["markets"]},
             {"CN_A", "HK", "CN_FUT", "HK_FUT", "US", "US_FUT"},
         )
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_market_smoke_endpoint_uses_fixture_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+
+            response = client.get(
+                "/api/market-data/smoke",
+                params={"provider": "fixture", "market": "HK_FUT", "days": 5},
+            )
+
+        payload = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["provider"], "fixture")
+        self.assertEqual(payload["markets"][0]["market"], "HK_FUT")
+        self.assertEqual(payload["markets"][0]["symbol"], "HSI")
+        self.assertGreater(payload["markets"][0]["bar_count"], 0)
 
 
 if __name__ == "__main__":

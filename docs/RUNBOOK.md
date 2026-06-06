@@ -102,6 +102,17 @@ Before relying on the daily job, confirm the report marks the required markets a
 `price_available: true`. A shares and China futures require Tushare credentials;
 Hong Kong futures and US futures require the yfinance package or a future
 licensed futures adapter.
+
+Then run a real sample fetch against the configured provider:
+
+```bash
+/srv/signal-track/venv/bin/python -m signal_track.cli market-smoke --provider auto --market all --days 30
+curl "http://127.0.0.1:8765/api/market-data/smoke?provider=auto&market=all&days=30"
+```
+
+The smoke result should return `ok: true` and non-zero `bar_count` values for the
+markets you intend to trade. Use `--provider fixture` only to verify local wiring
+without remote market API calls.
 `SIGNAL_TRACK_DAILY_PROVIDER` defaults to `auto`; set it to `none` only for
 offline rule checks that should not refresh prices.
 OpenAI logic extraction and daily evaluation do not use live web research by
