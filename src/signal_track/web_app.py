@@ -97,7 +97,7 @@ def create_app():
         scheduled_jobs = build_scheduler(
             repo,
             provider=provider,
-            evaluator=build_daily_logic_evaluator(settings.openai_api_key, settings.openai_model),
+            evaluator=build_daily_evaluator_from_settings(settings),
             publish_url=settings.demo_publish_url,
             api_key=settings.demo_api_key,
         )
@@ -303,7 +303,7 @@ def create_app():
             checked = DailyChecker(
                 repo,
                 provider,
-                evaluator=build_daily_logic_evaluator(settings.openai_api_key, settings.openai_model),
+                evaluator=build_daily_evaluator_from_settings(settings),
             ).run()
         publish_result = maybe_publish(repo, settings, f"研究验证项更新：{payload.status}")
         return {"item": dict(item), "checked_projects": checked, "publish": publish_result}
@@ -318,7 +318,7 @@ def create_app():
         checked = DailyChecker(
             repo,
             provider,
-            evaluator=build_daily_logic_evaluator(settings.openai_api_key, settings.openai_model),
+            evaluator=build_daily_evaluator_from_settings(settings),
         ).run()
         publish_result = maybe_publish(repo, settings, f"每日检查完成，更新 {checked} 个项目")
         return {"checked_projects": checked, "publish": publish_result}
@@ -400,7 +400,7 @@ def ingest_content(
     return SignalIngestor(
         repo,
         resolver,
-        logic_supplementer=build_logic_supplementer(settings.openai_api_key, settings.openai_model),
+        logic_supplementer=build_logic_supplementer_from_settings(settings),
     ).ingest(
         source_name=source_name,
         content=ingest_body,
@@ -471,6 +471,24 @@ def maybe_publish(repo: Repository, settings: Settings, feature: str) -> dict:
         metadata={"ok": result.ok, "feature": feature},
     )
     return payload
+
+
+def build_daily_evaluator_from_settings(settings: Settings):
+    return build_daily_logic_evaluator(
+        settings.openai_api_key,
+        settings.openai_model,
+        web_research=settings.openai_web_research,
+        web_search_context_size=settings.openai_web_search_context_size,
+    )
+
+
+def build_logic_supplementer_from_settings(settings: Settings):
+    return build_logic_supplementer(
+        settings.openai_api_key,
+        settings.openai_model,
+        web_research=settings.openai_web_research,
+        web_search_context_size=settings.openai_web_search_context_size,
+    )
 
 
 def save_unique_attachment(directory: Path, filename: str | None, content: bytes) -> Path:

@@ -89,6 +89,12 @@ Hong Kong futures and US futures require the yfinance package or a future
 licensed futures adapter.
 `SIGNAL_TRACK_DAILY_PROVIDER` defaults to `auto`; set it to `none` only for
 offline rule checks that should not refresh prices.
+OpenAI logic extraction and daily evaluation do not use live web research by
+default. Set `SIGNAL_TRACK_OPENAI_WEB_RESEARCH=true` and use a web-search-capable
+`SIGNAL_TRACK_OPENAI_MODEL` when you want weak-logic supplements and daily logic
+checks to force Responses API web search. The optional
+`SIGNAL_TRACK_OPENAI_WEB_SEARCH_CONTEXT_SIZE` value can be `low`, `medium`, or
+`high`.
 
 ## Initial Data Setup
 

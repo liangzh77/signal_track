@@ -19,13 +19,13 @@ from signal_track.cli import main as cli_main
 from signal_track.cli import run_self_check
 from signal_track.dashboard import render_dashboard
 from signal_track.analytics import LegPerformance, combine_weighted_points, project_performance
-from signal_track.daily_evaluator import DailyEvaluation, DailyLogicEvaluator
+from signal_track.daily_evaluator import DailyEvaluation, DailyLogicEvaluator, OpenAIDailyLogicEvaluator
 from signal_track.exit_signals import exit_signal_summaries
 from signal_track.extraction import ExtractedInput, ExtractedSignal
 from signal_track.instrument_master import InstrumentMasterService
-from signal_track.logic_supplement import LogicSupplement, LogicSupplementer
+from signal_track.logic_supplement import LogicSupplement, LogicSupplementer, OpenAILogicSupplementer
 from signal_track.market_data import MarketDataService
-from signal_track.models import DailyBar, Instrument, Market
+from signal_track.models import DailyBar, Direction, Instrument, Market
 from signal_track.provider_diagnostics import market_data_coverage
 from signal_track.publisher import extract_published_address, publish_payload
 from signal_track.publisher import PublishResult
@@ -212,6 +212,36 @@ class FakeDailyEvaluator(DailyLogicEvaluator):
         )
 
 
+class RecordingResponses:
+    calls: list[dict] = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        schema_name = kwargs["text"]["format"]["name"]
+        if schema_name == "tracking_logic_supplement":
+            payload = {
+                "thesis": "联网补充后的跟踪逻辑。",
+                "tracking_metrics": ["财务数据交叉验证", "行业份额变化", "最新新闻催化"],
+                "exit_conditions": ["核心假设被证伪", "跌破关键均线"],
+                "verification_notes": ["引用来源需保留并复核"],
+                "confidence": 0.7,
+            }
+        else:
+            payload = {
+                "conclusion": "watch",
+                "summary": "联网检查后维持观察。",
+                "triggered_rules": ["未发现明确平仓触发"],
+                "confidence": 0.6,
+            }
+        return types.SimpleNamespace(output_text=json.dumps(payload, ensure_ascii=False))
+
+
+class RecordingOpenAIClient:
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.responses = RecordingResponses()
+
+
 class SignalTrackCoreTests(unittest.TestCase):
     def test_settings_default_daily_provider_is_auto(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -228,6 +258,21 @@ class SignalTrackCoreTests(unittest.TestCase):
                 settings = Settings.from_env()
 
         self.assertEqual(settings.daily_provider, "auto")
+        self.assertFalse(settings.openai_web_research)
+        self.assertEqual(settings.openai_web_search_context_size, "medium")
+
+    def test_settings_can_enable_openai_web_research(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_OPENAI_WEB_RESEARCH": "true",
+                "SIGNAL_TRACK_OPENAI_WEB_SEARCH_CONTEXT_SIZE": "high",
+            }
+            with patch.dict("os.environ", env, clear=True):
+                settings = Settings.from_env()
+
+        self.assertTrue(settings.openai_web_research)
+        self.assertEqual(settings.openai_web_search_context_size, "high")
 
     def test_resolves_seed_instruments_across_markets(self) -> None:
         resolver = InstrumentResolver()
@@ -640,6 +685,28 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("研究验证项", html)
             self.assertIn("tracking_metric: 广告收入环比改善", html)
             self.assertIn("广告收入环比改善", html)
+
+    def test_openai_logic_supplementer_can_force_web_search(self) -> None:
+        RecordingResponses.calls = []
+        fake_openai = types.SimpleNamespace(OpenAI=RecordingOpenAIClient)
+        with patch.dict("sys.modules", {"openai": fake_openai}):
+            supplementer = OpenAILogicSupplementer(
+                "key",
+                "gpt-5.5",
+                web_research=True,
+                web_search_context_size="high",
+            )
+            supplement = supplementer.supplement(
+                name="腾讯控股",
+                direction=Direction.LONG,
+                source_logic="腾讯 做多，先跟踪。",
+                instruments=[next(item for item in SEED_INSTRUMENTS if item.symbol == "00700.HK")],
+            )
+
+        self.assertEqual(supplement.thesis, "联网补充后的跟踪逻辑。")
+        request = RecordingResponses.calls[0]
+        self.assertEqual(request["tools"], [{"type": "web_search", "search_context_size": "high"}])
+        self.assertEqual(request["tool_choice"], "required")
 
     def test_logic_supplementer_failure_falls_back_to_local_system_logic(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1751,6 +1818,35 @@ class SignalTrackCoreTests(unittest.TestCase):
             checks = repo.list_daily_checks(project_id=result.project_ids[0])
             self.assertIn("核心跟踪假设被证伪", checks[0]["summary"])
             self.assertIn("逻辑评估：核心假设被证伪", checks[0]["triggered_rules"])
+
+    def test_openai_daily_evaluator_can_force_web_search(self) -> None:
+        RecordingResponses.calls = []
+        fake_openai = types.SimpleNamespace(OpenAI=RecordingOpenAIClient)
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                source_name="测试源",
+                content="腾讯 做多，观察广告恢复和游戏流水。",
+            )
+
+            with patch.dict("sys.modules", {"openai": fake_openai}):
+                evaluator = OpenAIDailyLogicEvaluator(
+                    "key",
+                    "gpt-5.5",
+                    web_research=True,
+                    web_search_context_size="low",
+                )
+                DailyChecker(repo, FixtureMarketDataProvider(), evaluator=evaluator).run(
+                    next_fixture_trading_day(date.today())
+                )
+
+        request = RecordingResponses.calls[0]
+        self.assertEqual(request["tools"], [{"type": "web_search", "search_context_size": "low"}])
+        self.assertEqual(request["tool_choice"], "required")
 
     def test_daily_check_continues_when_one_price_refresh_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

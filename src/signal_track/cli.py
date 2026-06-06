@@ -339,7 +339,7 @@ def main(argv: list[str] | None = None) -> int:
             checked = DailyChecker(
                 repo,
                 provider,
-                evaluator=build_daily_logic_evaluator(settings.openai_api_key, settings.openai_model),
+                evaluator=build_daily_evaluator_from_settings(settings),
             ).run()
         publish_result = None
         if should_publish_update(settings, forced=args.publish, disabled=args.no_publish):
@@ -491,7 +491,7 @@ def main(argv: list[str] | None = None) -> int:
         result = SignalIngestor(
             repo,
             resolver,
-            logic_supplementer=build_logic_supplementer(settings.openai_api_key, settings.openai_model),
+            logic_supplementer=build_logic_supplementer_from_settings(settings),
         ).ingest(
             source_name=source_name,
             content=ingest_body,
@@ -536,7 +536,7 @@ def main(argv: list[str] | None = None) -> int:
         count = DailyChecker(
             repo,
             provider,
-            evaluator=build_daily_logic_evaluator(settings.openai_api_key, settings.openai_model),
+            evaluator=build_daily_evaluator_from_settings(settings),
         ).run(check_date)
         print(json.dumps({"checked_projects": count}, ensure_ascii=False))
         return 0
@@ -594,7 +594,7 @@ def main(argv: list[str] | None = None) -> int:
         checked = DailyChecker(
             repo,
             provider,
-            evaluator=build_daily_logic_evaluator(settings.openai_api_key, settings.openai_model),
+            evaluator=build_daily_evaluator_from_settings(settings),
         ).run(check_date)
         out_path = Path(args.out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -653,6 +653,24 @@ def build_provider(name: str, settings: Settings):
     if provider is None:
         raise SystemExit("A concrete market data provider is required here")
     return provider
+
+
+def build_daily_evaluator_from_settings(settings: Settings):
+    return build_daily_logic_evaluator(
+        settings.openai_api_key,
+        settings.openai_model,
+        web_research=settings.openai_web_research,
+        web_search_context_size=settings.openai_web_search_context_size,
+    )
+
+
+def build_logic_supplementer_from_settings(settings: Settings):
+    return build_logic_supplementer(
+        settings.openai_api_key,
+        settings.openai_model,
+        web_research=settings.openai_web_research,
+        web_search_context_size=settings.openai_web_search_context_size,
+    )
 
 
 def parse_date(value: str) -> date:

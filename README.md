@@ -46,6 +46,8 @@ SIGNAL_TRACK_API_KEY=<your-signal-track-api-key>
 TUSHARE_TOKEN=<your-tushare-token>
 OPENAI_API_KEY=<your-openai-api-key>
 SIGNAL_TRACK_OPENAI_MODEL=gpt-4o-mini
+SIGNAL_TRACK_OPENAI_WEB_RESEARCH=false
+SIGNAL_TRACK_OPENAI_WEB_SEARCH_CONTEXT_SIZE=medium
 GO_SITES_DEMO_PUBLISH_URL=https://liangz77.cn/api/demos/publish
 GO_SITES_DEMO_API_KEY=<your-demo-api-key>
 ```
@@ -211,6 +213,10 @@ When `OPENAI_API_KEY` is configured, daily checks also run a structured logic
 evaluation over the source logic, system supplement, current performance, and recent
 check history. The evaluator can mark `hold`, `watch`, `needs_review`, or
 `exit_signal`; deterministic price exits still take priority.
+Set `SIGNAL_TRACK_OPENAI_WEB_RESEARCH=true` to let OpenAI logic checks force the
+Responses API `web_search` tool for up-to-date financial, industry, and news
+evidence. Use a web-search-capable model when this is enabled.
+`SIGNAL_TRACK_OPENAI_WEB_SEARCH_CONTEXT_SIZE` accepts `low`, `medium`, or `high`.
 
 ## Tests
 
@@ -377,6 +383,10 @@ requirements. Without an API key, the local 3C-5M-3D-3T fallback still creates
 a research checklist covering financial/valuation cross-checks, industry and
 competition review, latest company dynamics, daily price/sentiment metrics, and
 exit-review conditions.
+When `SIGNAL_TRACK_OPENAI_WEB_RESEARCH=true`, this supplement step forces web
+search and asks the model to gather current financial/valuation, industry, and
+latest-dynamics evidence before writing the tracking logic. Unverified or
+single-source facts still remain review items instead of confirmed data.
 
 Research item statuses can be maintained manually while the research automation is
 being expanded:

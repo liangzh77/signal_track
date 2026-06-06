@@ -44,13 +44,22 @@ DAILY_EVALUATION_SCHEMA = {
 
 
 class OpenAIDailyLogicEvaluator(DailyLogicEvaluator):
-    def __init__(self, api_key: str, model: str):
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        *,
+        web_research: bool = False,
+        web_search_context_size: str = "medium",
+    ):
         try:
             from openai import OpenAI  # type: ignore
         except ImportError as exc:
             raise RuntimeError("Install LLM extras first: pip install -e .[llm]") from exc
         self.client = OpenAI(api_key=api_key)
         self.model = model
+        self.web_research = web_research
+        self.web_search_context_size = web_search_context_size
 
     def evaluate(
         self,
@@ -62,15 +71,16 @@ class OpenAIDailyLogicEvaluator(DailyLogicEvaluator):
         previous_checks: list[Any],
         check_date: date,
     ) -> DailyEvaluation:
-        response = self.client.responses.create(
-            model=self.model,
-            instructions=(
+        request = {
+            "model": self.model,
+            "instructions": (
                 "你是投资跟踪系统的每日检查器。请根据项目原始逻辑、系统补充逻辑、"
                 "当前收益和历史检查记录，判断今天应 hold/watch/exit_signal/needs_review。"
-                "不要编造未提供的数据；如果关键数据缺失，使用 needs_review。"
+                "如果启用了 web search，可以检索最新财报、行业、新闻和市场数据来辅助判断；"
+                "但不要编造未提供或无法验证的数据；如果关键数据缺失，使用 needs_review。"
                 "只有当原始开仓假设或补充跟踪条件明显被证伪时，才给 exit_signal。"
             ),
-            input=[
+            "input": [
                 {
                     "role": "user",
                     "content": build_evaluation_prompt(
@@ -83,7 +93,7 @@ class OpenAIDailyLogicEvaluator(DailyLogicEvaluator):
                     ),
                 }
             ],
-            text={
+            "text": {
                 "format": {
                     "type": "json_schema",
                     "name": "daily_tracking_evaluation",
@@ -91,7 +101,11 @@ class OpenAIDailyLogicEvaluator(DailyLogicEvaluator):
                     "schema": DAILY_EVALUATION_SCHEMA,
                 }
             },
-        )
+        }
+        if self.web_research:
+            request["tools"] = [web_search_tool(self.web_search_context_size)]
+            request["tool_choice"] = "required"
+        response = self.client.responses.create(**request)
         return daily_evaluation_from_dict(json.loads(response.output_text))
 
 
@@ -153,11 +167,26 @@ def format_research_items(research_items: list[Any]) -> str:
     )
 
 
-def build_daily_logic_evaluator(api_key: str | None, model: str) -> DailyLogicEvaluator | None:
+def web_search_tool(search_context_size: str) -> dict[str, str]:
+    return {"type": "web_search", "search_context_size": search_context_size}
+
+
+def build_daily_logic_evaluator(
+    api_key: str | None,
+    model: str,
+    *,
+    web_research: bool = False,
+    web_search_context_size: str = "medium",
+) -> DailyLogicEvaluator | None:
     if not api_key:
         return None
     try:
-        return OpenAIDailyLogicEvaluator(api_key, model)
+        return OpenAIDailyLogicEvaluator(
+            api_key,
+            model,
+            web_research=web_research,
+            web_search_context_size=web_search_context_size,
+        )
     except RuntimeError:
         return None
 

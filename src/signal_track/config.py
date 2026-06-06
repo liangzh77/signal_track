@@ -33,6 +33,8 @@ class Settings:
     openai_model: str
     signal_track_api_key: str | None
     auto_publish_on_update: bool = True
+    openai_web_research: bool = False
+    openai_web_search_context_size: str = "medium"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -48,6 +50,10 @@ class Settings:
             openai_model=os.getenv("SIGNAL_TRACK_OPENAI_MODEL", "gpt-4o-mini"),
             signal_track_api_key=os.getenv("SIGNAL_TRACK_API_KEY") or None,
             auto_publish_on_update=parse_bool(os.getenv("SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE"), default=True),
+            openai_web_research=parse_bool(os.getenv("SIGNAL_TRACK_OPENAI_WEB_RESEARCH"), default=False),
+            openai_web_search_context_size=normalize_search_context_size(
+                os.getenv("SIGNAL_TRACK_OPENAI_WEB_SEARCH_CONTEXT_SIZE")
+            ),
         )
 
 
@@ -55,3 +61,10 @@ def parse_bool(value: str | None, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def normalize_search_context_size(value: str | None) -> str:
+    size = (value or "medium").strip().lower()
+    if size in {"low", "medium", "high"}:
+        return size
+    return "medium"
