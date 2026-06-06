@@ -80,6 +80,11 @@ Useful endpoints:
 When publish credentials are configured, `POST /api/inputs` and `POST /api/checks/run`
 automatically publish the refreshed dashboard.
 
+Inputs require a real source name. Pass `source`, or put a marker in the first
+few lines of the note, for example `source: Alpha Desk` or `信息源：Alpha Desk`.
+If no source can be determined, ingestion returns `source_required` and does not
+create a tracking project.
+
 If `SIGNAL_TRACK_API_KEY` is configured, mutating endpoints require either:
 
 ```text
@@ -222,6 +227,10 @@ You can also ingest a text or markdown file:
 ```powershell
 python -m signal_track.cli ingest --source 信息源A --file .\notes\source-note.md
 ```
+
+If `--source` is omitted, the first few lines of the note must include a marker
+such as `source: Alpha Desk`, `来源：Alpha Desk`, or `信息源：Alpha Desk`.
+Otherwise the CLI returns `source_required` and skips ingestion.
 
 For portfolio notes, pass `--portfolio`. If the note includes weights such as
 `宁德时代 60%，贵州茅台 40%`, Signal Track applies them automatically. If no weights

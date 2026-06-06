@@ -16,11 +16,12 @@ from .providers.factory import build_market_data_provider
 from .resolver import InstrumentResolver, SEED_INSTRUMENTS
 from .scheduler import build_scheduler
 from .signals import SignalIngestor
+from .source_detection import remove_source_marker_lines, resolve_source_name
 
 
 @dataclass(frozen=True)
 class IngestRequest:
-    source: str
+    source: str | None
     content: str
     portfolio: bool = False
 
@@ -43,7 +44,7 @@ def create_app():
     scheduled_jobs = None
 
     class InputPayload(BaseModel):
-        source: str = "manual"
+        source: str | None = None
         content: str
         portfolio: bool = False
         extractor: str = "auto"
@@ -107,7 +108,7 @@ def create_app():
 
     @app.post("/api/inputs/file", dependencies=[Depends(require_write_auth)])
     async def ingest_file(
-        source: str = Form("manual"),
+        source: str | None = Form(None),
         portfolio: bool = Form(False),
         extractor: str = Form("auto"),
         file: UploadFile = File(...),
@@ -241,7 +242,7 @@ def create_app():
 def ingest_content(
     repo: Repository,
     settings: Settings,
-    source: str,
+    source: str | None,
     content: str,
     portfolio: bool,
     extractor: str,
@@ -249,23 +250,34 @@ def ingest_content(
 ):
     resolver = InstrumentResolver(repo.list_instruments())
     extraction = None
-    source_name = source
     if extractor in {"auto", "openai"} and settings.openai_api_key:
         extraction = OpenAISignalExtractor(settings.openai_api_key, settings.openai_model).extract(
             content,
             source_hint=source,
         )
-        if source == "manual" and extraction.source_name:
-            source_name = extraction.source_name
     elif extractor == "openai":
+        from fastapi import HTTPException
+
         raise HTTPException(status_code=503, detail="OPENAI_API_KEY is required for extractor=openai")
+    source_name = resolve_source_name(source, content, extraction)
+    if not source_name:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "source_required",
+                "message": "Provide source or include a first-line marker like 信息源：xxx.",
+            },
+        )
+    ingest_body = remove_source_marker_lines(content) or content
     return SignalIngestor(
         repo,
         resolver,
         logic_supplementer=build_logic_supplementer(settings.openai_api_key, settings.openai_model),
     ).ingest(
         source_name=source_name,
-        content=content,
+        content=ingest_body,
         as_portfolio=portfolio,
         extraction=extraction,
         attachment_path=attachment_path,

@@ -26,6 +26,7 @@ from signal_track.providers.factory import build_auto_provider
 from signal_track.providers.fixture import FixtureMarketDataProvider
 from signal_track.resolver import InstrumentResolver, SEED_INSTRUMENTS
 from signal_track.signals import SignalIngestor
+from signal_track.source_detection import resolve_source_name
 
 try:
     from fastapi.testclient import TestClient
@@ -257,6 +258,11 @@ class SignalTrackCoreTests(unittest.TestCase):
 
         self.assertEqual(tushare_provider.calls, ["00700.HK"])
         self.assertEqual(yfinance_provider.calls, ["NQ"])
+
+    def test_source_name_can_be_inferred_from_content_marker(self) -> None:
+        self.assertEqual(resolve_source_name(None, "信息源：Alpha Desk\n00700.HK 做多"), "Alpha Desk")
+        self.assertEqual(resolve_source_name("manual", "来源：Beta\nAAPL 做空"), "Beta")
+        self.assertIsNone(resolve_source_name("manual", "00700.HK 做多"))
 
     def test_ingest_low_logic_signal_creates_tracking_project_with_system_logic(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -511,6 +517,31 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(row["status"], "exit_signal")
             checks = repo.list_daily_checks(project_id=result.project_ids[0])
             self.assertIn("跌破 5 日均线", checks[0]["triggered_rules"])
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_ingest_requires_or_infers_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+
+            missing = client.post("/api/inputs", json={"content": "00700.HK 做多，观察广告"})
+            self.assertEqual(missing.status_code, 422)
+            self.assertEqual(missing.json()["detail"]["code"], "source_required")
+
+            inferred = client.post("/api/inputs", json={"content": "信息源：Alpha Desk\n00700.HK 做多，观察广告"})
+            self.assertEqual(inferred.status_code, 200)
+            self.assertEqual(inferred.json()["resolved_symbols"], ["00700.HK"])
+
+            projects = client.get("/api/projects").json()
+            self.assertEqual(projects[0]["source_name"], "Alpha Desk")
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_mutating_web_endpoints_require_api_key_when_configured(self) -> None:

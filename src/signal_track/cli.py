@@ -20,6 +20,7 @@ from .publisher import DemoPublisher, extract_published_address
 from .providers.factory import build_market_data_provider
 from .resolver import InstrumentResolver, SEED_INSTRUMENTS
 from .signals import SignalIngestor
+from .source_detection import remove_source_marker_lines, resolve_source_name
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -57,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     refresh_parser.add_argument("--sample", type=int, default=0, help="Print the first N refreshed symbols.")
 
     ingest_parser = subparsers.add_parser("ingest", help="Create tracking projects from raw source text.")
-    ingest_parser.add_argument("--source", default="manual")
+    ingest_parser.add_argument("--source")
     ingest_parser.add_argument("--text", help="Raw investment note. Reads stdin if omitted.")
     ingest_parser.add_argument("--file", help="Read raw investment note from a text/markdown file.")
     ingest_parser.add_argument("--portfolio", action="store_true", help="Treat all resolved instruments as one project.")
@@ -229,7 +230,6 @@ def main(argv: list[str] | None = None) -> int:
             content = args.text if args.text is not None else sys.stdin.read()
         resolver = InstrumentResolver(repo.list_instruments())
         extraction = None
-        source_name = args.source
         if args.extractor == "openai":
             if not settings.openai_api_key:
                 raise SystemExit("OPENAI_API_KEY is required for --extractor openai")
@@ -237,15 +237,28 @@ def main(argv: list[str] | None = None) -> int:
                 content,
                 source_hint=args.source,
             )
-            if args.source == "manual" and extraction.source_name:
-                source_name = extraction.source_name
+        source_name = resolve_source_name(args.source, content, extraction)
+        if not source_name:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "code": "source_required",
+                        "message": "Provide --source or include a first-line marker like 信息源：xxx.",
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 3
+        ingest_body = remove_source_marker_lines(content) or content
         result = SignalIngestor(
             repo,
             resolver,
             logic_supplementer=build_logic_supplementer(settings.openai_api_key, settings.openai_model),
         ).ingest(
             source_name=source_name,
-            content=content,
+            content=ingest_body,
             as_portfolio=args.portfolio,
             extraction=extraction,
             attachment_path=attachment_path,

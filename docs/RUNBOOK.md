@@ -96,6 +96,11 @@ curl -X POST http://127.0.0.1:8765/api/inputs \
   -d '{"source":"信息源A","content":"腾讯 做多，先跟踪。"}'
 ```
 
+Source is required for ingestion. If the caller omits `source`, the note must
+include a first-line marker such as `source: Alpha Desk`, `来源：Alpha Desk`, or
+`信息源：Alpha Desk`; otherwise the service returns `source_required` and does
+not create a tracking project.
+
 ## Manual Daily Run
 
 ```bash
