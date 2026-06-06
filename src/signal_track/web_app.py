@@ -131,10 +131,8 @@ def create_app():
     ):
         attachments_dir = settings.db_path.parent / "attachments"
         attachments_dir.mkdir(parents=True, exist_ok=True)
-        safe_name = Path(file.filename or "input.txt").name
-        attachment_path = attachments_dir / safe_name
         content_bytes = await file.read()
-        attachment_path.write_bytes(content_bytes)
+        attachment_path = save_unique_attachment(attachments_dir, file.filename, content_bytes)
         content = content_bytes.decode("utf-8", errors="replace")
         result = ingest_content(
             repo,
@@ -376,3 +374,22 @@ def maybe_publish(repo: Repository, settings: Settings, feature: str) -> dict:
         metadata={"ok": result.ok, "feature": feature},
     )
     return payload
+
+
+def save_unique_attachment(directory: Path, filename: str | None, content: bytes) -> Path:
+    safe_name = Path(filename or "input.txt").name
+    if safe_name in {"", ".", ".."}:
+        safe_name = "input.txt"
+    base = Path(safe_name)
+    stem = base.stem or "input"
+    suffix = base.suffix
+    for index in range(1000):
+        candidate_name = safe_name if index == 0 else f"{stem}-{index}{suffix}"
+        candidate = directory / candidate_name
+        try:
+            with candidate.open("xb") as handle:
+                handle.write(content)
+            return candidate
+        except FileExistsError:
+            continue
+    raise RuntimeError(f"Could not allocate unique attachment path for {safe_name}")

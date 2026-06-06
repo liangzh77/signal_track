@@ -416,6 +416,19 @@ class Repository:
             )
             return int(cur.lastrowid)
 
+    def list_raw_inputs(self, limit: int = 100) -> list[sqlite3.Row]:
+        with self.db.session() as conn:
+            return conn.execute(
+                """
+                SELECT r.*, s.name AS source_name
+                FROM raw_inputs r
+                JOIN sources s ON s.id = r.source_id
+                ORDER BY r.id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+
     def create_tracking_project(
         self,
         title: str,
