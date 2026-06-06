@@ -2049,6 +2049,9 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual([item["id"] for item in signals], result.project_ids)
             self.assertEqual(signals[0]["action"], "exit_signal")
             self.assertEqual(signals[0]["latest_check"]["conclusion"], "exit_signal")
+            self.assertIn("performance", signals[0])
+            self.assertIn("return_pct", signals[0]["performance"])
+            self.assertEqual(signals[0]["performance"]["legs"][0]["symbol"], "00700.HK")
 
     def test_cli_list_exit_signals(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2081,6 +2084,8 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(payload["exit_signals"][0]["action"], "exit_signal")
             self.assertEqual(payload["exit_signals"][0]["latest_check"]["conclusion"], "exit_signal")
+            self.assertIn("performance", payload["exit_signals"][0])
+            self.assertEqual(payload["exit_signals"][0]["performance"]["legs"][0]["symbol"], "00700.HK")
 
     def test_daily_check_triggers_moving_average_break_rule(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

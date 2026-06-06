@@ -107,6 +107,8 @@ status, direction, symbols, source, logic score, and review flags.
 `GET /api/projects` returns the same normalized project summary plus current
 performance, curve points, missing price symbols, and leg-level return snapshots;
 use `source` and `status` query parameters to drive filtered project lists.
+`GET /api/exit-signals` and `list-exit-signals` use the same performance-bearing
+summary and include the latest check that triggered the signal.
 `extractor` accepts `auto`, `heuristic`, or `openai`; unknown values return `400`
 instead of silently changing extraction behavior.
 Provider fields accept `none`, `auto`, `fixture`, `tushare`, or `yfinance`.
