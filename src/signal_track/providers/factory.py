@@ -32,7 +32,7 @@ def build_market_data_provider(name: str, settings: Settings) -> MarketDataProvi
 
 
 def build_auto_provider(settings: Settings) -> AutoMarketDataProvider:
-    routes: dict[Market, MarketDataProvider] = {}
+    routes: dict[Market, list[MarketDataProvider]] = {}
     errors: list[str] = []
 
     if settings.tushare_token:
@@ -42,7 +42,7 @@ def build_auto_provider(settings: Settings) -> AutoMarketDataProvider:
             errors.append(str(exc))
         else:
             for market in (Market.CN_A, Market.HK, Market.CN_FUT, Market.US):
-                routes[market] = tushare
+                routes.setdefault(market, []).append(tushare)
 
     try:
         yfinance = YFinanceMarketDataProvider()
@@ -50,7 +50,7 @@ def build_auto_provider(settings: Settings) -> AutoMarketDataProvider:
         errors.append(str(exc))
     else:
         for market in (Market.HK, Market.HK_FUT, Market.US, Market.US_FUT):
-            routes.setdefault(market, yfinance)
+            routes.setdefault(market, []).append(yfinance)
 
     if not routes:
         detail = "; ".join(errors) if errors else "no market providers configured"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from collections.abc import Iterable
 
 from signal_track.models import DailyBar, Instrument, Market
 from signal_track.providers.base import MarketDataProvider
@@ -18,13 +19,24 @@ class AutoMarketDataProvider(MarketDataProvider):
     name = "auto"
 
     def __init__(self, routes: list[ProviderRoute]) -> None:
-        self._routes: dict[Market, MarketDataProvider] = {}
+        self._routes: dict[Market, list[MarketDataProvider]] = {}
         for route in routes:
-            self._routes.setdefault(route.market, route.provider)
+            providers = self._routes.setdefault(route.market, [])
+            if route.provider not in providers:
+                providers.append(route.provider)
 
     @classmethod
-    def from_market_map(cls, routes: dict[Market, MarketDataProvider]) -> "AutoMarketDataProvider":
-        return cls([ProviderRoute(market, provider) for market, provider in routes.items()])
+    def from_market_map(
+        cls,
+        routes: dict[Market, MarketDataProvider | Iterable[MarketDataProvider]],
+    ) -> "AutoMarketDataProvider":
+        provider_routes: list[ProviderRoute] = []
+        for market, providers in routes.items():
+            if isinstance(providers, MarketDataProvider):
+                provider_routes.append(ProviderRoute(market, providers))
+                continue
+            provider_routes.extend(ProviderRoute(market, provider) for provider in providers)
+        return cls(provider_routes)
 
     def get_daily_bars(
         self,
@@ -33,20 +45,27 @@ class AutoMarketDataProvider(MarketDataProvider):
         end_date: date,
         adjustment: str = "none",
     ) -> list[DailyBar]:
-        provider = self._provider_for(instrument.market)
-        return provider.get_daily_bars(instrument, start_date, end_date, adjustment)
+        providers = self._providers_for(instrument.market)
+        errors: list[str] = []
+        for provider in providers:
+            try:
+                return provider.get_daily_bars(instrument, start_date, end_date, adjustment)
+            except Exception as exc:
+                errors.append(f"{provider.name}: {exc}")
+        detail = "; ".join(errors) if errors else "no configured provider"
+        raise ValueError(f"Auto provider failed for {instrument.market.value}/{instrument.symbol}: {detail}")
 
     def list_instruments(self, market: Market) -> list[Instrument]:
-        provider = self._routes.get(market)
-        if provider:
+        providers = self._routes.get(market, [])
+        for provider in providers:
             try:
                 return provider.list_instruments(market)
             except NotImplementedError:
-                pass
+                continue
         return [instrument for instrument in SEED_INSTRUMENTS if instrument.market == market]
 
-    def _provider_for(self, market: Market) -> MarketDataProvider:
-        provider = self._routes.get(market)
-        if not provider:
+    def _providers_for(self, market: Market) -> list[MarketDataProvider]:
+        providers = self._routes.get(market, [])
+        if not providers:
             raise ValueError(f"Auto provider has no route for {market.value}")
-        return provider
+        return providers

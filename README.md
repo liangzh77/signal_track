@@ -296,7 +296,7 @@ python -m signal_track.cli restore-db --from data\backup.sqlite3 --force
 ## Market Data Providers
 
 - `fixture`: deterministic local bars for tests and UI development.
-- `auto`: routes by market. Tushare handles A shares, Hong Kong stocks, China futures, and US stocks when `TUSHARE_TOKEN` is configured; yfinance handles Hong Kong stocks, Hong Kong futures, US stocks, and US futures when installed.
+- `auto`: routes by market. Tushare handles A shares, Hong Kong stocks, China futures, and US stocks when `TUSHARE_TOKEN` is configured; yfinance handles Hong Kong stocks, Hong Kong futures, US stocks, and US futures when installed. For Hong Kong and US stocks, auto tries Tushare first when configured and falls back to yfinance if the market call fails.
 - `tushare`: A shares, Hong Kong stocks, China futures, and US stocks when `TUSHARE_TOKEN` is configured.
 - `yfinance`: temporary fallback for US stocks, Hong Kong stocks, Hong Kong futures, and US futures.
 
@@ -312,7 +312,8 @@ python -m signal_track.cli market-coverage --provider auto
 
 The report shows, per market, the configured daily-price provider, whether real
 instrument-master refresh is available, and which dependency or credential is
-missing when a market is not price-ready.
+missing when a market is not price-ready. Auto coverage also lists
+`fallback_price_providers` for markets that have a secondary price route.
 
 After credentials and dependencies are configured, run a real sample fetch before
 trusting scheduled checks:

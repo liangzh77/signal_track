@@ -44,6 +44,7 @@ def auto_coverage(tushare_ready: bool, yfinance_ready: bool) -> list[dict]:
     for market in all_markets():
         notes: list[str] = []
         price_provider = None
+        fallback_price_providers: list[str] = []
         master_provider = "seed_fallback"
         real_master = False
 
@@ -52,15 +53,20 @@ def auto_coverage(tushare_ready: bool, yfinance_ready: bool) -> list[dict]:
             master_provider = "tushare"
             real_master = True
 
-        if market in {Market.HK, Market.HK_FUT, Market.US, Market.US_FUT} and price_provider is None and yfinance_ready:
-            price_provider = "yfinance"
+        if market in {Market.HK, Market.HK_FUT, Market.US, Market.US_FUT} and yfinance_ready:
+            if price_provider is None:
+                price_provider = "yfinance"
+            else:
+                fallback_price_providers.append("yfinance")
 
         if master_provider == "seed_fallback":
             notes.append("instrument master uses built-in seed fallback")
+        if fallback_price_providers:
+            notes.append("fallback price providers: " + ", ".join(fallback_price_providers))
         if price_provider is None:
             notes.append(missing_dependency_note(market, tushare_ready, yfinance_ready))
 
-        rows.append(coverage_row(market, price_provider, master_provider, real_master, notes))
+        rows.append(coverage_row(market, price_provider, master_provider, real_master, notes, fallback_price_providers))
     return rows
 
 
@@ -114,10 +120,12 @@ def coverage_row(
     instrument_master_provider: str | None,
     real_instrument_master: bool,
     notes: list[str],
+    fallback_price_providers: list[str] | None = None,
 ) -> dict:
     return {
         "market": market.value,
         "price_provider": price_provider,
+        "fallback_price_providers": fallback_price_providers or [],
         "price_available": price_provider is not None,
         "instrument_master_provider": instrument_master_provider,
         "real_instrument_master": real_instrument_master,

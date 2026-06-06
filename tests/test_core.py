@@ -607,6 +607,31 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(tushare_provider.calls, ["00700.HK"])
         self.assertEqual(yfinance_provider.calls, ["HSI", "NQ"])
 
+    def test_auto_provider_falls_back_to_yfinance_when_tushare_market_call_fails(self) -> None:
+        tushare_provider = PartiallyFailingMarketDataProvider({"00700.HK", "AAPL"})
+        yfinance_provider = RecordingMarketDataProvider("yfinance")
+        settings = Settings(
+            db_path=Path(":memory:"),
+            tushare_token="token",
+            demo_publish_url=None,
+            demo_api_key=None,
+            enable_scheduler=False,
+            daily_provider="auto",
+            openai_api_key=None,
+            openai_model="model",
+            signal_track_api_key=None,
+        )
+
+        with patch("signal_track.providers.factory.TushareMarketDataProvider", return_value=tushare_provider):
+            with patch("signal_track.providers.factory.YFinanceMarketDataProvider", return_value=yfinance_provider):
+                provider = build_auto_provider(settings)
+
+        provider.get_daily_bars(SEED_INSTRUMENTS[2], date(2026, 6, 1), date(2026, 6, 5))
+        provider.get_daily_bars(next(item for item in SEED_INSTRUMENTS if item.symbol == "AAPL"), date(2026, 6, 1), date(2026, 6, 5))
+
+        self.assertEqual(tushare_provider.calls, ["00700.HK", "AAPL"])
+        self.assertEqual(yfinance_provider.calls, ["00700.HK", "AAPL"])
+
     def test_tushare_continuous_future_uses_mapping_contracts(self) -> None:
         provider = TushareMarketDataProvider.__new__(TushareMarketDataProvider)
         provider.pro = FakeTusharePro()
@@ -699,10 +724,12 @@ class SignalTrackCoreTests(unittest.TestCase):
         by_market = {row["market"]: row for row in coverage["markets"]}
         self.assertEqual(by_market["CN_A"]["price_provider"], "tushare")
         self.assertEqual(by_market["HK"]["price_provider"], "tushare")
+        self.assertEqual(by_market["HK"]["fallback_price_providers"], ["yfinance"])
         self.assertEqual(by_market["CN_FUT"]["instrument_master_provider"], "tushare")
         self.assertEqual(by_market["HK_FUT"]["price_provider"], "yfinance")
         self.assertEqual(by_market["HK_FUT"]["instrument_master_provider"], "seed_fallback")
         self.assertFalse(by_market["HK_FUT"]["real_instrument_master"])
+        self.assertEqual(by_market["US"]["fallback_price_providers"], ["yfinance"])
         self.assertEqual(by_market["US_FUT"]["price_provider"], "yfinance")
         self.assertEqual(by_market["US_FUT"]["instrument_master_provider"], "seed_fallback")
         self.assertFalse(by_market["US_FUT"]["real_instrument_master"])
