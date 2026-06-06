@@ -19,6 +19,7 @@ from .logic_supplement import build_logic_supplementer
 from .market_data import MarketDataService
 from .models import Market
 from .provider_diagnostics import market_data_coverage
+from .project_actions import close_tracking_project
 from .project_summary import project_summaries
 from .publisher import DemoPublisher, extract_published_address
 from .providers.factory import build_market_data_provider
@@ -92,6 +93,13 @@ def main(argv: list[str] | None = None) -> int:
     update_research_parser.add_argument("--provider", choices=["none", "auto", "fixture", "tushare", "yfinance"], default="none")
     update_research_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after updating.")
     update_research_parser.add_argument("--title", default="Signal Track 投资信号看板")
+
+    close_project_parser = subparsers.add_parser("close-project", help="Manually close a tracking project.")
+    close_project_parser.add_argument("project_id", type=int)
+    close_project_parser.add_argument("--date", help="Close date, YYYY-MM-DD. Defaults to today.")
+    close_project_parser.add_argument("--reason", help="Close reason recorded as close logic.")
+    close_project_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after closing.")
+    close_project_parser.add_argument("--title", default="Signal Track 投资信号看板")
 
     ingest_parser = subparsers.add_parser("ingest", help="Create tracking projects from raw source text.")
     ingest_parser.add_argument("--source")
@@ -326,6 +334,42 @@ def main(argv: list[str] | None = None) -> int:
                     "ok": True,
                     "item": dict(item),
                     "checked_projects": checked,
+                    "published": publish_result.ok if publish_result else False,
+                    "status_code": publish_result.status_code if publish_result else None,
+                    "published_url": extract_published_address(publish_result.body) if publish_result else None,
+                    "publish_url": settings.demo_publish_url if publish_result else None,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0 if publish_result is None or publish_result.ok else 1
+
+    if args.command == "close-project":
+        db.init()
+        project = close_tracking_project(
+            repo,
+            args.project_id,
+            closed_date=parse_date(args.date).isoformat() if args.date else None,
+            reason=args.reason,
+        )
+        if not project:
+            print(json.dumps({"ok": False, "code": "project_not_found"}, ensure_ascii=False))
+            return 2
+        publish_result = None
+        if args.publish:
+            publish_result = publish_dashboard(
+                repo,
+                settings,
+                title=args.title,
+                feature=f"Project {args.project_id} closed",
+                flow="close-project",
+            )
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "project": project_summaries(repo, [args.project_id])[0],
                     "published": publish_result.ok if publish_result else False,
                     "status_code": publish_result.status_code if publish_result else None,
                     "published_url": extract_published_address(publish_result.body) if publish_result else None,

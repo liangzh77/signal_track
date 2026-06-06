@@ -858,6 +858,51 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(closed.json()["projects"][0]["status"], "closed")
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_close_project_endpoint_records_close_logic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+
+            created = client.post(
+                "/api/inputs",
+                json={"source": "Manual Desk", "content": "00700.HK long, watch ads recovery."},
+            )
+            project_id = created.json()["project_ids"][0]
+            closed = client.post(
+                f"/api/projects/{project_id}/close",
+                json={"closed_date": "2026-06-10", "reason": "manual exit after thesis broke"},
+            )
+            detail = client.get(f"/api/projects/{project_id}").json()
+
+            self.assertEqual(closed.status_code, 200)
+            self.assertEqual(closed.json()["project"]["status"], "closed")
+            self.assertEqual(closed.json()["project"]["closed_date"], "2026-06-10")
+            self.assertFalse(closed.json()["publish"]["attempted"])
+            self.assertTrue(
+                any(
+                    block["logic_type"] == "close_logic"
+                    and "manual exit after thesis broke" in block["content"]
+                    for block in detail["logic_blocks"]
+                )
+            )
+            self.assertEqual(client.post("/api/projects/999999/close", json={}).status_code, 404)
+            self.assertEqual(
+                client.post(
+                    f"/api/projects/{project_id}/close",
+                    json={"closed_date": "not-a-date"},
+                ).status_code,
+                400,
+            )
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_file_ingest_preserves_same_named_attachments(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"
@@ -952,6 +997,8 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(denied.status_code, 401)
             denied_research = client.patch("/api/research-items/1", json={"status": "verified"})
             self.assertEqual(denied_research.status_code, 401)
+            denied_close = client.post("/api/projects/1/close", json={})
+            self.assertEqual(denied_close.status_code, 401)
 
             allowed = client.post(
                 "/api/inputs",

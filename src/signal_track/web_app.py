@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 from .analytics import project_performance
@@ -13,6 +14,7 @@ from .input_summary import input_detail, input_summaries
 from .logic_supplement import build_logic_supplementer
 from .models import Market
 from .provider_diagnostics import market_data_coverage
+from .project_actions import close_tracking_project
 from .project_summary import project_summaries
 from .publisher import DemoPublisher, extract_published_address, publish_payload
 from .providers.factory import build_market_data_provider
@@ -65,6 +67,10 @@ def create_app():
         metadata: dict | None = None
         run_check: bool = False
         provider: str = "none"
+
+    class CloseProjectPayload(BaseModel):
+        closed_date: str | None = None
+        reason: str | None = None
 
     app = FastAPI(title="Signal Track", version="0.1.0")
 
@@ -218,6 +224,25 @@ def create_app():
                 "legs": [leg.__dict__ for leg in performance.legs],
             },
         }
+
+    @app.post("/api/projects/{project_id}/close", dependencies=[Depends(require_write_auth)])
+    def close_project(project_id: int, payload: CloseProjectPayload = Body(default=CloseProjectPayload())):
+        closed_date = payload.closed_date
+        if closed_date:
+            try:
+                closed_date = date.fromisoformat(closed_date).isoformat()
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail="Invalid closed_date") from exc
+        project = close_tracking_project(
+            repo,
+            project_id,
+            closed_date=closed_date,
+            reason=payload.reason,
+        )
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        publish_result = maybe_publish(repo, settings, f"Project {project_id} closed")
+        return {"project": project_summaries(repo, [project_id])[0], "publish": publish_result}
 
     @app.get("/api/research-items")
     def list_research_items(project_id: int | None = None, limit: int = 100):

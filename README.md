@@ -76,6 +76,7 @@ Useful endpoints:
 - `POST /api/instruments/refresh` with `{ "provider": "auto", "market": "CN_A" }`
 - `GET /api/projects`
 - `GET /api/projects/{project_id}`
+- `POST /api/projects/{project_id}/close` with `{ "closed_date": "2026-06-10", "reason": "..." }`
 - `GET /api/research-items`
 - `PATCH /api/research-items/{item_id}` with `{ "status": "verified" }`
 - `POST /api/checks/run` with optional `{ "provider": "auto" }`
@@ -83,8 +84,8 @@ Useful endpoints:
 - `POST /api/publish`
 - `GET /api/publish/events`
 
-When publish credentials are configured, `POST /api/inputs` and `POST /api/checks/run`
-automatically publish the refreshed dashboard.
+When publish credentials are configured, `POST /api/inputs`, `POST /api/projects/{project_id}/close`,
+research item updates, and `POST /api/checks/run` automatically publish the refreshed dashboard.
 Publish responses include `url` when the publish API returns a public dashboard
 address, plus `publish_url` for the API endpoint that was called.
 
@@ -317,6 +318,7 @@ being expanded:
 python -m signal_track.cli list-research-items --project-id 1
 python -m signal_track.cli update-research-item 1 --status verified --source-note "checked filing"
 python -m signal_track.cli update-research-item 1 --status contradicted --check --provider auto --publish
+python -m signal_track.cli close-project 1 --date 2026-06-10 --reason "manual exit after thesis broke" --publish
 ```
 
 When publish credentials are configured, the API research item update endpoint
