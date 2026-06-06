@@ -113,6 +113,11 @@ def render_dashboard(repo: Repository) -> str:
     .logic-block.system_logic {{ border-left-color: rgba(216,179,93,.65); }}
     .leg-list {{ display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }}
     .leg {{ border: 1px solid var(--border); border-radius: 999px; padding: 4px 8px; color: var(--muted); font-size: 12px; }}
+    .leg-curves {{ display: grid; gap: 10px; margin: 10px 0 14px; }}
+    .leg-curve {{ border: 1px solid rgba(231,238,232,.08); border-radius: 8px; padding: 10px; background: rgba(255,255,255,.022); }}
+    .leg-curve-head {{ display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 8px; }}
+    .leg-curve-head strong {{ font-size: 12px; line-height: 18px; }}
+    .mini-chart {{ width: 100%; height: 72px; margin: 0; border: 0; border-radius: 6px; background: rgba(255,255,255,.025); }}
     @media (max-width: 900px) {{
       .shell {{ padding: 16px; }}
       .metrics {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
@@ -197,6 +202,7 @@ def render_project_detail(repo: Repository, row, performance) -> str:
         f"<span class='leg'>{escape(leg.symbol)} · {leg.weight:.0%} · {format_return(leg.return_pct)}</span>"
         for leg in performance.legs
     )
+    leg_curves = "\n".join(render_leg_curve(leg) for leg in performance.legs)
     return (
         "<article class='card detail-card'>"
         "<div class='detail-top'>"
@@ -205,14 +211,27 @@ def render_project_detail(repo: Repository, row, performance) -> str:
         "</div>"
         f"{render_sparkline(performance.points)}"
         f"<div class='leg-list'>{legs}</div>"
+        f"<div class='leg-curves'>{leg_curves}</div>"
         f"<div class='logic-grid'>{logic_html}</div>"
         "</article>"
     )
 
 
-def render_sparkline(points: list[tuple[str, float]]) -> str:
+def render_leg_curve(leg) -> str:
+    return (
+        "<div class='leg-curve'>"
+        "<div class='leg-curve-head'>"
+        f"<strong>{escape(leg.symbol)} · {escape(leg.name)} · {leg.weight:.0%}</strong>"
+        f"<span class='{return_css(leg.return_pct)}'>{format_return(leg.return_pct)}</span>"
+        "</div>"
+        f"{render_sparkline(leg.points, css_class='mini-chart', label=f'{leg.symbol} 收益曲线')}"
+        "</div>"
+    )
+
+
+def render_sparkline(points: list[tuple[str, float]], css_class: str = "chart", label: str = "收益曲线") -> str:
     if len(points) < 2:
-        return "<div class='chart empty'>暂无价格曲线。运行 check --provider 或 fetch-bars 后显示。</div>"
+        return f"<div class='{escape(css_class)} empty'>暂无价格曲线。运行 check --provider 或 fetch-bars 后显示。</div>"
     width = 640
     height = 120
     values = [value for _, value in points]
@@ -228,7 +247,7 @@ def render_sparkline(points: list[tuple[str, float]]) -> str:
     zero_y = height - ((0 - minimum) / span * (height - 18)) - 9
     zero_y = max(8, min(height - 8, zero_y))
     return (
-        "<svg class='chart' viewBox='0 0 640 120' role='img' aria-label='收益曲线'>"
+        f"<svg class='{escape(css_class)}' viewBox='0 0 640 120' role='img' aria-label='{escape(label)}'>"
         f"<line x1='0' y1='{zero_y:.1f}' x2='640' y2='{zero_y:.1f}' stroke='rgba(231,238,232,.18)' />"
         f"<polyline points='{' '.join(coords)}' fill='none' stroke='#44D7C8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' />"
         "</svg>"

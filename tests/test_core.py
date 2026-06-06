@@ -332,6 +332,13 @@ class SignalTrackCoreTests(unittest.TestCase):
             rows = repo.list_project_rows()
             self.assertEqual(rows[0]["symbols"], "300750.SZ, 600519.SH")
 
+            DailyChecker(repo, FixtureMarketDataProvider()).run(next_fixture_trading_day(date.today()))
+            html = render_dashboard(repo)
+            self.assertIn("leg-curves", html)
+            self.assertIn("mini-chart", html)
+            self.assertIn("300750.SZ 收益曲线", html)
+            self.assertIn("600519.SH 收益曲线", html)
+
     def test_heuristic_portfolio_weight_parsing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
