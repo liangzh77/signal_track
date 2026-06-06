@@ -3266,9 +3266,40 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(binary.status_code, 415)
             self.assertEqual(binary.json()["detail"]["code"], "unsupported_input_file")
             self.assertEqual(len(raw_inputs), 4)
+            attachment_paths = [Path(row["attachment_path"]) for row in raw_inputs]
+            self.assertEqual(len(attachment_paths), 4)
+            self.assertTrue(all(path.exists() for path in attachment_paths))
+            self.assertNotIn("note.zip", {path.name for path in attachment_paths})
             self.assertTrue(any("腾讯" in row["content"] for row in raw_inputs))
             self.assertTrue(any("NVDA" in row["content"] for row in raw_inputs))
             self.assertTrue(any("watch ads" in row["content"] for row in raw_inputs))
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_file_ingest_cleans_attachment_when_source_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+                response = client.post(
+                    "/api/inputs/file",
+                    data={},
+                    files={"file": ("missing-source.md", b"00700.HK long, watch ads.", "text/markdown")},
+                )
+
+            attachments = list((db_path.parent / "attachments").glob("*"))
+            raw_inputs = Repository(Database(db_path)).list_raw_inputs()
+            self.assertEqual(response.status_code, 422)
+            self.assertEqual(response.json()["detail"]["code"], "source_required")
+            self.assertEqual(raw_inputs, [])
+            self.assertEqual(attachments, [])
 
     def test_cli_file_ingest_rejects_unsupported_binary_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

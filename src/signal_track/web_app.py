@@ -191,23 +191,27 @@ def create_app():
         extractor: str = Form("auto"),
         file: UploadFile = File(...),
     ):
-        attachments_dir = settings.db_path.parent / "attachments"
-        attachments_dir.mkdir(parents=True, exist_ok=True)
         content_bytes = await file.read()
-        attachment_path = save_unique_attachment(attachments_dir, file.filename, content_bytes)
         try:
             content = decode_input_file(content_bytes, file.filename)
         except UnsupportedInputFileError as exc:
             raise HTTPException(status_code=415, detail={"code": "unsupported_input_file", "message": str(exc)}) from exc
-        result = ingest_content(
-            repo,
-            settings,
-            source=source,
-            content=content,
-            portfolio=portfolio,
-            extractor=extractor,
-            attachment_path=str(attachment_path),
-        )
+        attachments_dir = settings.db_path.parent / "attachments"
+        attachments_dir.mkdir(parents=True, exist_ok=True)
+        attachment_path = save_unique_attachment(attachments_dir, file.filename, content_bytes)
+        try:
+            result = ingest_content(
+                repo,
+                settings,
+                source=source,
+                content=content,
+                portfolio=portfolio,
+                extractor=extractor,
+                attachment_path=str(attachment_path),
+            )
+        except Exception:
+            attachment_path.unlink(missing_ok=True)
+            raise
         publish_result = maybe_publish(repo, settings, "上传文件后自动发布")
         return result_response(repo, result, publish_result)
 
