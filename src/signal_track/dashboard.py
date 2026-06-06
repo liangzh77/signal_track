@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import json
 from datetime import datetime
+from urllib.parse import quote
 
 from .analytics import project_performance
 from .db import Repository
@@ -502,8 +503,9 @@ def render_report_snapshot(repo: Repository, project_id: int) -> str:
     return (
         "<section class='report-card' aria-label='project research report'>"
         "<div class='report-card-head'>"
-        f"<div><h4>{escape(report['title'])}</h4><div class='muted'>Markdown / JSON report available</div></div>"
-        f"<a class='report-link' href='/api/projects/{project_id}/report?format=markdown'>Report</a>"
+        f"<div><h4>{escape(report['title'])}</h4><div class='muted'>Embedded report with Markdown download</div></div>"
+        f"<a class='report-link' href='{report_download_href(markdown)}' "
+        f"download='signal-track-project-{project_id}-report.md'>Markdown</a>"
         "</div>"
         "<div class='report-stats'>"
         f"<div class='report-stat'><span>verified</span><strong>{verification['verified_count']}</strong></div>"
@@ -517,6 +519,10 @@ def render_report_snapshot(repo: Repository, project_id: int) -> str:
         "</details>"
         "</section>"
     )
+
+
+def report_download_href(markdown: str) -> str:
+    return "data:text/markdown;charset=utf-8," + quote(markdown)
 
 
 def render_research_items(items) -> str:

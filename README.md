@@ -136,8 +136,8 @@ price performance. The Markdown report follows the eight-part research structure
 opening judgment, 3C, 5M, 3D, 3T, Fenghe-style perspective, scoring card, and
 data sources/disclaimer. It marks unverified data as review material rather than
 confirmed facts. The published dashboard also embeds the Markdown report body in
-each project detail card so the static uploaded page remains usable without a
-live backend.
+each project detail card and exposes a static Markdown download link, so the
+uploaded page remains usable without a live backend.
 `GET /api/exit-signals` and `list-exit-signals` use the same performance-bearing
 summary and include the latest check that triggered the signal.
 `extractor` accepts `auto`, `heuristic`, or `openai`; unknown values return `400`
