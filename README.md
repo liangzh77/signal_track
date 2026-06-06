@@ -270,8 +270,9 @@ being expanded:
 ```powershell
 python -m signal_track.cli list-research-items --project-id 1
 python -m signal_track.cli update-research-item 1 --status verified --source-note "checked filing"
-python -m signal_track.cli update-research-item 1 --status contradicted --publish
+python -m signal_track.cli update-research-item 1 --status contradicted --check --provider auto --publish
 ```
 
 When publish credentials are configured, the API research item update endpoint
-publishes the refreshed dashboard automatically.
+publishes the refreshed dashboard automatically. Pass `run_check: true` to
+recalculate active project status immediately after a research item update.

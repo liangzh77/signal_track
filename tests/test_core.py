@@ -665,12 +665,18 @@ class SignalTrackCoreTests(unittest.TestCase):
                     )
                     project_id = created.json()["project_ids"][0]
                     item_id = client.get(f"/api/projects/{project_id}").json()["research_items"][0]["id"]
-                    updated = client.patch(f"/api/research-items/{item_id}", json={"status": "verified"})
+                    updated = client.patch(
+                        f"/api/research-items/{item_id}",
+                        json={"status": "contradicted", "run_check": True, "provider": "fixture"},
+                    )
                     events = client.get("/api/publish/events").json()
+                    project_detail = client.get(f"/api/projects/{project_id}").json()
 
             self.assertEqual(updated.status_code, 200)
+            self.assertEqual(updated.json()["checked_projects"], 1)
             self.assertTrue(updated.json()["publish"]["ok"])
             self.assertEqual(events[0]["url"], "https://example.com/demo/signal")
+            self.assertEqual(project_detail["project"]["status"], "needs_review")
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_mutating_web_endpoints_require_api_key_when_configured(self) -> None:

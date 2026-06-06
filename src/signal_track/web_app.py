@@ -60,6 +60,8 @@ def create_app():
         status: str
         source_note: str | None = None
         metadata: dict | None = None
+        run_check: bool = False
+        provider: str = "none"
 
     app = FastAPI(title="Signal Track", version="0.1.0")
 
@@ -214,8 +216,19 @@ def create_app():
         )
         if not item:
             raise HTTPException(status_code=404, detail="Research item not found")
+        checked = None
+        if payload.run_check:
+            try:
+                provider = build_market_data_provider(payload.provider, settings)
+            except ValueError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            checked = DailyChecker(
+                repo,
+                provider,
+                evaluator=build_daily_logic_evaluator(settings.openai_api_key, settings.openai_model),
+            ).run()
         publish_result = maybe_publish(repo, settings, f"研究验证项更新：{payload.status}")
-        return {"item": dict(item), "publish": publish_result}
+        return {"item": dict(item), "checked_projects": checked, "publish": publish_result}
 
     @app.post("/api/checks/run", dependencies=[Depends(require_write_auth)])
     def run_checks(payload: CheckPayload = Body(default=CheckPayload())):

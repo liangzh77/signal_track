@@ -70,6 +70,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     update_research_parser.add_argument("--source-note")
     update_research_parser.add_argument("--metadata-json")
+    update_research_parser.add_argument("--check", action="store_true", help="Run a daily check after updating.")
+    update_research_parser.add_argument("--provider", choices=["none", "auto", "fixture", "tushare", "yfinance"], default="none")
     update_research_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after updating.")
     update_research_parser.add_argument("--title", default="Signal Track 投资信号看板")
 
@@ -261,6 +263,14 @@ def main(argv: list[str] | None = None) -> int:
         if not item:
             print(json.dumps({"ok": False, "code": "research_item_not_found"}, ensure_ascii=False))
             return 2
+        checked = None
+        if args.check:
+            provider = None if args.provider == "none" else build_provider(args.provider, settings)
+            checked = DailyChecker(
+                repo,
+                provider,
+                evaluator=build_daily_logic_evaluator(settings.openai_api_key, settings.openai_model),
+            ).run()
         publish_result = None
         if args.publish:
             publish_result = publish_dashboard(
@@ -275,6 +285,7 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "ok": True,
                     "item": dict(item),
+                    "checked_projects": checked,
                     "published": publish_result.ok if publish_result else False,
                     "status_code": publish_result.status_code if publish_result else None,
                 },
