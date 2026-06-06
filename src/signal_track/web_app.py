@@ -92,6 +92,7 @@ def create_app():
         provider: str = "none"
 
     app = FastAPI(title="Signal Track", version="0.1.0")
+    scheduler_provider_error = None
 
     @app.get("/", response_class=HTMLResponse)
     def inbox():
@@ -115,7 +116,11 @@ def create_app():
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     if settings.enable_scheduler:
-        provider = build_market_data_provider(settings.daily_provider, settings)
+        try:
+            provider = build_market_data_provider(settings.daily_provider, settings)
+        except ValueError as exc:
+            provider = None
+            scheduler_provider_error = str(exc)
         scheduled_jobs = build_scheduler(
             repo,
             provider=provider,
@@ -135,7 +140,12 @@ def create_app():
     @app.get("/health")
     def health():
         scheduler_jobs = scheduler_job_summaries(scheduled_jobs.scheduler) if scheduled_jobs else []
-        return health_payload(repo, scheduler_enabled=settings.enable_scheduler, scheduler_jobs=scheduler_jobs)
+        return health_payload(
+            repo,
+            scheduler_enabled=settings.enable_scheduler,
+            scheduler_jobs=scheduler_jobs,
+            scheduler_provider_error=scheduler_provider_error,
+        )
 
     @app.get("/api/market-data/coverage")
     def market_coverage(provider: str = "auto"):
@@ -615,6 +625,7 @@ def health_payload(
     repo: Repository,
     scheduler_enabled: bool = False,
     scheduler_jobs: list[dict[str, str | None]] | None = None,
+    scheduler_provider_error: str | None = None,
 ) -> dict:
     try:
         projects = repo.list_project_rows()
@@ -626,6 +637,7 @@ def health_payload(
             "database": {"ok": False, "error": str(exc)},
             "scheduler_enabled": scheduler_enabled,
             "scheduler_jobs": scheduler_jobs or [],
+            "scheduler_provider_error": scheduler_provider_error,
         }
 
     active = sum(1 for row in projects if row["status"] in {"active", "needs_review"})
@@ -635,6 +647,8 @@ def health_payload(
     latest_publish = publish_events[0] if publish_events else None
     publish_metadata = parse_json_dict(latest_publish["metadata"]) if latest_publish else {}
     degraded_reasons = []
+    if scheduler_provider_error:
+        degraded_reasons.append("scheduler_provider_error")
     if latest_publish and publish_metadata.get("ok") is False:
         degraded_reasons.append("latest_publish_failed")
     return {
@@ -642,6 +656,7 @@ def health_payload(
         "database": {"ok": True},
         "scheduler_enabled": scheduler_enabled,
         "scheduler_jobs": scheduler_jobs or [],
+        "scheduler_provider_error": scheduler_provider_error,
         "degraded_reasons": degraded_reasons,
         "projects": {
             "total": len(projects),

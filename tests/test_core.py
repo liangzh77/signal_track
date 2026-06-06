@@ -4086,6 +4086,43 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertTrue(health.json()["ok"])
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_scheduler_provider_error_does_not_block_startup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_ENABLE_SCHEDULER": "true",
+                "SIGNAL_TRACK_DAILY_PROVIDER": "auto",
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            fake_scheduler = types.SimpleNamespace(
+                get_jobs=lambda: [
+                    types.SimpleNamespace(id="asia_evening_daily_check", trigger="cron[hour='19']", next_run_time=None),
+                    types.SimpleNamespace(id="us_morning_daily_check", trigger="cron[hour='7']", next_run_time=None),
+                ]
+            )
+            fake_scheduled_jobs = types.SimpleNamespace(scheduler=fake_scheduler)
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.web_app.build_market_data_provider", side_effect=ValueError("Auto provider requires configured data source")):
+                    with patch("signal_track.web_app.build_scheduler", return_value=fake_scheduled_jobs):
+                        client = TestClient(create_app())
+                        response = client.get("/health")
+
+        payload = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(payload["ok"])
+        self.assertTrue(payload["scheduler_enabled"])
+        self.assertEqual(
+            {job["id"] for job in payload["scheduler_jobs"]},
+            {"asia_evening_daily_check", "us_morning_daily_check"},
+        )
+        self.assertIn("scheduler_provider_error", payload["degraded_reasons"])
+        self.assertIn("Auto provider requires", payload["scheduler_provider_error"])
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_health_reports_operational_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"

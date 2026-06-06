@@ -78,6 +78,10 @@ defaults to `auto`; set it to `none` only when you want checks to evaluate
 already-stored prices without refreshing market data. `/health` includes
 `scheduler_jobs` so deployments can verify that the 19:00 and 07:00 jobs are
 registered.
+If the in-process scheduler cannot initialize the configured provider, the
+backend still starts, registers the jobs, and reports `ok: false` with
+`scheduler_provider_error` in `/health`; scheduled checks then run without a
+price refresh until the provider configuration is fixed.
 The systemd timer template also leaves provider selection to
 `SIGNAL_TRACK_DAILY_PROVIDER` instead of hard-coding a provider, and it relies on
 `SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE` plus publish credentials instead of forcing

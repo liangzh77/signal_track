@@ -83,6 +83,9 @@ Expected shape:
   "body": {
     "ok": true,
     "database": {"ok": true},
+    "scheduler_enabled": false,
+    "scheduler_jobs": [],
+    "scheduler_provider_error": null,
     "degraded_reasons": [],
     "projects": {"total": 0, "active_or_review": 0, "exit_signal": 0, "needs_review": 0},
     "latest_check": null,
@@ -94,6 +97,14 @@ Expected shape:
 If the latest dashboard publish attempt failed, `/health` returns `ok: false`
 with `degraded_reasons: ["latest_publish_failed"]`, so `scripts/healthcheck.py`
 exits non-zero.
+
+If the in-process scheduler is enabled but the configured
+`SIGNAL_TRACK_DAILY_PROVIDER` cannot be initialized, the backend still starts and
+`/health` returns `ok: false` with
+`degraded_reasons: ["scheduler_provider_error"]` plus the provider error text.
+The scheduled jobs remain registered but run without market-data refresh until
+the provider token/dependency is fixed or `SIGNAL_TRACK_DAILY_PROVIDER=none` is
+set intentionally.
 
 Local smoke check without touching the production database:
 
