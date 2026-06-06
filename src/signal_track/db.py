@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from collections.abc import Iterable
 from contextlib import contextmanager
@@ -350,6 +351,16 @@ def count_table_rows(conn: sqlite3.Connection, table: str) -> int:
     return int(row[0])
 
 
+def finite_float_or_none(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        parsed = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
 def migrate_connection(conn: sqlite3.Connection) -> int:
     conn.executescript(RESEARCH_ITEMS_SCHEMA)
     conn.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
@@ -454,15 +465,15 @@ class Repository:
                     (
                         instrument_id,
                         bar.date.isoformat(),
-                        bar.open,
-                        bar.high,
-                        bar.low,
-                        bar.close,
-                        bar.adj_close,
-                        bar.volume,
-                        bar.amount,
-                        bar.settle,
-                        bar.open_interest,
+                        finite_float_or_none(bar.open),
+                        finite_float_or_none(bar.high),
+                        finite_float_or_none(bar.low),
+                        finite_float_or_none(bar.close),
+                        finite_float_or_none(bar.adj_close),
+                        finite_float_or_none(bar.volume),
+                        finite_float_or_none(bar.amount),
+                        finite_float_or_none(bar.settle),
+                        finite_float_or_none(bar.open_interest),
                         bar.provider,
                         bar.provider_symbol or bar.symbol,
                     ),
@@ -482,6 +493,20 @@ class Repository:
                 (symbol,),
             ).fetchone()
         return int(row["count"])
+
+    def get_latest_price_bar(self, symbol: str) -> sqlite3.Row | None:
+        with self.db.session() as conn:
+            return conn.execute(
+                """
+                SELECT pb.*
+                FROM price_bars pb
+                JOIN instruments i ON i.id = pb.instrument_id
+                WHERE i.symbol = ?
+                ORDER BY pb.bar_date DESC
+                LIMIT 1
+                """,
+                (symbol,),
+            ).fetchone()
 
     def get_or_create_source(self, name: str, source_type: str = "manual") -> int:
         with self.db.session() as conn:

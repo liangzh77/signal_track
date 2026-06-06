@@ -452,6 +452,41 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIsNotNone(stored)
             self.assertEqual(stored.name, "宁德时代")
 
+    def test_database_bar_storage_filters_non_finite_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            instrument_id = repo.upsert_instrument(SEED_INSTRUMENTS[0])
+
+            repo.upsert_bars(
+                instrument_id,
+                [
+                    DailyBar(
+                        symbol="300750.SZ",
+                        provider_symbol="300750.SZ",
+                        date=date(2026, 1, 1),
+                        open=float("nan"),
+                        high=float("inf"),
+                        low=99.0,
+                        close=float("-inf"),
+                        adj_close=100.0,
+                        volume=float("nan"),
+                        provider="test",
+                    )
+                ],
+            )
+
+            bar = repo.get_latest_price_bar("300750.SZ")
+            self.assertIsNotNone(bar)
+            assert bar is not None
+            self.assertIsNone(bar["open"])
+            self.assertIsNone(bar["high"])
+            self.assertEqual(bar["low"], 99.0)
+            self.assertIsNone(bar["close"])
+            self.assertEqual(bar["adj_close"], 100.0)
+            self.assertIsNone(bar["volume"])
+
     def test_database_migration_adds_missing_columns(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "legacy.sqlite3"
