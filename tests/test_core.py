@@ -795,6 +795,10 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(inputs[0]["source_name"], "Alpha Desk")
             self.assertIn("00700.HK", inputs[0]["content_preview"])
             self.assertGreater(inputs[0]["content_length"], 0)
+            self.assertNotIn("content", inputs[0])
+            input_detail = client.get(f"/api/inputs/{inputs[0]['id']}").json()
+            self.assertIn("00700.HK 做多", input_detail["content"])
+            self.assertEqual(client.get("/api/inputs/999999").status_code, 404)
             project_detail = client.get(f"/api/projects/{projects[0]['id']}").json()
             self.assertEqual(project_detail["research_items"][0]["item_type"], "verification_note")
             item_id = project_detail["research_items"][0]["id"]

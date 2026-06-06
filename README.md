@@ -69,6 +69,7 @@ Useful endpoints:
 - `GET /health`
 - `GET /api/market-data/coverage?provider=auto`
 - `GET /api/inputs`
+- `GET /api/inputs/{input_id}`
 - `POST /api/inputs` with `{ "source": "...", "content": "...", "portfolio": false }`
 - `POST /api/inputs/file` multipart upload with `file`, `source`, `portfolio`, `extractor`
 - `GET /api/instruments`
@@ -262,6 +263,7 @@ List recent raw inputs and uploaded attachment paths:
 
 ```powershell
 python -m signal_track.cli list-inputs --limit 20
+python -m signal_track.cli show-input 1
 ```
 
 If `--source` is omitted, the first few lines of the note must include a marker

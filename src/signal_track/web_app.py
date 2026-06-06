@@ -9,7 +9,7 @@ from .dashboard import render_dashboard
 from .db import Database, Repository
 from .extraction import OpenAISignalExtractor
 from .instrument_master import InstrumentMasterService
-from .input_summary import input_summaries
+from .input_summary import input_detail, input_summaries
 from .logic_supplement import build_logic_supplementer
 from .models import Market
 from .provider_diagnostics import market_data_coverage
@@ -113,6 +113,13 @@ def create_app():
     @app.get("/api/inputs")
     def list_inputs(limit: int = 100):
         return input_summaries(repo, limit=limit)
+
+    @app.get("/api/inputs/{input_id}")
+    def get_input(input_id: int):
+        detail = input_detail(repo, input_id)
+        if not detail:
+            raise HTTPException(status_code=404, detail="Input not found")
+        return detail
 
     @app.post("/api/inputs", dependencies=[Depends(require_write_auth)])
     def ingest(payload: InputPayload):

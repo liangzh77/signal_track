@@ -14,7 +14,7 @@ from .dashboard import render_dashboard
 from .db import Database, Repository
 from .extraction import OpenAISignalExtractor
 from .instrument_master import InstrumentMasterService
-from .input_summary import input_summaries
+from .input_summary import input_detail, input_summaries
 from .logic_supplement import build_logic_supplementer
 from .market_data import MarketDataService
 from .models import Market
@@ -71,6 +71,9 @@ def main(argv: list[str] | None = None) -> int:
 
     list_inputs_parser = subparsers.add_parser("list-inputs", help="List recent raw inputs and attachment paths.")
     list_inputs_parser.add_argument("--limit", type=int, default=50)
+
+    show_input_parser = subparsers.add_parser("show-input", help="Show a raw input with full content.")
+    show_input_parser.add_argument("input_id", type=int)
 
     list_research_parser = subparsers.add_parser("list-research-items", help="List pending research verification items.")
     list_research_parser.add_argument("--project-id", type=int)
@@ -262,6 +265,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "list-inputs":
         db.init()
         print(json.dumps({"inputs": input_summaries(repo, limit=args.limit)}, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "show-input":
+        db.init()
+        detail = input_detail(repo, args.input_id)
+        if not detail:
+            print(json.dumps({"ok": False, "code": "input_not_found"}, ensure_ascii=False))
+            return 2
+        print(json.dumps({"ok": True, "input": detail}, ensure_ascii=False, indent=2))
         return 0
 
     if args.command == "list-research-items":

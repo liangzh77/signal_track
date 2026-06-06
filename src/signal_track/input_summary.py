@@ -7,6 +7,15 @@ def input_summaries(repo: Repository, limit: int = 100) -> list[dict]:
     return [input_summary(row) for row in repo.list_raw_inputs(limit=limit)]
 
 
+def input_detail(repo: Repository, input_id: int) -> dict | None:
+    row = repo.get_raw_input(input_id)
+    if not row:
+        return None
+    detail = input_summary(row)
+    detail["content"] = row["content"]
+    return detail
+
+
 def input_summary(row) -> dict:
     content = str(row["content"] or "")
     return {
@@ -25,4 +34,4 @@ def compact_preview(content: str, limit: int = 240) -> str:
     normalized = " ".join(content.split())
     if len(normalized) <= limit:
         return normalized
-    return normalized[: limit - 1].rstrip() + "…"
+    return normalized[: limit - 3].rstrip() + "..."

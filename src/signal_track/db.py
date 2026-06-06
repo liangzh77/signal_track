@@ -429,6 +429,18 @@ class Repository:
                 (limit,),
             ).fetchall()
 
+    def get_raw_input(self, input_id: int) -> sqlite3.Row | None:
+        with self.db.session() as conn:
+            return conn.execute(
+                """
+                SELECT r.*, s.name AS source_name
+                FROM raw_inputs r
+                JOIN sources s ON s.id = r.source_id
+                WHERE r.id = ?
+                """,
+                (input_id,),
+            ).fetchone()
+
     def create_tracking_project(
         self,
         title: str,
