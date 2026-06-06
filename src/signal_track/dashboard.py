@@ -26,6 +26,8 @@ def render_dashboard(repo: Repository) -> str:
     )
     source_cards = render_source_summary(projects, performances)
     source_filter = render_source_filter(projects)
+    status_filter = render_status_filter(projects)
+    direction_filter = render_direction_filter(projects)
     detail_cards = "\n".join(render_project_detail(repo, row, performances[int(row["id"])]) for row in projects)
     check_items = "\n".join(
         render_check_item(row)
@@ -76,9 +78,15 @@ def render_dashboard(repo: Repository) -> str:
     .stamp {{ color: var(--muted); font-size: 13px; }}
     .metrics {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }}
     .source-summary {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }}
-    .source-filter {{ display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }}
+    .filter-bar {{ display: grid; gap: 10px; margin: 0 0 16px; }}
+    .filter-group {{ display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }}
+    .filter-label {{ color: var(--faint); min-width: 56px; font-size: 12px; line-height: 18px; }}
+    .source-filter {{ display: flex; }}
     .source-chip {{ color: var(--muted); background: rgba(245,247,244,.055); border: 1px solid var(--border); border-radius: 999px; min-height: 32px; padding: 0 12px; cursor: pointer; font: inherit; }}
     .source-chip:hover, .source-chip.active {{ color: var(--cyan); border-color: rgba(68,215,200,.55); background: rgba(68,215,200,.08); }}
+    .source-chip[data-filter-type='status'][data-status='needs_review'].active,
+    .source-chip[data-filter-type='status'][data-status='exit_signal'].active {{ color: var(--amber); border-color: rgba(216,179,93,.58); background: rgba(216,179,93,.09); }}
+    .source-chip[data-filter-type='status'][data-status='exit_signal'].active {{ color: var(--red); border-color: rgba(255,107,107,.58); background: rgba(255,107,107,.1); }}
     .card {{
       background: var(--surface);
       border: 1px solid var(--border);
@@ -179,7 +187,11 @@ def render_dashboard(repo: Repository) -> str:
       </div>
       <div class="stamp">{render_publish_stamp(last_publish)}</div>
     </section>
-    <section class="source-filter" data-source-filter>{source_filter}</section>
+    <section class="filter-bar" aria-label="看板筛选">
+      <div class="filter-group source-filter" data-filter-group="source"><span class="filter-label">来源</span>{source_filter}</div>
+      <div class="filter-group" data-filter-group="status"><span class="filter-label">状态</span>{status_filter}</div>
+      <div class="filter-group" data-filter-group="direction"><span class="filter-label">方向</span>{direction_filter}</div>
+    </section>
     <section class="metrics">
       <div class="card metric"><span>全部项目</span><strong>{len(projects)}</strong></div>
       <div class="card metric"><span>活跃/复核</span><strong>{active}</strong></div>
@@ -206,17 +218,26 @@ def render_dashboard(repo: Repository) -> str:
   </main>
   <script>
     (() => {{
-      const chips = Array.from(document.querySelectorAll('[data-source-filter] button'));
+      const chips = Array.from(document.querySelectorAll('[data-filter-type]'));
       const rows = Array.from(document.querySelectorAll('tr[data-source]'));
       const cards = Array.from(document.querySelectorAll('article.detail-card[data-source]'));
-      const setFilter = (source) => {{
-        chips.forEach((chip) => chip.classList.toggle('active', chip.dataset.source === source));
+      const state = {{ source: 'all', status: 'all', direction: 'all' }};
+      const matches = (node) => {{
+        return (state.source === 'all' || node.dataset.source === state.source)
+          && (state.status === 'all' || node.dataset.status === state.status)
+          && (state.direction === 'all' || node.dataset.direction === state.direction);
+      }};
+      const applyFilters = () => {{
+        chips.forEach((chip) => chip.classList.toggle('active', state[chip.dataset.filterType] === chip.dataset.value));
         [...rows, ...cards].forEach((node) => {{
-          node.hidden = source !== 'all' && node.dataset.source !== source;
+          node.hidden = !matches(node);
         }});
       }};
-      chips.forEach((chip) => chip.addEventListener('click', () => setFilter(chip.dataset.source || 'all')));
-      setFilter('all');
+      chips.forEach((chip) => chip.addEventListener('click', () => {{
+        state[chip.dataset.filterType] = chip.dataset.value || 'all';
+        applyFilters();
+      }}));
+      applyFilters();
     }})();
   </script>
 </body>
@@ -226,13 +247,57 @@ def render_dashboard(repo: Repository) -> str:
 def render_source_filter(projects) -> str:
     sources = sorted({str(row["source_name"] or "manual") for row in projects})
     buttons = [
-        "<button type='button' class='source-chip active' data-source='all'>全部</button>"
+        "<button type='button' class='source-chip active' data-filter-type='source' data-value='all'>全部</button>"
     ]
     buttons.extend(
-        f"<button type='button' class='source-chip' data-source='{escape(source)}'>{escape(source)}</button>"
+        (
+            "<button type='button' class='source-chip' "
+            f"data-filter-type='source' data-value='{escape(source)}'>{escape(source)}</button>"
+        )
         for source in sources
     )
     return "".join(buttons)
+
+
+def render_status_filter(projects) -> str:
+    present_statuses = {str(row["status"]) for row in projects}
+    options = [
+        ("all", "全部"),
+        ("active", "活跃"),
+        ("needs_review", "待复核"),
+        ("exit_signal", "平仓信号"),
+        ("closed", "已平仓"),
+    ]
+    return "".join(
+        (
+            "<button type='button' class='source-chip"
+            f"{' active' if value == 'all' else ''}' data-filter-type='status' "
+            f"data-value='{escape(value)}' data-status='{escape(value)}'"
+            f"{' disabled' if value != 'all' and value not in present_statuses else ''}>"
+            f"{escape(label)}</button>"
+        )
+        for value, label in options
+    )
+
+
+def render_direction_filter(projects) -> str:
+    present_directions = {str(row["direction"]) for row in projects}
+    options = [
+        ("all", "全部"),
+        ("long", "做多"),
+        ("short", "做空"),
+        ("neutral", "观察"),
+    ]
+    return "".join(
+        (
+            "<button type='button' class='source-chip"
+            f"{' active' if value == 'all' else ''}' data-filter-type='direction' "
+            f"data-value='{escape(value)}'"
+            f"{' disabled' if value != 'all' and value not in present_directions else ''}>"
+            f"{escape(label)}</button>"
+        )
+        for value, label in options
+    )
 
 
 def render_source_summary(projects, performances: dict[int, object]) -> str:
@@ -280,7 +345,8 @@ def render_project_row(row, performance) -> str:
     review = "是" if project_needs_review(row) else "否"
     return_class = return_css(performance.return_pct)
     return (
-        f"<tr data-source='{escape(row['source_name'])}'>"
+        f"<tr data-source='{escape(row['source_name'])}' "
+        f"data-status='{escape(row['status'])}' data-direction='{escape(row['direction'])}'>"
         f"<td><span class='pill {status}'>{status}</span></td>"
         f"<td>{escape(row['source_name'])}</td>"
         f"<td>{escape(row['title'])}</td>"
@@ -317,7 +383,8 @@ def render_project_detail(repo: Repository, row, performance) -> str:
     )
     leg_curves = "\n".join(render_leg_curve(leg) for leg in performance.legs)
     return (
-        f"<article class='card detail-card' data-source='{escape(row['source_name'])}'>"
+        f"<article class='card detail-card' data-source='{escape(row['source_name'])}' "
+        f"data-status='{escape(row['status'])}' data-direction='{escape(row['direction'])}'>"
         "<div class='detail-top'>"
         f"<div><h3>{escape(row['title'])}</h3><div class='muted'>{escape(row['source_name'])} · {escape(row['symbols'] or '')}</div></div>"
         f"<strong class='{return_css(performance.return_pct)}'>{format_return(performance.return_pct)}</strong>"
