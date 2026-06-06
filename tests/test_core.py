@@ -843,6 +843,9 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertTrue(bool(repo.get_project_row(result.project_ids[0])["weight_needs_review"]))
             logic = repo.list_logic_blocks(result.project_ids[0])
             self.assertTrue(any(block["logic_type"] == "system_logic" for block in logic))
+            html = render_dashboard(repo)
+            self.assertIn("待复核 1", html)
+            self.assertIn("<td>是</td>", html)
 
     def test_plain_multi_instrument_note_still_splits_projects(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

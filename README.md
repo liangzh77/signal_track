@@ -341,6 +341,8 @@ portfolio.
 Portfolio return curves carry forward each leg's latest available return across
 missing trading dates, so mixed-market holidays do not underweight the aggregate
 curve.
+Dashboard review counts include both thesis review (`needs_review`) and portfolio
+weight review (`weight_needs_review`).
 
 If the same source sends a non-close follow-up for the same active instrument and
 direction, Signal Track appends a `source_update` logic block to the existing

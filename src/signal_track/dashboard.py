@@ -16,7 +16,7 @@ def render_dashboard(repo: Repository) -> str:
     performances = {int(row["id"]): project_performance(repo, int(row["id"])) for row in projects}
     active = sum(1 for row in projects if row["status"] in {"active", "needs_review"})
     exits = sum(1 for row in projects if row["status"] == "exit_signal")
-    needs_review = sum(1 for row in projects if row["needs_review"])
+    needs_review = sum(1 for row in projects if project_needs_review(row))
     returns = [perf.return_pct for perf in performances.values() if perf.return_pct is not None]
     avg_return = sum(returns) / len(returns) if returns else None
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -250,7 +250,7 @@ def render_source_summary(projects, performances: dict[int, object]) -> str:
             group["active"] = int(group["active"]) + 1
         if row["status"] == "exit_signal":
             group["exits"] = int(group["exits"]) + 1
-        if row["needs_review"]:
+        if project_needs_review(row):
             group["needs_review"] = int(group["needs_review"]) + 1
         performance = performances.get(int(row["id"]))
         if performance and performance.return_pct is not None:
@@ -277,7 +277,7 @@ def render_source_summary(projects, performances: dict[int, object]) -> str:
 
 def render_project_row(row, performance) -> str:
     status = escape(row["status"])
-    review = "是" if row["needs_review"] else "否"
+    review = "是" if project_needs_review(row) else "否"
     return_class = return_css(performance.return_pct)
     return (
         f"<tr data-source='{escape(row['source_name'])}'>"
@@ -489,6 +489,10 @@ def render_publish_stamp(row) -> str:
     if url:
         return f"最近发布：<a href='{escape(url)}'>{escape(url)}</a> · {escape(status)}"
     return f"最近发布状态：{escape(status)}"
+
+
+def project_needs_review(row) -> bool:
+    return bool(row["needs_review"]) or bool(row["weight_needs_review"])
 
 
 def escape(value: object) -> str:
