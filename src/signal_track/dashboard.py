@@ -477,6 +477,7 @@ def render_project_detail(repo: Repository, row, performance) -> str:
         f"<div><h3>{escape(row['title'])}</h3><div class='muted'>{escape(row['source_name'])} · {escape(row['symbols'] or '')}</div></div>"
         f"<strong class='{return_css(performance.return_pct)}'>{format_return(performance.return_pct)}</strong>"
         "</div>"
+        f"{render_performance_window(row, performance)}"
         f"{render_sparkline(performance.points)}"
         f"<div class='leg-list'>{legs}</div>"
         f"<div class='leg-curves'>{leg_curves}</div>"
@@ -486,6 +487,21 @@ def render_project_detail(repo: Repository, row, performance) -> str:
         f"{check_log}"
         f"<div class='logic-grid'>{logic_html}</div>"
         "</article>"
+    )
+
+
+def render_performance_window(row, performance) -> str:
+    start = performance.window_start or "--"
+    end = performance.window_end or "--"
+    closed_date = row["closed_date"]
+    label = "价格窗口"
+    if row["status"] == "closed" and closed_date:
+        label = f"价格窗口（含平仓后一个月，平仓日 {closed_date}）"
+    return (
+        "<div class='input-meta' "
+        f"title='{escape(label)}: {escape(start)} to {escape(end)}'>"
+        f"{escape(label)}：{escape(start)} 至 {escape(end)}"
+        "</div>"
     )
 
 

@@ -129,6 +129,8 @@ surface the current decision without fetching full project details.
 `GET /api/projects/{project_id}` includes the same normalized summary under
 `summary`, the opening `source_input`, linked follow-up `input_history`, plus
 legs, logic blocks, research items, checks, and full performance.
+The dashboard project detail cards show the same chart window, including the
+post-close month when a project has been closed.
 `GET /api/projects/{project_id}/report` exports a Markdown or JSON project
 research report assembled from source logic, system-supplemented
 3C-5M-3D-3T tracking logic, research verification items, latest checks, and
