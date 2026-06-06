@@ -46,6 +46,18 @@ class DailyChecker:
                 triggered_rules.extend(hit.message for hit in rule_hits)
                 self.repo.update_project_status(project_id, "exit_signal", needs_review=True)
 
+            research_conclusion, research_rules = evaluate_research_item_statuses(
+                self.repo.list_research_items(project_id=project_id)
+            )
+            if research_rules:
+                triggered_rules.extend(research_rules)
+                if research_conclusion == "exit_signal":
+                    conclusion = "exit_signal"
+                    self.repo.update_project_status(project_id, "exit_signal", needs_review=True)
+                elif conclusion != "exit_signal":
+                    conclusion = "needs_review"
+                    self.repo.update_project_status(project_id, "needs_review", needs_review=True)
+
             summary = build_summary(performance)
             evaluation = self._evaluate_logic(project_id, performance, current)
             if evaluation:
@@ -101,6 +113,21 @@ def merge_summary(base: str, evaluator_summary: str) -> str:
     if not base:
         return evaluator_summary
     return f"{base}\n\n逻辑评估：{evaluator_summary}"
+
+
+def evaluate_research_item_statuses(items) -> tuple[str | None, list[str]]:
+    conclusion = None
+    rules: list[str] = []
+    for item in items:
+        if item["status"] != "contradicted":
+            continue
+        message = f"研究验证项被证伪：{item['item_type']} - {item['content']}"
+        rules.append(message)
+        if item["item_type"] == "exit_condition":
+            conclusion = "exit_signal"
+        elif conclusion != "exit_signal":
+            conclusion = "needs_review"
+    return conclusion, rules
 
 
 def build_summary(performance) -> str:

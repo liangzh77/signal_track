@@ -582,6 +582,32 @@ class SignalTrackCoreTests(unittest.TestCase):
             checks = repo.list_daily_checks(project_id=result.project_ids[0])
             self.assertIn("跌破 5 日均线", checks[0]["triggered_rules"])
 
+    def test_daily_check_uses_contradicted_research_exit_condition(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            result = SignalIngestor(
+                repo,
+                InstrumentResolver(repo.list_instruments()),
+                logic_supplementer=FakeLogicSupplementer(),
+            ).ingest(source_name="测试源", content="腾讯 做多，先跟踪。")
+            exit_item = [
+                item
+                for item in repo.list_research_items(project_id=result.project_ids[0])
+                if item["item_type"] == "exit_condition"
+            ][0]
+            repo.update_research_item(int(exit_item["id"]), status="contradicted")
+
+            DailyChecker(repo, FixtureMarketDataProvider()).run(next_fixture_trading_day(date.today()))
+
+            row = repo.get_project_row(result.project_ids[0])
+            self.assertEqual(row["status"], "exit_signal")
+            checks = repo.list_daily_checks(project_id=result.project_ids[0])
+            self.assertIn("研究验证项被证伪", checks[0]["triggered_rules"])
+
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_ingest_requires_or_infers_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
