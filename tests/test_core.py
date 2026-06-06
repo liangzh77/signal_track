@@ -2095,6 +2095,37 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(closed.json()["projects"][0]["status"], "closed")
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_projects_list_includes_performance_and_filters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+                client.post("/api/inputs", json={"source": "Desk A", "content": "00700.HK long, watch ads recovery."})
+                client.post("/api/inputs", json={"source": "Desk B", "content": "NVDA long, watch orders."})
+                check_date = next_fixture_trading_day(date.today()).isoformat()
+                checked = client.post("/api/checks/run", json={"provider": "fixture", "date": check_date})
+                projects = client.get("/api/projects").json()
+                desk_a = client.get("/api/projects", params={"source": "Desk A"}).json()
+                active = client.get("/api/projects", params={"status": "needs_review"}).json()
+
+        self.assertEqual(checked.status_code, 200)
+        self.assertEqual(len(projects), 2)
+        self.assertIn("performance", projects[0])
+        self.assertIn("return_pct", projects[0]["performance"])
+        self.assertIn("points", projects[0]["performance"])
+        self.assertGreater(projects[0]["performance"]["point_count"], 0)
+        self.assertEqual(len(projects[0]["performance"]["legs"]), 1)
+        self.assertEqual([project["source_name"] for project in desk_a], ["Desk A"])
+        self.assertEqual(len(active), 2)
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_auto_extractor_falls_back_when_openai_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             env = {

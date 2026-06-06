@@ -80,14 +80,14 @@ Useful endpoints:
 - `POST /api/inputs/file` multipart upload with `file`, `source`, `portfolio`, `extractor`
 - `GET /api/instruments`
 - `POST /api/instruments/refresh` with `{ "provider": "auto", "market": "CN_A" }`
-- `GET /api/projects`
+- `GET /api/projects?source=Alpha%20Desk&status=needs_review`
 - `GET /api/exit-signals`
 - `GET /api/projects/{project_id}`
 - `POST /api/projects/{project_id}/close` with `{ "closed_date": "2026-06-10", "reason": "..." }`
 - `PATCH /api/projects/{project_id}/weights` with `{ "weights": { "300750.SZ": 60, "600519.SH": 40 } }`
 - `GET /api/research-items`
 - `PATCH /api/research-items/{item_id}` with `{ "status": "verified" }`
-- `POST /api/checks/run` with optional `{ "provider": "auto" }`; if omitted, it uses `SIGNAL_TRACK_DAILY_PROVIDER`
+- `POST /api/checks/run` with optional `{ "provider": "auto", "date": "2026-06-10" }`; if provider is omitted, it uses `SIGNAL_TRACK_DAILY_PROVIDER`
 - `GET /dashboard`
 - `POST /api/publish`
 - `GET /api/publish/events`
@@ -104,6 +104,9 @@ with `error` and `response_body` so the caller can alert or retry.
 Ingestion responses include a `projects` summary so the caller can immediately
 see whether the input created a tracking item or closed one, plus each project's
 status, direction, symbols, source, logic score, and review flags.
+`GET /api/projects` returns the same normalized project summary plus current
+performance, curve points, missing price symbols, and leg-level return snapshots;
+use `source` and `status` query parameters to drive filtered project lists.
 `extractor` accepts `auto`, `heuristic`, or `openai`; unknown values return `400`
 instead of silently changing extraction behavior.
 Provider fields accept `none`, `auto`, `fixture`, `tushare`, or `yfinance`.

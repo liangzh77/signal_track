@@ -16,7 +16,7 @@ from .logic_supplement import build_logic_supplementer
 from .models import Market
 from .provider_diagnostics import market_data_coverage
 from .project_actions import ProjectActionError, close_tracking_project, update_tracking_project_weights
-from .project_summary import project_summaries
+from .project_summary import project_summaries, project_summary
 from .publisher import DemoPublisher, extract_published_address, publish_payload
 from .providers.factory import build_market_data_provider
 from .resolver import InstrumentResolver, SEED_INSTRUMENTS
@@ -57,6 +57,7 @@ def create_app():
 
     class CheckPayload(BaseModel):
         provider: str | None = None
+        date: str | None = None
 
     class RefreshInstrumentsPayload(BaseModel):
         provider: str = "tushare"
@@ -170,8 +171,14 @@ def create_app():
         return result_response(repo, result, publish_result)
 
     @app.get("/api/projects")
-    def list_projects():
-        return [dict(row) for row in repo.list_project_rows()]
+    def list_projects(source: str | None = None, status: str | None = None):
+        rows = repo.list_project_rows()
+        if source:
+            rows = [row for row in rows if str(row["source_name"]) == source]
+        if status:
+            rows = [row for row in rows if str(row["status"]) == status]
+        performances = {int(row["id"]): project_performance(repo, int(row["id"])) for row in rows}
+        return [project_summary(row, performance=performances[int(row["id"])]) for row in rows]
 
     @app.get("/api/exit-signals")
     def list_exit_signals(limit: int = 100):
@@ -315,11 +322,17 @@ def create_app():
             provider = build_market_data_provider(provider_name, settings)
         except ValueError as exc:
             raise provider_http_exception(exc) from exc
+        check_date = None
+        if payload.date:
+            try:
+                check_date = date.fromisoformat(payload.date)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail="Invalid check date") from exc
         checked = DailyChecker(
             repo,
             provider,
             evaluator=build_daily_evaluator_from_settings(settings),
-        ).run()
+        ).run(check_date)
         publish_result = maybe_publish(repo, settings, f"每日检查完成，更新 {checked} 个项目")
         return {"checked_projects": checked, "publish": publish_result}
 

@@ -154,6 +154,15 @@ the weights after confirmation:
 /srv/signal-track/venv/bin/python -m signal_track.cli daily-run --out /srv/signal-track/shared/dashboard.html
 ```
 
+HTTP manual run, including a backfill date:
+
+```bash
+curl -X POST http://127.0.0.1:8765/api/checks/run \
+  -H "X-Signal-Track-Key: $SIGNAL_TRACK_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"auto","date":"2026-06-10"}'
+```
+
 CLI update commands publish automatically when `GO_SITES_DEMO_PUBLISH_URL`,
 `GO_SITES_DEMO_API_KEY`, and `SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE=true` are set.
 Use `--no-publish` for a one-off local update.
