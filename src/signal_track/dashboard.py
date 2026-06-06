@@ -25,6 +25,7 @@ def render_dashboard(repo: Repository) -> str:
         "<tr><td colspan='8' class='empty'>暂无跟踪项目</td></tr>"
     )
     source_cards = render_source_summary(projects, performances)
+    source_filter = render_source_filter(projects)
     detail_cards = "\n".join(render_project_detail(repo, row, performances[int(row["id"])]) for row in projects)
     check_items = "\n".join(
         render_check_item(row)
@@ -73,6 +74,9 @@ def render_dashboard(repo: Repository) -> str:
     .stamp {{ color: var(--muted); font-size: 13px; }}
     .metrics {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }}
     .source-summary {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }}
+    .source-filter {{ display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }}
+    .source-chip {{ color: var(--muted); background: rgba(245,247,244,.055); border: 1px solid var(--border); border-radius: 999px; min-height: 32px; padding: 0 12px; cursor: pointer; font: inherit; }}
+    .source-chip:hover, .source-chip.active {{ color: var(--cyan); border-color: rgba(68,215,200,.55); background: rgba(68,215,200,.08); }}
     .card {{
       background: var(--surface);
       border: 1px solid var(--border);
@@ -158,6 +162,7 @@ def render_dashboard(repo: Repository) -> str:
       </div>
       <div class="stamp">{render_publish_stamp(last_publish)}</div>
     </section>
+    <section class="source-filter" data-source-filter>{source_filter}</section>
     <section class="metrics">
       <div class="card metric"><span>全部项目</span><strong>{len(projects)}</strong></div>
       <div class="card metric"><span>活跃/复核</span><strong>{active}</strong></div>
@@ -180,8 +185,35 @@ def render_dashboard(repo: Repository) -> str:
     </section>
     <section class="details">{detail_cards}</section>
   </main>
+  <script>
+    (() => {{
+      const chips = Array.from(document.querySelectorAll('[data-source-filter] button'));
+      const rows = Array.from(document.querySelectorAll('tr[data-source]'));
+      const cards = Array.from(document.querySelectorAll('article.detail-card[data-source]'));
+      const setFilter = (source) => {{
+        chips.forEach((chip) => chip.classList.toggle('active', chip.dataset.source === source));
+        [...rows, ...cards].forEach((node) => {{
+          node.hidden = source !== 'all' && node.dataset.source !== source;
+        }});
+      }};
+      chips.forEach((chip) => chip.addEventListener('click', () => setFilter(chip.dataset.source || 'all')));
+      setFilter('all');
+    }})();
+  </script>
 </body>
 </html>"""
+
+
+def render_source_filter(projects) -> str:
+    sources = sorted({str(row["source_name"] or "manual") for row in projects})
+    buttons = [
+        "<button type='button' class='source-chip active' data-source='all'>全部</button>"
+    ]
+    buttons.extend(
+        f"<button type='button' class='source-chip' data-source='{escape(source)}'>{escape(source)}</button>"
+        for source in sources
+    )
+    return "".join(buttons)
 
 
 def render_source_summary(projects, performances: dict[int, object]) -> str:
@@ -229,7 +261,7 @@ def render_project_row(row, performance) -> str:
     review = "是" if row["needs_review"] else "否"
     return_class = return_css(performance.return_pct)
     return (
-        "<tr>"
+        f"<tr data-source='{escape(row['source_name'])}'>"
         f"<td><span class='pill {status}'>{status}</span></td>"
         f"<td>{escape(row['source_name'])}</td>"
         f"<td>{escape(row['title'])}</td>"
@@ -266,7 +298,7 @@ def render_project_detail(repo: Repository, row, performance) -> str:
     )
     leg_curves = "\n".join(render_leg_curve(leg) for leg in performance.legs)
     return (
-        "<article class='card detail-card'>"
+        f"<article class='card detail-card' data-source='{escape(row['source_name'])}'>"
         "<div class='detail-top'>"
         f"<div><h3>{escape(row['title'])}</h3><div class='muted'>{escape(row['source_name'])} · {escape(row['symbols'] or '')}</div></div>"
         f"<strong class='{return_css(performance.return_pct)}'>{format_return(performance.return_pct)}</strong>"

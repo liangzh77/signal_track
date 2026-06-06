@@ -491,6 +491,11 @@ class SignalTrackCoreTests(unittest.TestCase):
             html = render_dashboard(repo)
 
             self.assertIn("source-summary", html)
+            self.assertIn("data-source-filter", html)
+            self.assertIn("source-chip", html)
+            self.assertIn("data-source='信息源A'", html)
+            self.assertIn("class='card detail-card' data-source='信息源B'", html)
+            self.assertIn("setFilter", html)
             self.assertIn("信息源A", html)
             self.assertIn("信息源B", html)
             self.assertIn("待复核", html)
