@@ -78,6 +78,8 @@ defaults to `auto`; set it to `none` only when you want checks to evaluate
 already-stored prices without refreshing market data. `/health` includes
 `scheduler_jobs` so deployments can verify that the 19:00 and 07:00 jobs are
 registered.
+The systemd timer template also leaves provider selection to
+`SIGNAL_TRACK_DAILY_PROVIDER` instead of hard-coding a provider.
 
 Useful endpoints:
 

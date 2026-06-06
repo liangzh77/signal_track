@@ -2219,6 +2219,16 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertTrue(any("19" in summary["trigger"] for summary in summaries))
         self.assertTrue(any("7" in summary["trigger"] for summary in summaries))
 
+    def test_systemd_daily_timer_uses_configured_provider(self) -> None:
+        service = Path("deploy/systemd/signal-track-daily.service").read_text(encoding="utf-8")
+        timer = Path("deploy/systemd/signal-track-daily.timer").read_text(encoding="utf-8")
+
+        self.assertIn("daily-run --publish", service)
+        self.assertNotIn("--provider auto", service)
+        self.assertIn("OnCalendar=*-*-* 19:00:00", timer)
+        self.assertIn("OnCalendar=*-*-* 07:00:00", timer)
+        self.assertIn("Timezone=Asia/Shanghai", timer)
+
     def test_scheduler_job_summaries_handles_scheduler_like_objects(self) -> None:
         fake_time = types.SimpleNamespace(isoformat=lambda: "2026-06-06T19:00:00+08:00")
         fake_scheduler = types.SimpleNamespace(
