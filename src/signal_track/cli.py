@@ -27,7 +27,7 @@ from .provider_diagnostics import market_data_coverage
 from .project_actions import ProjectActionError, add_project_logic_block, close_tracking_project, update_tracking_project_weights
 from .project_report import build_project_report, render_project_report_markdown
 from .project_summary import project_summaries, project_summary
-from .publisher import DemoPublisher, extract_published_address
+from .publisher import DemoPublisher, PublishResult, extract_published_address, publish_payload
 from .providers.factory import build_market_data_provider
 from .resolver import InstrumentResolver, SEED_INSTRUMENTS
 from .signals import SignalIngestor
@@ -751,29 +751,17 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "publish-dashboard":
         db.init()
-        if not settings.demo_publish_url or not settings.demo_api_key:
-            raise SystemExit("GO_SITES_DEMO_PUBLISH_URL and GO_SITES_DEMO_API_KEY are required")
-        html = render_dashboard(repo)
-        result = DemoPublisher(settings.demo_publish_url, settings.demo_api_key).publish(
-            title=args.title,
-            html=html,
-            feature=args.feature,
-        )
-        repo.record_publish_event(
-            title=args.title,
-            url=extract_published_address(result.body) or settings.demo_publish_url,
-            status_code=result.status_code,
-            response_body=result.body,
-            metadata={"ok": result.ok},
-        )
+        result = publish_dashboard(repo, settings, title=args.title, feature=args.feature, flow="publish-dashboard")
+        payload = publish_payload(result, settings.demo_publish_url)
         print(
             json.dumps(
                 {
-                    "ok": result.ok,
-                    "status_code": result.status_code,
-                    "url": extract_published_address(result.body),
-                    "publish_url": settings.demo_publish_url,
-                    "body": result.body[:500],
+                    "ok": payload["ok"],
+                    "status_code": payload["status_code"],
+                    "url": payload["url"],
+                    "publish_url": payload["publish_url"],
+                    "error": payload["error"],
+                    "body": payload["response_body"],
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -889,17 +877,24 @@ def should_publish_update(settings: Settings, forced: bool = False, disabled: bo
 def publish_dashboard(repo: Repository, settings: Settings, title: str, feature: str, flow: str):
     if not settings.demo_publish_url or not settings.demo_api_key:
         raise SystemExit("GO_SITES_DEMO_PUBLISH_URL and GO_SITES_DEMO_API_KEY are required")
-    result = DemoPublisher(settings.demo_publish_url, settings.demo_api_key).publish(
-        title=title,
-        html=render_dashboard(repo),
-        feature=feature,
-    )
+    metadata = {"flow": flow}
+    try:
+        result = DemoPublisher(settings.demo_publish_url, settings.demo_api_key).publish(
+            title=title,
+            html=render_dashboard(repo),
+            feature=feature,
+        )
+    except Exception as exc:
+        result = PublishResult(False, None, str(exc))
+        metadata["exception_type"] = type(exc).__name__
+    payload = publish_payload(result, settings.demo_publish_url)
+    metadata.update({"ok": payload["ok"], "error": payload["error"]})
     repo.record_publish_event(
         title=title,
-        url=extract_published_address(result.body) or settings.demo_publish_url,
-        status_code=result.status_code,
-        response_body=result.body,
-        metadata={"ok": result.ok, "flow": flow},
+        url=payload["url"] or settings.demo_publish_url,
+        status_code=payload["status_code"],
+        response_body=payload["response_body"],
+        metadata=metadata,
     )
     return result
 
