@@ -4,6 +4,7 @@ from pathlib import Path
 from .analytics import project_performance
 from .checker import DailyChecker
 from .config import Settings
+from .daily_evaluator import build_daily_logic_evaluator
 from .dashboard import render_dashboard
 from .db import Database, Repository
 from .extraction import OpenAISignalExtractor
@@ -74,6 +75,7 @@ def create_app():
         scheduled_jobs = build_scheduler(
             repo,
             provider=provider,
+            evaluator=build_daily_logic_evaluator(settings.openai_api_key, settings.openai_model),
             publish_url=settings.demo_publish_url,
             api_key=settings.demo_api_key,
         )
@@ -195,7 +197,11 @@ def create_app():
             provider = build_market_data_provider(payload.provider, settings)
         except ValueError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
-        checked = DailyChecker(repo, provider).run()
+        checked = DailyChecker(
+            repo,
+            provider,
+            evaluator=build_daily_logic_evaluator(settings.openai_api_key, settings.openai_model),
+        ).run()
         publish_result = maybe_publish(repo, settings, f"每日检查完成，更新 {checked} 个项目")
         return {"checked_projects": checked, "publish": publish_result}
 

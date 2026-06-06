@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from .analytics import instrument_from_leg_row, project_performance
+from .daily_evaluator import DailyLogicEvaluator
 from .db import Repository
 from .market_data import MarketDataService
 from .providers.base import MarketDataProvider
@@ -10,9 +11,15 @@ from .rules import evaluate_project_rules
 
 
 class DailyChecker:
-    def __init__(self, repo: Repository, provider: MarketDataProvider | None = None):
+    def __init__(
+        self,
+        repo: Repository,
+        provider: MarketDataProvider | None = None,
+        evaluator: DailyLogicEvaluator | None = None,
+    ):
         self.repo = repo
         self.provider = provider
+        self.evaluator = evaluator
 
     def run(self, check_date: date | None = None) -> int:
         current = check_date or date.today()
@@ -40,6 +47,16 @@ class DailyChecker:
                 self.repo.update_project_status(project_id, "exit_signal", needs_review=True)
 
             summary = build_summary(performance)
+            evaluation = self._evaluate_logic(project_id, performance, current)
+            if evaluation:
+                summary = merge_summary(summary, evaluation.summary)
+                triggered_rules.extend(evaluation.triggered_rules)
+                if conclusion != "exit_signal":
+                    conclusion = evaluation.conclusion
+                    if evaluation.conclusion == "exit_signal":
+                        self.repo.update_project_status(project_id, "exit_signal", needs_review=True)
+                    elif evaluation.conclusion == "needs_review":
+                        self.repo.update_project_status(project_id, "needs_review", needs_review=True)
             self.repo.add_daily_check(
                 project_id=project_id,
                 check_date=current_date,
@@ -59,6 +76,30 @@ class DailyChecker:
         start = date.fromisoformat(project["entry_date"] or project["created_at"][:10]) - timedelta(days=120)
         for leg in self.repo.list_project_legs(project_id):
             service.fetch_and_store(instrument_from_leg_row(leg), start, current)
+
+    def _evaluate_logic(self, project_id: int, performance, current: date):
+        if not self.evaluator:
+            return None
+        project = self.repo.get_project_row(project_id)
+        if not project:
+            return None
+        try:
+            return self.evaluator.evaluate(
+                project=project,
+                logic_blocks=self.repo.list_logic_blocks(project_id),
+                performance=performance,
+                previous_checks=self.repo.list_daily_checks(project_id=project_id, limit=5),
+                check_date=current,
+            )
+        except Exception:
+            return None
+
+def merge_summary(base: str, evaluator_summary: str) -> str:
+    if not evaluator_summary:
+        return base
+    if not base:
+        return evaluator_summary
+    return f"{base}\n\n逻辑评估：{evaluator_summary}"
 
 
 def build_summary(performance) -> str:

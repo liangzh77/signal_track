@@ -151,6 +151,11 @@ Non-price rules such as margin, revenue, orders, industry prices, or management 
 are saved in the source/system logic blocks and marked for future data-provider or LLM
 review. They are not silently guessed.
 
+When `OPENAI_API_KEY` is configured, daily checks also run a structured logic
+evaluation over the source logic, system supplement, current performance, and recent
+check history. The evaluator can mark `hold`, `watch`, `needs_review`, or
+`exit_signal`; deterministic price exits still take priority.
+
 ## Tests
 
 ```powershell

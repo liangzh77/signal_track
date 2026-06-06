@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .checker import DailyChecker
+from .daily_evaluator import DailyLogicEvaluator
 from .dashboard import render_dashboard
 from .db import Repository
 from .publisher import DemoPublisher, extract_published_address
@@ -18,6 +19,7 @@ def build_scheduler(
     repo: Repository,
     timezone: str = "Asia/Shanghai",
     provider: MarketDataProvider | None = None,
+    evaluator: DailyLogicEvaluator | None = None,
     publish_url: str | None = None,
     api_key: str | None = None,
 ) -> ScheduledJobs:
@@ -29,7 +31,7 @@ def build_scheduler(
     scheduler = BackgroundScheduler(timezone=timezone)
 
     def run_daily_check() -> None:
-        execute_daily_check(repo, provider, publish_url, api_key)
+        execute_daily_check(repo, provider, evaluator, publish_url, api_key)
 
     scheduler.add_job(run_daily_check, "cron", hour=19, minute=0, id="cn_hk_daily_check")
     return ScheduledJobs(scheduler=scheduler)
@@ -38,10 +40,11 @@ def build_scheduler(
 def execute_daily_check(
     repo: Repository,
     provider: MarketDataProvider | None = None,
+    evaluator: DailyLogicEvaluator | None = None,
     publish_url: str | None = None,
     api_key: str | None = None,
 ) -> int:
-    checked = DailyChecker(repo, provider).run()
+    checked = DailyChecker(repo, provider, evaluator=evaluator).run()
     if publish_url and api_key:
         result = DemoPublisher(publish_url, api_key).publish(
             title="Signal Track 投资信号看板",

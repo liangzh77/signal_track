@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .checker import DailyChecker
 from .config import Settings
+from .daily_evaluator import build_daily_logic_evaluator
 from .dashboard import render_dashboard
 from .db import Database, Repository
 from .extraction import OpenAISignalExtractor
@@ -287,7 +288,11 @@ def main(argv: list[str] | None = None) -> int:
         db.init()
         check_date = parse_date(args.date) if args.date else None
         provider = None if args.provider == "none" else build_provider(args.provider, settings)
-        count = DailyChecker(repo, provider).run(check_date)
+        count = DailyChecker(
+            repo,
+            provider,
+            evaluator=build_daily_logic_evaluator(settings.openai_api_key, settings.openai_model),
+        ).run(check_date)
         print(json.dumps({"checked_projects": count}, ensure_ascii=False))
         return 0
 
@@ -329,7 +334,11 @@ def main(argv: list[str] | None = None) -> int:
         db.init()
         check_date = parse_date(args.date) if args.date else None
         provider = None if args.provider == "none" else build_provider(args.provider, settings)
-        checked = DailyChecker(repo, provider).run(check_date)
+        checked = DailyChecker(
+            repo,
+            provider,
+            evaluator=build_daily_logic_evaluator(settings.openai_api_key, settings.openai_model),
+        ).run(check_date)
         out_path = Path(args.out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         html = render_dashboard(repo)

@@ -12,6 +12,7 @@ from signal_track.checker import DailyChecker
 from signal_track.cli import refresh_markets as cli_refresh_markets
 from signal_track.dashboard import render_dashboard
 from signal_track.analytics import project_performance
+from signal_track.daily_evaluator import DailyEvaluation, DailyLogicEvaluator
 from signal_track.extraction import ExtractedInput, ExtractedSignal
 from signal_track.instrument_master import InstrumentMasterService
 from signal_track.logic_supplement import LogicSupplement, LogicSupplementer
@@ -102,6 +103,17 @@ class FakeDemoPublisher:
     def publish(self, title: str, html: str, feature: str = "", disabled: bool = False) -> PublishResult:
         del title, html, feature, disabled
         return PublishResult(True, 200, '{"address":"https://example.com/demo/signal"}')
+
+
+class FakeDailyEvaluator(DailyLogicEvaluator):
+    def evaluate(self, *, project, logic_blocks, performance, previous_checks, check_date):
+        del project, logic_blocks, performance, previous_checks, check_date
+        return DailyEvaluation(
+            conclusion="exit_signal",
+            summary="核心跟踪假设被证伪，建议平仓。",
+            triggered_rules=["逻辑评估：核心假设被证伪"],
+            confidence=0.8,
+        )
 
 
 class SignalTrackCoreTests(unittest.TestCase):
@@ -437,6 +449,28 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(checked, 0)
             self.assertEqual(events[0]["url"], "https://example.com/demo/signal")
             self.assertEqual(events[0]["status_code"], 200)
+
+    def test_daily_logic_evaluator_can_trigger_exit_signal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                source_name="测试源",
+                content="腾讯 做多，观察广告恢复和游戏流水。",
+            )
+
+            DailyChecker(repo, FixtureMarketDataProvider(), evaluator=FakeDailyEvaluator()).run(
+                next_fixture_trading_day(date.today())
+            )
+
+            row = repo.get_project_row(result.project_ids[0])
+            self.assertEqual(row["status"], "exit_signal")
+            checks = repo.list_daily_checks(project_id=result.project_ids[0])
+            self.assertIn("核心跟踪假设被证伪", checks[0]["summary"])
+            self.assertIn("逻辑评估：核心假设被证伪", checks[0]["triggered_rules"])
 
     def test_daily_check_triggers_moving_average_break_rule(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
