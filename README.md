@@ -324,6 +324,9 @@ python -m signal_track.cli restore-db --from data\backup.sqlite3 --force
 Hong Kong and US futures support is intentionally provider-abstracted. For production-grade historical futures data, wire the same interface to HKEX Data Services, CME DataMine, or another licensed futures source.
 yfinance parsing accepts both ordinary columns and MultiIndex columns returned by
 newer yfinance versions.
+For Hong Kong stocks, Signal Track keeps 5-digit local/Tushare symbols such as
+`00700.HK` and `09988.HK`, but normalizes them to Yahoo's 4-digit form
+(`0700.HK`, `9988.HK`) when calling yfinance.
 
 Inspect current provider coverage without calling remote market APIs:
 

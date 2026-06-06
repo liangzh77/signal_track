@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+import re
 
-from signal_track.models import DailyBar, Instrument, Market
+from signal_track.models import AssetType, DailyBar, Instrument, Market
 from signal_track.providers.base import MarketDataProvider
 
 
@@ -27,8 +28,9 @@ class YFinanceMarketDataProvider(MarketDataProvider):
             raise ValueError(f"yfinance provider does not support {instrument.market}")
 
         auto_adjust = adjustment in {"adj", "auto"}
+        provider_symbol = yfinance_symbol(instrument)
         frame = self.yf.download(
-            instrument.provider_symbol,
+            provider_symbol,
             start=start_date.isoformat(),
             end=(end_date + timedelta(days=1)).isoformat(),
             interval="1d",
@@ -38,22 +40,31 @@ class YFinanceMarketDataProvider(MarketDataProvider):
         bars: list[DailyBar] = []
         for index, row in frame.iterrows():
             bar_date = index.date()
-            close = get_price_field(row, instrument.provider_symbol, "Close")
+            close = get_price_field(row, provider_symbol, "Close")
             bars.append(
                 DailyBar(
                     symbol=instrument.symbol,
-                    provider_symbol=instrument.provider_symbol,
+                    provider_symbol=provider_symbol,
                     date=bar_date,
-                    open=get_price_field(row, instrument.provider_symbol, "Open"),
-                    high=get_price_field(row, instrument.provider_symbol, "High"),
-                    low=get_price_field(row, instrument.provider_symbol, "Low"),
+                    open=get_price_field(row, provider_symbol, "Open"),
+                    high=get_price_field(row, provider_symbol, "High"),
+                    low=get_price_field(row, provider_symbol, "Low"),
                     close=close,
-                    adj_close=get_price_field(row, instrument.provider_symbol, "Adj Close") or close,
-                    volume=get_price_field(row, instrument.provider_symbol, "Volume"),
+                    adj_close=get_price_field(row, provider_symbol, "Adj Close") or close,
+                    volume=get_price_field(row, provider_symbol, "Volume"),
                     provider=self.name,
                 )
             )
         return bars
+
+
+def yfinance_symbol(instrument: Instrument) -> str:
+    symbol = instrument.provider_symbol
+    if instrument.market == Market.HK and instrument.asset_type in {AssetType.STOCK, AssetType.ETF, AssetType.INDEX}:
+        match = re.fullmatch(r"(\d{1,5})\.HK", symbol.upper())
+        if match:
+            return f"{match.group(1)[-4:].zfill(4)}.HK"
+    return symbol
 
 
 def get_price_field(row: object, provider_symbol: str, field: str) -> float | None:

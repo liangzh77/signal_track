@@ -40,7 +40,7 @@ from signal_track.providers.factory import build_auto_provider
 from signal_track.providers.factory import build_market_data_provider
 from signal_track.providers.fixture import FixtureMarketDataProvider
 from signal_track.providers.tushare_provider import TushareMarketDataProvider
-from signal_track.providers.yfinance_provider import get_price_field
+from signal_track.providers.yfinance_provider import get_price_field, yfinance_symbol
 from signal_track.project_actions import ProjectActionError, add_project_logic_block, update_tracking_project_weights
 from signal_track.resolver import InstrumentResolver, SEED_INSTRUMENTS
 from signal_track.rules import evaluate_return_rules
@@ -748,6 +748,15 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(get_price_field(ticker_first_row, "AAPL", "Close"), 103.5)
         self.assertEqual(get_price_field(series_row, "AAPL", "Close"), 104.5)
         self.assertIsNone(get_price_field({}, "AAPL", "Close"))
+
+    def test_yfinance_symbol_normalizes_hong_kong_stock_codes(self) -> None:
+        tencent = next(instrument for instrument in SEED_INSTRUMENTS if instrument.symbol == "00700.HK")
+        alibaba = next(instrument for instrument in SEED_INSTRUMENTS if instrument.symbol == "09988.HK")
+        hsi = next(instrument for instrument in SEED_INSTRUMENTS if instrument.symbol == "HSI")
+
+        self.assertEqual(yfinance_symbol(tencent), "0700.HK")
+        self.assertEqual(yfinance_symbol(alibaba), "9988.HK")
+        self.assertEqual(yfinance_symbol(hsi), "HSI=F")
 
     def test_market_coverage_reports_auto_routes_without_remote_calls(self) -> None:
         settings = Settings(

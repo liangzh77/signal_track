@@ -122,7 +122,8 @@ curl http://127.0.0.1:8765/api/market-data/coverage?provider=auto
 Before relying on the daily job, confirm the report marks the required markets as
 `price_available: true`. A shares and China futures require Tushare credentials;
 Hong Kong futures and US futures require the yfinance package or a future
-licensed futures adapter.
+licensed futures adapter. Hong Kong stocks are stored in local/Tushare 5-digit
+form, but yfinance fallback requests use Yahoo's 4-digit form automatically.
 
 Then run a real sample fetch against the configured provider:
 
