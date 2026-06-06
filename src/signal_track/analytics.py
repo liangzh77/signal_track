@@ -21,6 +21,7 @@ class LegPerformance:
     latest_price: float | None
     return_pct: float | None
     points: list[tuple[str, float]]
+    price_points: list[tuple[str, float]]
 
 
 @dataclass(frozen=True)
@@ -62,9 +63,14 @@ def project_performance(repo: Repository, project_id: int, end_date: date | None
             repo.update_leg_entry(int(leg["id"]), entry_price, leg_entry_date)
 
         points = []
+        price_points = []
         for bar in bars:
-            if entry_price and bar["close"] is not None:
-                points.append((bar["bar_date"], directed_return(float(bar["close"]), entry_price, leg["direction"])))
+            if bar["close"] is None:
+                continue
+            close = float(bar["close"])
+            price_points.append((bar["bar_date"], close))
+            if entry_price:
+                points.append((bar["bar_date"], directed_return(close, entry_price, leg["direction"])))
 
         latest_price = float(latest_bar["close"]) if latest_bar and latest_bar["close"] is not None else None
         return_pct = (
@@ -88,6 +94,7 @@ def project_performance(repo: Repository, project_id: int, end_date: date | None
                 latest_price=latest_price,
                 return_pct=return_pct,
                 points=points,
+                price_points=price_points,
             )
         )
 

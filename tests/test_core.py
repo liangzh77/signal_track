@@ -11,6 +11,7 @@ from signal_track.db import Database, Repository
 from signal_track.checker import DailyChecker
 from signal_track.cli import refresh_markets as cli_refresh_markets
 from signal_track.dashboard import render_dashboard
+from signal_track.analytics import project_performance
 from signal_track.extraction import ExtractedInput, ExtractedSignal
 from signal_track.instrument_master import InstrumentMasterService
 from signal_track.logic_supplement import LogicSupplement, LogicSupplementer
@@ -352,11 +353,15 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(rows[0]["symbols"], "300750.SZ, 600519.SH")
 
             DailyChecker(repo, FixtureMarketDataProvider()).run(next_fixture_trading_day(date.today()))
+            performance = project_performance(repo, result.project_ids[0])
+            self.assertTrue(all(leg.points for leg in performance.legs))
+            self.assertTrue(all(leg.price_points for leg in performance.legs))
             html = render_dashboard(repo)
             self.assertIn("leg-curves", html)
             self.assertIn("mini-chart", html)
-            self.assertIn("300750.SZ 收益曲线", html)
-            self.assertIn("600519.SH 收益曲线", html)
+            self.assertIn("300750.SZ 价格曲线", html)
+            self.assertIn("600519.SH 价格曲线", html)
+            self.assertNotIn("300750.SZ 收益曲线", html)
 
     def test_heuristic_portfolio_weight_parsing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

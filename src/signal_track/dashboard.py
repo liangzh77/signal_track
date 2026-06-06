@@ -271,14 +271,19 @@ def render_leg_curve(leg) -> str:
         "<div class='leg-curve'>"
         "<div class='leg-curve-head'>"
         f"<strong>{escape(leg.symbol)} · {escape(leg.name)} · {leg.weight:.0%}</strong>"
-        f"<span class='{return_css(leg.return_pct)}'>{format_return(leg.return_pct)}</span>"
+        f"<span class='{return_css(leg.return_pct)}'>{format_price(leg.latest_price)} · {format_return(leg.return_pct)}</span>"
         "</div>"
-        f"{render_sparkline(leg.points, css_class='mini-chart', label=f'{leg.symbol} 收益曲线')}"
+        f"{render_sparkline(leg.price_points, css_class='mini-chart', label=f'{leg.symbol} 价格曲线', show_zero=False)}"
         "</div>"
     )
 
 
-def render_sparkline(points: list[tuple[str, float]], css_class: str = "chart", label: str = "收益曲线") -> str:
+def render_sparkline(
+    points: list[tuple[str, float]],
+    css_class: str = "chart",
+    label: str = "收益曲线",
+    show_zero: bool = True,
+) -> str:
     if len(points) < 2:
         return f"<div class='{escape(css_class)} empty'>暂无价格曲线。运行 check --provider 或 fetch-bars 后显示。</div>"
     width = 640
@@ -293,11 +298,14 @@ def render_sparkline(points: list[tuple[str, float]], css_class: str = "chart", 
         x = index * step
         y = height - ((value - minimum) / span * (height - 18)) - 9
         coords.append(f"{x:.1f},{y:.1f}")
-    zero_y = height - ((0 - minimum) / span * (height - 18)) - 9
-    zero_y = max(8, min(height - 8, zero_y))
+    zero_line = ""
+    if show_zero:
+        zero_y = height - ((0 - minimum) / span * (height - 18)) - 9
+        zero_y = max(8, min(height - 8, zero_y))
+        zero_line = f"<line x1='0' y1='{zero_y:.1f}' x2='640' y2='{zero_y:.1f}' stroke='rgba(231,238,232,.18)' />"
     return (
         f"<svg class='{escape(css_class)}' viewBox='0 0 640 120' role='img' aria-label='{escape(label)}'>"
-        f"<line x1='0' y1='{zero_y:.1f}' x2='640' y2='{zero_y:.1f}' stroke='rgba(231,238,232,.18)' />"
+        f"{zero_line}"
         f"<polyline points='{' '.join(coords)}' fill='none' stroke='#44D7C8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' />"
         "</svg>"
     )
@@ -307,6 +315,14 @@ def format_return(value: float | None) -> str:
     if value is None:
         return "--"
     return f"{value:+.2%}"
+
+
+def format_price(value: float | None) -> str:
+    if value is None:
+        return "--"
+    if abs(value) >= 100:
+        return f"{value:.2f}"
+    return f"{value:.3f}".rstrip("0").rstrip(".")
 
 
 def return_css(value: float | None) -> str:
