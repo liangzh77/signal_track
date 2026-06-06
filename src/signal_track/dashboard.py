@@ -125,6 +125,11 @@ def render_dashboard(repo: Repository) -> str:
     .leg-curve-head {{ display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 8px; }}
     .leg-curve-head strong {{ font-size: 12px; line-height: 18px; }}
     .mini-chart {{ width: 100%; height: 72px; margin: 0; border: 0; border-radius: 6px; background: rgba(255,255,255,.025); }}
+    .check-log {{ display: grid; gap: 8px; margin: 10px 0 14px; }}
+    .check-log h4 {{ margin: 0; font-size: 12px; line-height: 18px; color: var(--muted); }}
+    .check-log-item {{ border: 1px solid rgba(231,238,232,.08); border-radius: 8px; padding: 10px; background: rgba(255,255,255,.018); }}
+    .check-log-top {{ display: flex; justify-content: space-between; gap: 10px; margin-bottom: 5px; font-size: 12px; }}
+    .check-log-summary {{ color: var(--muted); font-size: 12px; line-height: 18px; }}
     @media (max-width: 900px) {{
       .shell {{ padding: 16px; }}
       .metrics {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
@@ -247,6 +252,7 @@ def render_project_detail(repo: Repository, row, performance) -> str:
         f"<div class='logic-block {escape(block['logic_type'])}'><strong>{logic_label(block['logic_type'])}</strong><br>{escape(block['content'])}</div>"
         for block in logic_blocks
     )
+    check_log = render_project_check_log(repo.list_daily_checks(project_id=int(row["id"]), limit=5))
     legs = "\n".join(
         f"<span class='leg'>{escape(leg.symbol)} · {leg.weight:.0%} · {format_return(leg.return_pct)}</span>"
         for leg in performance.legs
@@ -261,9 +267,30 @@ def render_project_detail(repo: Repository, row, performance) -> str:
         f"{render_sparkline(performance.points)}"
         f"<div class='leg-list'>{legs}</div>"
         f"<div class='leg-curves'>{leg_curves}</div>"
+        f"{check_log}"
         f"<div class='logic-grid'>{logic_html}</div>"
         "</article>"
     )
+
+
+def render_project_check_log(checks) -> str:
+    if not checks:
+        return "<div class='check-log'><h4>项目检查日志</h4><div class='check-log-item empty'>暂无检查记录</div></div>"
+    items = []
+    for row in checks:
+        rules = json.loads(row["triggered_rules"] or "[]")
+        rule_html = "".join(f"<div class='rule-hit'>{escape(rule)}</div>" for rule in rules)
+        items.append(
+            "<div class='check-log-item'>"
+            "<div class='check-log-top'>"
+            f"<strong>{escape(row['check_date'])}</strong>"
+            f"<span>{escape(row['conclusion'])}</span>"
+            "</div>"
+            f"<div class='check-log-summary'>{escape(row['summary'])}</div>"
+            f"{rule_html}"
+            "</div>"
+        )
+    return "<div class='check-log'><h4>项目检查日志</h4>" + "".join(items) + "</div>"
 
 
 def render_leg_curve(leg) -> str:

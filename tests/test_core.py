@@ -285,6 +285,9 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("needs_review", html)
             self.assertIn("polyline", html)
             self.assertIn("系统补充逻辑", html)
+            self.assertIn("项目检查日志", html)
+            self.assertIn("needs_review", html)
+            self.assertIn(next_fixture_trading_day(date.today()).isoformat(), html)
 
     def test_low_logic_signal_uses_optional_logic_supplementer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
