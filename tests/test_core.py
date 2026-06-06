@@ -1552,6 +1552,15 @@ class SignalTrackCoreTests(unittest.TestCase):
                 update_tracking_project_weights(repo, result.project_ids[0], {"300750.SZ": 1.0})
             self.assertEqual(ctx.exception.code, "incomplete_weights")
 
+            for bad_weight in (float("nan"), float("inf")):
+                with self.assertRaises(ProjectActionError) as bad_ctx:
+                    update_tracking_project_weights(
+                        repo,
+                        result.project_ids[0],
+                        {"300750.SZ": bad_weight, "600519.SH": 1.0},
+                    )
+                self.assertEqual(bad_ctx.exception.code, "invalid_weight")
+
     def test_add_project_logic_block_appends_manual_observation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")

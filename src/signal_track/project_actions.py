@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import date
 
 from .db import Repository
@@ -80,7 +81,10 @@ def update_tracking_project_weights(
         if not leg:
             unknown.append(str(raw_key))
             continue
-        weight = normalize_input_weight(raw_weight)
+        try:
+            weight = normalize_input_weight(raw_weight)
+        except (TypeError, ValueError) as exc:
+            raise ProjectActionError("invalid_weight", f"Weight for {raw_key} must be a finite number") from exc
         if weight <= 0:
             raise ProjectActionError("invalid_weight", f"Weight for {raw_key} must be positive")
         matched[int(leg["id"])] = weight
@@ -150,6 +154,8 @@ def split_aliases(value: str | None) -> list[str]:
 
 def normalize_input_weight(value: float) -> float:
     weight = float(value)
+    if not math.isfinite(weight):
+        raise ValueError("weight must be finite")
     if weight > 1:
         weight = weight / 100
     return weight
@@ -157,6 +163,6 @@ def normalize_input_weight(value: float) -> float:
 
 def normalize_weight_values(weights: dict[int, float]) -> dict[int, float]:
     total = sum(weights.values())
-    if total <= 0:
+    if not math.isfinite(total) or total <= 0:
         raise ProjectActionError("invalid_weight_total", "Weight total must be positive")
     return {leg_id: weight / total for leg_id, weight in weights.items()}
