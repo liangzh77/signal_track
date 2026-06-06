@@ -571,6 +571,8 @@ def refresh_markets(value: str) -> list[Market]:
     try:
         return [Market(value)]
     except ValueError as exc:
+        from fastapi import HTTPException
+
         raise HTTPException(status_code=400, detail=f"Unknown market: {value}") from exc
 
 

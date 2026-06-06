@@ -3868,7 +3868,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(detail["performance"]["window_end"], detail["summary"]["performance"]["window_end"])
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_unknown_provider_returns_bad_request(self) -> None:
+    def test_web_unknown_provider_and_market_return_bad_request(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"
             env = {
@@ -3883,12 +3883,18 @@ class SignalTrackCoreTests(unittest.TestCase):
                 client = TestClient(create_app())
                 check = client.post("/api/checks/run", json={"provider": "typo"})
                 refresh = client.post("/api/instruments/refresh", json={"provider": "typo", "market": "CN_A"})
+                smoke_bad_market = client.get("/api/market-data/smoke", params={"provider": "fixture", "market": "BAD"})
+                refresh_bad_market = client.post("/api/instruments/refresh", json={"provider": "fixture", "market": "BAD"})
 
             repo = Repository(Database(db_path))
             self.assertEqual(check.status_code, 400)
             self.assertIn("Unknown market data provider", check.json()["detail"])
             self.assertEqual(refresh.status_code, 400)
             self.assertIn("Unknown market data provider", refresh.json()["detail"])
+            self.assertEqual(smoke_bad_market.status_code, 400)
+            self.assertEqual(smoke_bad_market.json()["detail"], "Unknown market: BAD")
+            self.assertEqual(refresh_bad_market.status_code, 400)
+            self.assertEqual(refresh_bad_market.json()["detail"], "Unknown market: BAD")
             self.assertEqual(repo.list_daily_checks(), [])
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
