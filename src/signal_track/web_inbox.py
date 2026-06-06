@@ -309,6 +309,46 @@ def render_inbox_page() -> str:
       </article>
 
       <article class="card panel">
+        <h2>Market Data</h2>
+        <div class="form">
+          <div class="row">
+            <label>Provider
+              <select id="market-provider">
+                <option value="auto">auto</option>
+                <option value="fixture">fixture</option>
+                <option value="tushare">tushare</option>
+                <option value="yfinance">yfinance</option>
+              </select>
+            </label>
+            <label>Market
+              <select id="market-name">
+                <option value="all">all</option>
+                <option value="CN_A">CN_A</option>
+                <option value="HK">HK</option>
+                <option value="CN_FUT">CN_FUT</option>
+                <option value="HK_FUT">HK_FUT</option>
+                <option value="US">US</option>
+                <option value="US_FUT">US_FUT</option>
+              </select>
+            </label>
+          </div>
+          <div class="row">
+            <label>Smoke Days
+              <input id="market-smoke-days" type="number" min="1" max="365" value="30">
+            </label>
+            <label>Sample Size
+              <input id="market-sample-size" type="number" min="1" max="5" value="1">
+            </label>
+          </div>
+          <div class="actions">
+            <button class="button primary" type="button" id="market-coverage">Coverage</button>
+            <button class="button secondary" type="button" id="market-smoke">Smoke</button>
+            <button class="button secondary" type="button" id="refresh-instruments">Refresh Master</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="card panel">
         <h2>Result</h2>
         <div id="status" class="status"></div>
         <pre id="result">{}</pre>
@@ -343,6 +383,10 @@ def render_inbox_page() -> str:
     const checkProviderInput = document.getElementById('check-provider');
     const checkDateInput = document.getElementById('check-date');
     const recentInputsNode = document.getElementById('recent-inputs');
+    const marketProviderInput = document.getElementById('market-provider');
+    const marketNameInput = document.getElementById('market-name');
+    const marketSmokeDaysInput = document.getElementById('market-smoke-days');
+    const marketSampleSizeInput = document.getElementById('market-sample-size');
 
     apiKeyInput.value = localStorage.getItem('signalTrackApiKey') || '';
     apiKeyInput.addEventListener('input', () => localStorage.setItem('signalTrackApiKey', apiKeyInput.value));
@@ -595,6 +639,33 @@ def render_inbox_page() -> str:
       await runProjectAction('/api/publish', {
         method: 'POST',
         headers: headers({ 'Content-Type': 'application/json' }),
+      });
+    });
+
+    document.getElementById('market-coverage').addEventListener('click', async () => {
+      const provider = encodeURIComponent(marketProviderInput.value);
+      await runProjectAction(`/api/market-data/coverage?provider=${provider}`, { method: 'GET' });
+    });
+
+    document.getElementById('market-smoke').addEventListener('click', async () => {
+      const provider = encodeURIComponent(marketProviderInput.value);
+      const market = encodeURIComponent(marketNameInput.value);
+      const days = encodeURIComponent(marketSmokeDaysInput.value || '30');
+      const sampleSize = encodeURIComponent(marketSampleSizeInput.value || '1');
+      await runProjectAction(
+        `/api/market-data/smoke?provider=${provider}&market=${market}&days=${days}&sample_size=${sampleSize}`,
+        { method: 'GET' },
+      );
+    });
+
+    document.getElementById('refresh-instruments').addEventListener('click', async () => {
+      await runProjectAction('/api/instruments/refresh', {
+        method: 'POST',
+        headers: headers({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          provider: marketProviderInput.value,
+          market: marketNameInput.value,
+        }),
       });
     });
 

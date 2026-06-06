@@ -67,8 +67,8 @@ Open `http://127.0.0.1:8000/` or `/inbox` to paste source notes, upload files,
 select projects from the live project list, append project notes, update
 portfolio weights, manually close projects, mark research verification items,
 run daily checks, scan the recent input feed, publish the dashboard, refresh
-backend health, store the API key locally in the browser, and jump to the
-dashboard.
+instrument masters, run market data coverage/smoke checks, refresh backend
+health, store the API key locally in the browser, and jump to the dashboard.
 
 Set `SIGNAL_TRACK_ENABLE_SCHEDULER=true` to run scheduled checks inside the
 backend process. The built-in scheduler runs at 19:00 Asia/Shanghai for A shares,
