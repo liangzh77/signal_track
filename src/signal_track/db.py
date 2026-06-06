@@ -689,6 +689,35 @@ class Repository:
             ).fetchall()
         return [int(row["id"]) for row in rows]
 
+    def find_active_project_ids_by_source_symbol(
+        self,
+        source_id: int,
+        symbol: str,
+        direction: str | None = None,
+    ) -> list[int]:
+        filters = [
+            "p.source_id = ?",
+            "i.symbol = ?",
+            "p.status IN ('active', 'needs_review', 'exit_signal')",
+        ]
+        params: list[object] = [source_id, symbol]
+        if direction:
+            filters.append("p.direction = ?")
+            params.append(direction)
+        with self.db.session() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT DISTINCT p.id
+                FROM tracking_projects p
+                JOIN project_legs l ON l.project_id = p.id
+                JOIN instruments i ON i.id = l.instrument_id
+                WHERE {' AND '.join(filters)}
+                ORDER BY p.id
+                """,
+                params,
+            ).fetchall()
+        return [int(row["id"]) for row in rows]
+
     def get_project_row(self, project_id: int) -> sqlite3.Row | None:
         with self.db.session() as conn:
             return conn.execute(

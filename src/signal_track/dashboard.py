@@ -453,6 +453,8 @@ def logic_label(value: str) -> str:
         return "原始信号逻辑"
     if value == "system_logic":
         return "系统补充逻辑"
+    if value == "source_update":
+        return "后续信息更新"
     return value
 
 

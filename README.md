@@ -284,6 +284,10 @@ instrument and closes those projects instead of creating duplicates:
 python -m signal_track.cli ingest --source 信息源A --text "腾讯 平仓，游戏复苏低于预期。"
 ```
 
+If the same source sends a non-close follow-up for the same active instrument and
+direction, Signal Track appends a `source_update` logic block to the existing
+project instead of creating a duplicate tracking item.
+
 Structured model extraction is available when `OPENAI_API_KEY` is configured:
 
 ```powershell

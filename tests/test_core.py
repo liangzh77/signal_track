@@ -601,6 +601,26 @@ class SignalTrackCoreTests(unittest.TestCase):
             logic = repo.list_logic_blocks(opened.project_ids[0])
             self.assertTrue(any(block["logic_type"] == "close_logic" for block in logic))
 
+    def test_same_source_followup_updates_existing_project_without_duplicate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+
+            opened = ingestor.ingest("测试源", "腾讯 做多，观察广告和游戏恢复。")
+            updated = ingestor.ingest("测试源", "腾讯 做多更新，广告恢复速度低于预期，继续观察。")
+            other_source = ingestor.ingest("另一个源", "腾讯 做多，观察广告恢复。")
+
+            self.assertEqual(updated.project_ids, opened.project_ids)
+            rows = repo.list_project_rows()
+            self.assertEqual(len(rows), 2)
+            logic = repo.list_logic_blocks(opened.project_ids[0])
+            self.assertTrue(any(block["logic_type"] == "source_update" for block in logic))
+            self.assertNotEqual(other_source.project_ids, opened.project_ids)
+
     def test_structured_close_signal_updates_existing_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")

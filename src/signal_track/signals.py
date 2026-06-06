@@ -68,6 +68,17 @@ class SignalIngestor:
                     system_logic_added=False,
                 )
 
+        if not as_portfolio:
+            updated_project_ids = self._append_existing_project_updates(source_id, content, resolutions, direction, logic_score)
+            if updated_project_ids:
+                return IngestResult(
+                    raw_input_id=raw_input_id,
+                    project_ids=updated_project_ids,
+                    resolved_symbols=[resolution.instrument.symbol for resolution in resolutions],
+                    logic_score=logic_score,
+                    system_logic_added=False,
+                )
+
         if not resolutions:
             project_id = self.repo.create_tracking_project(
                 title="未识别标的跟踪项目",
@@ -131,6 +142,19 @@ class SignalIngestor:
                 closed_project_ids = self._close_existing_projects(raw_input_id, source_logic, resolutions, logic_score)
                 if closed_project_ids:
                     project_ids.extend(closed_project_ids)
+                    resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
+                    continue
+
+            if not signal.is_portfolio:
+                updated_project_ids = self._append_existing_project_updates(
+                    source_id,
+                    source_logic,
+                    resolutions,
+                    direction,
+                    logic_score,
+                )
+                if updated_project_ids:
+                    project_ids.extend(updated_project_ids)
                     resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
                     continue
 
@@ -224,6 +248,33 @@ class SignalIngestor:
                 )
                 closed_ids.append(project_id)
         return sorted(set(closed_ids))
+
+    def _append_existing_project_updates(
+        self,
+        source_id: int,
+        content: str,
+        resolutions,
+        direction: Direction,
+        logic_score: float,
+    ) -> list[int]:
+        updated_ids: list[int] = []
+        direction_filter = None if direction == Direction.NEUTRAL else direction.value
+        for resolution in resolutions:
+            project_ids = self.repo.find_active_project_ids_by_source_symbol(
+                source_id,
+                resolution.instrument.symbol,
+                direction=direction_filter,
+            )
+            for project_id in project_ids:
+                self.repo.add_logic_block(
+                    project_id,
+                    "source_update",
+                    summarize_source_logic(content),
+                    logic_score / 10,
+                    [content[:240]],
+                )
+                updated_ids.append(project_id)
+        return sorted(set(updated_ids))
 
     def _find_instruments(self, content: str):
         found = []
