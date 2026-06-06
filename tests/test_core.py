@@ -940,6 +940,9 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(report["instruments"][0]["symbol"], "00700.HK")
         self.assertGreater(report["data_verification"]["pending_count"], 0)
         self.assertEqual(len(report["scorecard"]), 9)
+        scorecard = {item["dimension"]: item["score"] for item in report["scorecard"]}
+        self.assertTrue(all(1 <= score <= 10 for score in scorecard.values()))
+        self.assertLess(scorecard["周期位置"], 10)
         self.assertIn("tracking_metric", {item["item_type"] for item in report["research_items"]})
         self.assertIn("3C-5M-3D-3T", markdown)
         self.assertIn("## 二、3C分析：投资哲学定位", markdown)

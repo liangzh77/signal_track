@@ -286,7 +286,8 @@ def scorecard_snapshot(row: Any, performance: dict[str, Any], research_items: li
     verified_count = sum(1 for item in research_items if item.get("status") == "verified")
     pending_count = sum(1 for item in research_items if item.get("status") in {"pending", "unverified"})
     logic_score = float(row["logic_score"])
-    base = clamp_score(round(logic_score * 10))
+    normalized_logic_score = logic_score * 10 if 0 <= logic_score <= 1 else logic_score
+    base = clamp_score(round(normalized_logic_score))
     scorecard = []
     for dimension, key in SCORECARD_ROWS:
         evidence = matching_research_items(research_items, DIMENSION_KEYWORDS[key], limit=1)
