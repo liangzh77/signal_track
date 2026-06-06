@@ -24,13 +24,20 @@ class DailyChecker:
     def run(self, check_date: date | None = None) -> int:
         current = check_date or date.today()
         current_date = current.isoformat()
+        refresh_errors_by_project: dict[int, list[str]] = {}
         for project_id in self.repo.list_price_refresh_project_ids(current_date):
-            self._refresh_prices(project_id, current)
+            refresh_errors = self._refresh_prices(project_id, current)
+            if refresh_errors:
+                refresh_errors_by_project[project_id] = refresh_errors
         project_ids = self.repo.list_active_project_ids()
         for project_id in project_ids:
             performance = project_performance(self.repo, project_id, current)
             conclusion = "watch"
-            triggered_rules: list[str] = []
+            triggered_rules: list[str] = list(refresh_errors_by_project.get(project_id, []))
+
+            if triggered_rules:
+                conclusion = "needs_review"
+                self.repo.update_project_status(project_id, "needs_review", needs_review=True)
 
             if performance.missing_price_symbols:
                 conclusion = "needs_review"
@@ -79,16 +86,22 @@ class DailyChecker:
             )
         return len(project_ids)
 
-    def _refresh_prices(self, project_id: int, current: date) -> None:
+    def _refresh_prices(self, project_id: int, current: date) -> list[str]:
         if not self.provider:
-            return
+            return []
         service = MarketDataService(self.repo, self.provider)
         project = self.repo.get_project_row(project_id)
         if not project:
-            return
+            return []
         start = date.fromisoformat(project["entry_date"] or project["created_at"][:10]) - timedelta(days=120)
+        errors: list[str] = []
         for leg in self.repo.list_project_legs(project_id):
-            service.fetch_and_store(instrument_from_leg_row(leg), start, current)
+            instrument = instrument_from_leg_row(leg)
+            try:
+                service.fetch_and_store(instrument, start, current)
+            except Exception as exc:
+                errors.append(f"行情刷新失败：{instrument.symbol} - {exc}")
+        return errors
 
     def _evaluate_logic(self, project_id: int, performance, current: date):
         if not self.evaluator:

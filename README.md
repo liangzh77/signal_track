@@ -173,6 +173,10 @@ The flow is intentionally sequential:
 4. Publish through the demo API when publish credentials are configured and
    `SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE=true`, or when `--publish` is passed.
 
+If one instrument's price refresh fails, the daily run continues for the other
+projects and records the failed symbol as a `needs_review` rule in that project's
+daily check.
+
 Closed projects keep refreshing prices for 31 days after `closed_date` so charts
 can show the requested post-close window without creating new daily check rows.
 

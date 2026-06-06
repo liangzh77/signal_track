@@ -87,6 +87,37 @@ class RecordingMarketDataProvider(MarketDataProvider):
         return [instrument for instrument in self.instruments if instrument.market == market]
 
 
+class PartiallyFailingMarketDataProvider(RecordingMarketDataProvider):
+    def __init__(self, failing_symbols: set[str]):
+        super().__init__("partial")
+        self.failing_symbols = failing_symbols
+
+    def get_daily_bars(
+        self,
+        instrument: Instrument,
+        start_date: date,
+        end_date: date,
+        adjustment: str = "none",
+    ) -> list[DailyBar]:
+        if instrument.symbol in self.failing_symbols:
+            self.calls.append(instrument.symbol)
+            raise RuntimeError("provider unavailable")
+        del start_date, adjustment
+        self.calls.append(instrument.symbol)
+        return [
+            DailyBar(
+                symbol=instrument.symbol,
+                provider_symbol=instrument.provider_symbol,
+                date=end_date,
+                open=100,
+                high=101,
+                low=99,
+                close=100,
+                provider=self.name,
+            )
+        ]
+
+
 class FakeSeries:
     def __init__(self, value: float):
         self.iloc = [value]
@@ -1257,6 +1288,31 @@ class SignalTrackCoreTests(unittest.TestCase):
             checks = repo.list_daily_checks(project_id=result.project_ids[0])
             self.assertIn("核心跟踪假设被证伪", checks[0]["summary"])
             self.assertIn("逻辑评估：核心假设被证伪", checks[0]["triggered_rules"])
+
+    def test_daily_check_continues_when_one_price_refresh_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+            tencent = ingestor.ingest("Desk A", "00700.HK long, watch ads recovery.")
+            nvda = ingestor.ingest("Desk B", "NVDA long, watch order growth.")
+            provider = PartiallyFailingMarketDataProvider({"NVDA"})
+
+            checked = DailyChecker(repo, provider).run(next_fixture_trading_day(date.today()))
+
+            self.assertEqual(checked, 2)
+            self.assertEqual(provider.calls, ["00700.HK", "NVDA"])
+            self.assertGreater(repo.count_price_bars("00700.HK"), 0)
+            self.assertEqual(repo.count_price_bars("NVDA"), 0)
+            tencent_check = repo.list_daily_checks(project_id=tencent.project_ids[0])[0]
+            nvda_check = repo.list_daily_checks(project_id=nvda.project_ids[0])[0]
+            self.assertIn(tencent_check["conclusion"], {"watch", "needs_review"})
+            self.assertEqual(nvda_check["conclusion"], "needs_review")
+            self.assertIn("行情刷新失败：NVDA - provider unavailable", nvda_check["triggered_rules"])
+            self.assertIn("缺少行情数据：NVDA", nvda_check["triggered_rules"])
 
     def test_exit_signal_summaries_include_latest_check(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
