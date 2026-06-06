@@ -242,6 +242,9 @@ with unconfirmed weights remain marked for review until their project-level issu
 is resolved. Daily check records now also include those project-level review
 reasons, so the dashboard explains why a project is still in `needs_review` even
 when the latest price action is only `watch`.
+Once a project reaches `exit_signal`, later daily checks keep that signal open
+until the project is explicitly closed, so a temporary quiet day does not hide an
+unresolved exit decision.
 
 Closed projects keep refreshing prices for 31 days after `closed_date` so charts
 can show the requested post-close window without creating new daily check rows.

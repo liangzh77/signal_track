@@ -35,25 +35,32 @@ class DailyChecker:
             conclusion = "watch"
             triggered_rules: list[str] = list(refresh_errors_by_project.get(project_id, []))
             project = self.repo.get_project_row(project_id)
+            existing_exit_signal = bool(project and project["status"] == "exit_signal")
+
+            if existing_exit_signal:
+                conclusion = "exit_signal"
+                triggered_rules.append("Existing exit signal remains open until the project is closed.")
 
             project_review_rules = project_level_review_rules(project) if project else []
-            if project_review_rules:
+            if project_review_rules and not existing_exit_signal:
                 conclusion = "needs_review"
                 triggered_rules.extend(project_review_rules)
                 self.repo.update_project_status(project_id, "needs_review", needs_review=True)
 
-            if triggered_rules:
+            if triggered_rules and not existing_exit_signal:
                 conclusion = "needs_review"
                 self.repo.update_project_status(project_id, "needs_review", needs_review=True)
 
             if not performance.legs:
-                conclusion = "needs_review"
                 triggered_rules.append("No resolved instrument; cannot refresh prices or calculate returns.")
-                self.repo.update_project_status(project_id, "needs_review", needs_review=True)
+                if not existing_exit_signal:
+                    conclusion = "needs_review"
+                    self.repo.update_project_status(project_id, "needs_review", needs_review=True)
             elif performance.missing_price_symbols:
-                conclusion = "needs_review"
                 triggered_rules.append("缺少行情数据：" + ", ".join(performance.missing_price_symbols))
-                self.repo.update_project_status(project_id, "needs_review", needs_review=True)
+                if not existing_exit_signal:
+                    conclusion = "needs_review"
+                    self.repo.update_project_status(project_id, "needs_review", needs_review=True)
             elif performance.return_pct is not None and performance.return_pct <= -0.10:
                 conclusion = "exit_signal"
                 triggered_rules.append(f"项目收益回撤达到 {performance.return_pct:.2%}")

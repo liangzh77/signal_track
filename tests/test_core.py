@@ -2945,6 +2945,30 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("return_pct", signals[0]["performance"])
             self.assertEqual(signals[0]["performance"]["legs"][0]["symbol"], "00700.HK")
 
+    def test_daily_check_preserves_existing_exit_signal_until_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                source_name="Exit Desk",
+                content="00700.HK long, watch ads recovery.",
+            )
+            first_check = next_fixture_trading_day(date.today())
+            second_check = next_fixture_trading_day(first_check)
+
+            DailyChecker(repo, FixtureMarketDataProvider(), evaluator=FakeDailyEvaluator()).run(first_check)
+            DailyChecker(repo, FixtureMarketDataProvider()).run(second_check)
+
+            project = repo.get_project_row(result.project_ids[0])
+            checks = repo.list_daily_checks(project_id=result.project_ids[0], limit=2)
+            self.assertEqual(project["status"], "exit_signal")
+            self.assertEqual(checks[0]["check_date"], second_check.isoformat())
+            self.assertEqual(checks[0]["conclusion"], "exit_signal")
+            self.assertIn("Existing exit signal remains open", checks[0]["triggered_rules"])
+
     def test_cli_list_exit_signals(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"
