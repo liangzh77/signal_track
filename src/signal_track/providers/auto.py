@@ -47,11 +47,19 @@ class AutoMarketDataProvider(MarketDataProvider):
     ) -> list[DailyBar]:
         providers = self._providers_for(instrument.market)
         errors: list[str] = []
+        empty_providers: list[str] = []
         for provider in providers:
             try:
-                return provider.get_daily_bars(instrument, start_date, end_date, adjustment)
+                bars = provider.get_daily_bars(instrument, start_date, end_date, adjustment)
             except Exception as exc:
                 errors.append(f"{provider.name}: {exc}")
+                continue
+            if bars:
+                return bars
+            empty_providers.append(provider.name)
+        if empty_providers and not errors:
+            return []
+        errors.extend(f"{provider_name}: no bars returned" for provider_name in empty_providers)
         detail = "; ".join(errors) if errors else "no configured provider"
         raise ValueError(f"Auto provider failed for {instrument.market.value}/{instrument.symbol}: {detail}")
 

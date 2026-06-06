@@ -155,6 +155,22 @@ class PartiallyFailingMarketDataProvider(RecordingMarketDataProvider):
         ]
 
 
+class EmptyMarketDataProvider(RecordingMarketDataProvider):
+    def __init__(self, name: str = "empty"):
+        super().__init__(name)
+
+    def get_daily_bars(
+        self,
+        instrument: Instrument,
+        start_date: date,
+        end_date: date,
+        adjustment: str = "none",
+    ) -> list[DailyBar]:
+        del start_date, end_date, adjustment
+        self.calls.append(instrument.symbol)
+        return []
+
+
 class FakeSeries:
     def __init__(self, value: float):
         self.iloc = [value]
@@ -633,6 +649,32 @@ class SignalTrackCoreTests(unittest.TestCase):
 
         self.assertEqual(tushare_provider.calls, ["00700.HK", "AAPL"])
         self.assertEqual(yfinance_provider.calls, ["00700.HK", "AAPL"])
+
+    def test_auto_provider_falls_back_when_primary_returns_no_bars(self) -> None:
+        tushare_provider = EmptyMarketDataProvider("tushare")
+        yfinance_provider = RecordingMarketDataProvider("yfinance")
+        settings = Settings(
+            db_path=Path(":memory:"),
+            tushare_token="token",
+            demo_publish_url=None,
+            demo_api_key=None,
+            enable_scheduler=False,
+            daily_provider="auto",
+            openai_api_key=None,
+            openai_model="model",
+            signal_track_api_key=None,
+        )
+
+        with patch("signal_track.providers.factory.TushareMarketDataProvider", return_value=tushare_provider):
+            with patch("signal_track.providers.factory.YFinanceMarketDataProvider", return_value=yfinance_provider):
+                provider = build_auto_provider(settings)
+
+        bars = provider.get_daily_bars(SEED_INSTRUMENTS[2], date(2026, 6, 1), date(2026, 6, 5))
+
+        self.assertEqual(tushare_provider.calls, ["00700.HK"])
+        self.assertEqual(yfinance_provider.calls, ["00700.HK"])
+        self.assertEqual(len(bars), 1)
+        self.assertEqual(bars[0].provider, "yfinance")
 
     def test_tushare_continuous_future_uses_mapping_contracts(self) -> None:
         provider = TushareMarketDataProvider.__new__(TushareMarketDataProvider)
