@@ -44,7 +44,7 @@ from signal_track.providers.tushare_provider import to_float as tushare_to_float
 from signal_track.providers.yfinance_provider import get_price_field, yfinance_symbol
 from signal_track.project_actions import ProjectActionError, add_project_logic_block, update_tracking_project_weights
 from signal_track.resolver import InstrumentResolver, SEED_INSTRUMENTS
-from signal_track.rules import evaluate_return_rules
+from signal_track.rules import evaluate_return_rules, extract_percent_thresholds
 from signal_track.signals import SignalIngestor, extract_probe_terms
 from signal_track.source_detection import remove_source_marker_lines, resolve_source_name
 
@@ -3305,9 +3305,15 @@ class SignalTrackCoreTests(unittest.TestCase):
 
         loss_hits = evaluate_return_rules("stop loss 8%; drawdown 12%", loss_performance)
         profit_hits = evaluate_return_rules("take profit 15%; upside 20%", profit_performance)
+        leading_loss_hits = evaluate_return_rules("8% stop-loss; 10% drawdown", loss_performance)
+        leading_profit_hits = evaluate_return_rules("15% take profit; 20% upside", profit_performance)
+        chinese_thresholds = extract_percent_thresholds("8%止损；10%回撤止损", ("止损", "回撤"))
 
         self.assertEqual([hit.rule_type for hit in loss_hits], ["return_drawdown"])
         self.assertEqual([hit.rule_type for hit in profit_hits], ["return_take_profit"])
+        self.assertEqual([hit.rule_type for hit in leading_loss_hits], ["return_drawdown"])
+        self.assertEqual([hit.rule_type for hit in leading_profit_hits], ["return_take_profit"])
+        self.assertEqual(chinese_thresholds, [0.08, 0.1])
 
     def test_daily_check_uses_contradicted_research_exit_condition(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

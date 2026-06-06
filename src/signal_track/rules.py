@@ -115,8 +115,12 @@ def evaluate_moving_average_rules(
 def extract_percent_thresholds(logic_text: str, keywords: tuple[str, ...]) -> list[float]:
     thresholds: list[float] = []
     for keyword in keywords:
-        pattern = rf"{keyword}[^\d%％]{{0,24}}(\d+(?:\.\d+)?)\s*[%％]"
-        for value in re.findall(pattern, logic_text, flags=re.IGNORECASE):
+        keyword_pattern = re.escape(keyword)
+        after_keyword = rf"{keyword_pattern}[^\d%％]{{0,24}}(\d+(?:\.\d+)?)\s*[%％]"
+        before_keyword = rf"(\d+(?:\.\d+)?)\s*[%％][^\d%％]{{0,24}}{keyword_pattern}"
+        for value in re.findall(after_keyword, logic_text, flags=re.IGNORECASE):
+            thresholds.append(float(value) / 100)
+        for value in re.findall(before_keyword, logic_text, flags=re.IGNORECASE):
             thresholds.append(float(value) / 100)
     return sorted(set(thresholds))
 
