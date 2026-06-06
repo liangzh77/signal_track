@@ -18,6 +18,7 @@ from signal_track.logic_supplement import LogicSupplement, LogicSupplementer
 from signal_track.market_data import MarketDataService
 from signal_track.models import DailyBar, Instrument, Market
 from signal_track.publisher import extract_published_address
+from signal_track.publisher import PublishResult
 from signal_track.providers.auto import AutoMarketDataProvider
 from signal_track.providers.base import MarketDataProvider
 from signal_track.providers.factory import build_auto_provider
@@ -31,6 +32,8 @@ try:
 except Exception:
     TestClient = None
     create_app = None
+
+from signal_track.scheduler import execute_daily_check
 
 
 def next_fixture_trading_day(current: date) -> date:
@@ -89,6 +92,16 @@ class BrokenLogicSupplementer(LogicSupplementer):
     def supplement(self, *, name, direction, source_logic, instruments):
         del name, direction, source_logic, instruments
         raise RuntimeError("boom")
+
+
+class FakeDemoPublisher:
+    def __init__(self, publish_url: str, api_key: str):
+        self.publish_url = publish_url
+        self.api_key = api_key
+
+    def publish(self, title: str, html: str, feature: str = "", disabled: bool = False) -> PublishResult:
+        del title, html, feature, disabled
+        return PublishResult(True, 200, '{"address":"https://example.com/demo/signal"}')
 
 
 class SignalTrackCoreTests(unittest.TestCase):
@@ -405,6 +418,25 @@ class SignalTrackCoreTests(unittest.TestCase):
         body = '{"address":"https://example.com/demo/a","title":"x"}'
         self.assertEqual(extract_published_address(body), "https://example.com/demo/a")
         self.assertIsNone(extract_published_address("not json"))
+
+    def test_scheduler_records_published_address(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+
+            with patch("signal_track.scheduler.DemoPublisher", FakeDemoPublisher):
+                checked = execute_daily_check(
+                    repo,
+                    provider=None,
+                    publish_url="https://example.com/api/publish",
+                    api_key="key",
+                )
+
+            events = repo.list_publish_events()
+            self.assertEqual(checked, 0)
+            self.assertEqual(events[0]["url"], "https://example.com/demo/signal")
+            self.assertEqual(events[0]["status_code"], 200)
 
     def test_daily_check_triggers_moving_average_break_rule(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
