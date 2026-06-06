@@ -101,7 +101,9 @@ def project_performance(repo: Repository, project_id: int, end_date: date | None
     portfolio_points = combine_weighted_points(legs)
     portfolio_return = None
     if legs and all(leg.return_pct is not None for leg in legs):
-        portfolio_return = sum((leg.return_pct or 0) * leg.weight for leg in legs)
+        weights_by_leg = normalized_leg_weights(legs)
+        if weights_by_leg:
+            portfolio_return = sum((leg.return_pct or 0) * weights_by_leg[leg.leg_id] for leg in legs)
     latest_date = max((leg.latest_date for leg in legs if leg.latest_date), default=None)
     return ProjectPerformance(project_id, portfolio_return, latest_date, portfolio_points, legs, missing)
 
@@ -141,11 +143,9 @@ def combine_weighted_points(legs: list[LegPerformance]) -> list[tuple[str, float
         for leg in legs
     }
     points: list[tuple[str, float]] = []
-    total_weight = sum(leg.weight for leg in legs)
-    if total_weight <= 0:
+    weights_by_leg = normalized_leg_weights(legs)
+    if not weights_by_leg:
         return []
-
-    weights_by_leg = {leg.leg_id: leg.weight / total_weight for leg in legs}
     for point_date in all_dates:
         for leg in legs:
             leg_value = values_by_leg[leg.leg_id].get(point_date)
@@ -160,3 +160,10 @@ def combine_weighted_points(legs: list[LegPerformance]) -> list[tuple[str, float
             )
         )
     return points
+
+
+def normalized_leg_weights(legs: list[LegPerformance]) -> dict[int, float]:
+    total_weight = sum(leg.weight for leg in legs)
+    if total_weight <= 0:
+        return {}
+    return {leg.leg_id: leg.weight / total_weight for leg in legs}

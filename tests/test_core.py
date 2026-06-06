@@ -783,6 +783,78 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(points[1][0], "2026-06-02")
         self.assertAlmostEqual(points[2][1], 0.08)
 
+    def test_portfolio_current_return_normalizes_leg_weights_like_curve(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                source_name="Portfolio Desk",
+                content="portfolio long: 300750.SZ 66%, 600519.SH 33%, watch margin and demand.",
+            )
+            project_id = result.project_ids[0]
+            legs = repo.list_project_legs(project_id)
+            instrument_ids = {leg["symbol"]: int(leg["instrument_id"]) for leg in legs}
+            entry_day = date.today()
+            latest_day = entry_day + timedelta(days=1)
+            repo.upsert_bars(
+                instrument_ids["300750.SZ"],
+                [
+                    DailyBar(
+                        symbol="300750.SZ",
+                        provider_symbol="300750.SZ",
+                        date=entry_day,
+                        open=100,
+                        high=100,
+                        low=100,
+                        close=100,
+                        provider="test",
+                    ),
+                    DailyBar(
+                        symbol="300750.SZ",
+                        provider_symbol="300750.SZ",
+                        date=latest_day,
+                        open=110,
+                        high=110,
+                        low=110,
+                        close=110,
+                        provider="test",
+                    ),
+                ],
+            )
+            repo.upsert_bars(
+                instrument_ids["600519.SH"],
+                [
+                    DailyBar(
+                        symbol="600519.SH",
+                        provider_symbol="600519.SH",
+                        date=entry_day,
+                        open=100,
+                        high=100,
+                        low=100,
+                        close=100,
+                        provider="test",
+                    ),
+                    DailyBar(
+                        symbol="600519.SH",
+                        provider_symbol="600519.SH",
+                        date=latest_day,
+                        open=90,
+                        high=90,
+                        low=90,
+                        close=90,
+                        provider="test",
+                    ),
+                ],
+            )
+
+            performance = project_performance(repo, project_id, latest_day)
+
+            self.assertAlmostEqual(performance.return_pct, (0.1 * (2 / 3)) + (-0.1 * (1 / 3)))
+            self.assertAlmostEqual(performance.points[-1][1], performance.return_pct)
+
     def test_heuristic_portfolio_weight_parsing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
