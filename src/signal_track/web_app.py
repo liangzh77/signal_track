@@ -11,6 +11,7 @@ from .extraction import OpenAISignalExtractor
 from .instrument_master import InstrumentMasterService
 from .logic_supplement import build_logic_supplementer
 from .models import Market
+from .provider_diagnostics import market_data_coverage
 from .publisher import DemoPublisher, extract_published_address
 from .providers.factory import build_market_data_provider
 from .resolver import InstrumentResolver, SEED_INSTRUMENTS
@@ -99,6 +100,13 @@ def create_app():
     @app.get("/health")
     def health():
         return {"ok": True}
+
+    @app.get("/api/market-data/coverage")
+    def market_coverage(provider: str = "auto"):
+        try:
+            return market_data_coverage(settings, provider)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/inputs", dependencies=[Depends(require_write_auth)])
     def ingest(payload: InputPayload):

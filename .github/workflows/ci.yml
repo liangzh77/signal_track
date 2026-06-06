@@ -36,6 +36,7 @@ jobs:
         run: |
           mkdir -p data dist
           python -m signal_track.cli --db data/ci.sqlite3 migrate-db
+          python -m signal_track.cli --db data/ci.sqlite3 market-coverage --provider auto
           python -m signal_track.cli --db data/ci.sqlite3 refresh-instruments --provider fixture --market all
           python -m signal_track.cli --db data/ci.sqlite3 ingest --source CI --text "Tencent long, watch for a break below the 5 day moving average."
           python -m signal_track.cli --db data/ci.sqlite3 daily-run --date 2026-06-05 --provider fixture --out dist/ci-dashboard.html

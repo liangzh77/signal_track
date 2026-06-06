@@ -67,6 +67,7 @@ used by that job.
 Useful endpoints:
 
 - `GET /health`
+- `GET /api/market-data/coverage?provider=auto`
 - `POST /api/inputs` with `{ "source": "...", "content": "...", "portfolio": false }`
 - `POST /api/inputs/file` multipart upload with `file`, `source`, `portfolio`, `extractor`
 - `GET /api/instruments`
@@ -202,6 +203,16 @@ python -m signal_track.cli backup-db --out data\backup.sqlite3
 - `yfinance`: temporary fallback for US stocks, Hong Kong stocks, and US futures.
 
 US futures support is intentionally provider-abstracted. For production-grade historical futures data, wire the same interface to CME DataMine or another licensed futures source.
+
+Inspect current provider coverage without calling remote market APIs:
+
+```powershell
+python -m signal_track.cli market-coverage --provider auto
+```
+
+The report shows, per market, the configured daily-price provider, whether real
+instrument-master refresh is available, and which dependency or credential is
+missing when a market is not price-ready.
 
 ## Instrument Master
 

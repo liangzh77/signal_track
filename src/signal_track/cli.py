@@ -17,6 +17,7 @@ from .instrument_master import InstrumentMasterService
 from .logic_supplement import build_logic_supplementer
 from .market_data import MarketDataService
 from .models import Market
+from .provider_diagnostics import market_data_coverage
 from .publisher import DemoPublisher, extract_published_address
 from .providers.factory import build_market_data_provider
 from .resolver import InstrumentResolver, SEED_INSTRUMENTS
@@ -57,6 +58,14 @@ def main(argv: list[str] | None = None) -> int:
         default="all",
     )
     refresh_parser.add_argument("--sample", type=int, default=0, help="Print the first N refreshed symbols.")
+
+    coverage_parser = subparsers.add_parser("market-coverage", help="Report configured market data coverage.")
+    coverage_parser.add_argument(
+        "--provider",
+        choices=["none", "auto", "fixture", "tushare", "yfinance"],
+        default="auto",
+        help="Provider configuration to inspect without calling remote market APIs.",
+    )
 
     list_research_parser = subparsers.add_parser("list-research-items", help="List pending research verification items.")
     list_research_parser.add_argument("--project-id", type=int)
@@ -239,6 +248,10 @@ def main(argv: list[str] | None = None) -> int:
                 indent=2,
             )
         )
+        return 0
+
+    if args.command == "market-coverage":
+        print(json.dumps(market_data_coverage(settings, args.provider), ensure_ascii=False, indent=2))
         return 0
 
     if args.command == "list-research-items":

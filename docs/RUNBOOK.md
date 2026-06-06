@@ -67,6 +67,17 @@ Local smoke check without touching the production database:
 /srv/signal-track/venv/bin/python -m signal_track.cli self-check --provider fixture --out /tmp/signal-track-self-check.html
 ```
 
+Market data coverage preflight without calling remote market APIs:
+
+```bash
+/srv/signal-track/venv/bin/python -m signal_track.cli market-coverage --provider auto
+curl http://127.0.0.1:8765/api/market-data/coverage?provider=auto
+```
+
+Before relying on the daily job, confirm the report marks the required markets as
+`price_available: true`. A shares and China futures require Tushare credentials;
+US futures require the yfinance package or a future licensed futures adapter.
+
 ## Initial Data Setup
 
 With provider credentials configured:

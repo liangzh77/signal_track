@@ -20,6 +20,7 @@ from signal_track.instrument_master import InstrumentMasterService
 from signal_track.logic_supplement import LogicSupplement, LogicSupplementer
 from signal_track.market_data import MarketDataService
 from signal_track.models import DailyBar, Instrument, Market
+from signal_track.provider_diagnostics import market_data_coverage
 from signal_track.publisher import extract_published_address
 from signal_track.publisher import PublishResult
 from signal_track.providers.auto import AutoMarketDataProvider
@@ -291,6 +292,51 @@ class SignalTrackCoreTests(unittest.TestCase):
 
         self.assertEqual(tushare_provider.calls, ["00700.HK"])
         self.assertEqual(yfinance_provider.calls, ["NQ"])
+
+    def test_market_coverage_reports_auto_routes_without_remote_calls(self) -> None:
+        settings = Settings(
+            db_path=Path(":memory:"),
+            tushare_token="token",
+            demo_publish_url=None,
+            demo_api_key=None,
+            enable_scheduler=False,
+            daily_provider="auto",
+            openai_api_key=None,
+            openai_model="model",
+            signal_track_api_key=None,
+        )
+
+        with patch("signal_track.provider_diagnostics.find_spec", return_value=object()):
+            coverage = market_data_coverage(settings, "auto")
+
+        by_market = {row["market"]: row for row in coverage["markets"]}
+        self.assertEqual(by_market["CN_A"]["price_provider"], "tushare")
+        self.assertEqual(by_market["HK"]["price_provider"], "tushare")
+        self.assertEqual(by_market["CN_FUT"]["instrument_master_provider"], "tushare")
+        self.assertEqual(by_market["US_FUT"]["price_provider"], "yfinance")
+        self.assertEqual(by_market["US_FUT"]["instrument_master_provider"], "seed_fallback")
+        self.assertFalse(by_market["US_FUT"]["real_instrument_master"])
+
+    def test_market_coverage_reports_missing_cn_provider(self) -> None:
+        settings = Settings(
+            db_path=Path(":memory:"),
+            tushare_token=None,
+            demo_publish_url=None,
+            demo_api_key=None,
+            enable_scheduler=False,
+            daily_provider="auto",
+            openai_api_key=None,
+            openai_model="model",
+            signal_track_api_key=None,
+        )
+
+        with patch("signal_track.provider_diagnostics.find_spec", return_value=None):
+            coverage = market_data_coverage(settings, "auto")
+
+        by_market = {row["market"]: row for row in coverage["markets"]}
+        self.assertFalse(by_market["CN_A"]["price_available"])
+        self.assertIn("TUSHARE_TOKEN", by_market["CN_A"]["notes"][1])
+        self.assertFalse(by_market["US_FUT"]["price_available"])
 
     def test_cli_self_check_runs_non_destructive_smoke_flow(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -754,6 +800,29 @@ class SignalTrackCoreTests(unittest.TestCase):
 
             health = client.get("/health")
             self.assertEqual(health.status_code, 200)
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_market_coverage_endpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+
+            response = client.get("/api/market-data/coverage", params={"provider": "auto"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["provider"], "auto")
+        self.assertEqual(
+            {row["market"] for row in response.json()["markets"]},
+            {"CN_A", "HK", "CN_FUT", "US", "US_FUT"},
+        )
 
 
 if __name__ == "__main__":
