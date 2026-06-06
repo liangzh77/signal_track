@@ -24,9 +24,10 @@ class DailyChecker:
     def run(self, check_date: date | None = None) -> int:
         current = check_date or date.today()
         current_date = current.isoformat()
+        for project_id in self.repo.list_price_refresh_project_ids(current_date):
+            self._refresh_prices(project_id, current)
         project_ids = self.repo.list_active_project_ids()
         for project_id in project_ids:
-            self._refresh_prices(project_id, current)
             performance = project_performance(self.repo, project_id, current)
             conclusion = "watch"
             triggered_rules: list[str] = []

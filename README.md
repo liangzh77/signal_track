@@ -153,6 +153,9 @@ The flow is intentionally sequential:
 3. Render the dashboard HTML.
 4. Publish through the demo API when `--publish` is passed.
 
+Closed projects keep refreshing prices for 31 days after `closed_date` so charts
+can show the requested post-close window without creating new daily check rows.
+
 ## Automatic Check Rules
 
 Daily checks currently execute deterministic price rules found in the stored logic:

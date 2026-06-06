@@ -523,6 +523,29 @@ class SignalTrackCoreTests(unittest.TestCase):
             logic = repo.list_logic_blocks(opened.project_ids[0])
             self.assertTrue(any(block["logic_type"] == "close_logic" for block in logic))
 
+    def test_closed_project_prices_refresh_during_post_close_window(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+            opened = ingestor.ingest("测试源", "腾讯 做多，观察广告。")
+            repo.close_project(opened.project_ids[0], date(2026, 6, 5).isoformat())
+            provider = RecordingMarketDataProvider("fixture")
+
+            checked = DailyChecker(repo, provider).run(date(2026, 6, 20))
+
+            self.assertEqual(checked, 0)
+            self.assertIn("00700.HK", provider.calls)
+            self.assertEqual(repo.count_price_bars("00700.HK"), 1)
+            self.assertEqual(repo.list_daily_checks(project_id=opened.project_ids[0]), [])
+            late_provider = RecordingMarketDataProvider("fixture")
+            late_checked = DailyChecker(repo, late_provider).run(date(2026, 7, 10))
+            self.assertEqual(late_checked, 0)
+            self.assertEqual(late_provider.calls, [])
+
     def test_extract_published_address(self) -> None:
         body = '{"address":"https://example.com/demo/a","title":"x"}'
         self.assertEqual(extract_published_address(body), "https://example.com/demo/a")

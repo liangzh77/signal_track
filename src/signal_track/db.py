@@ -607,6 +607,23 @@ class Repository:
             ).fetchall()
         return [int(row["id"]) for row in rows]
 
+    def list_price_refresh_project_ids(self, as_of: str) -> list[int]:
+        with self.db.session() as conn:
+            rows = conn.execute(
+                """
+                SELECT id FROM tracking_projects
+                WHERE status IN ('active', 'needs_review', 'exit_signal')
+                   OR (
+                        status = 'closed'
+                    AND closed_date IS NOT NULL
+                    AND closed_date >= date(?, '-31 days')
+                   )
+                ORDER BY id
+                """,
+                (as_of,),
+            ).fetchall()
+        return [int(row["id"]) for row in rows]
+
     def find_active_project_ids_by_symbol(self, symbol: str) -> list[int]:
         with self.db.session() as conn:
             rows = conn.execute(
