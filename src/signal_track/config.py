@@ -43,7 +43,7 @@ class Settings:
             demo_publish_url=os.getenv("GO_SITES_DEMO_PUBLISH_URL") or None,
             demo_api_key=os.getenv("GO_SITES_DEMO_API_KEY") or None,
             enable_scheduler=parse_bool(os.getenv("SIGNAL_TRACK_ENABLE_SCHEDULER"), default=False),
-            daily_provider=os.getenv("SIGNAL_TRACK_DAILY_PROVIDER", "none"),
+            daily_provider=os.getenv("SIGNAL_TRACK_DAILY_PROVIDER") or "auto",
             openai_api_key=os.getenv("OPENAI_API_KEY") or None,
             openai_model=os.getenv("SIGNAL_TRACK_OPENAI_MODEL", "gpt-4o-mini"),
             signal_track_api_key=os.getenv("SIGNAL_TRACK_API_KEY") or None,

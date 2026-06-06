@@ -78,6 +78,8 @@ Before relying on the daily job, confirm the report marks the required markets a
 `price_available: true`. A shares and China futures require Tushare credentials;
 Hong Kong futures and US futures require the yfinance package or a future
 licensed futures adapter.
+`SIGNAL_TRACK_DAILY_PROVIDER` defaults to `auto`; set it to `none` only for
+offline rule checks that should not refresh prices.
 
 ## Initial Data Setup
 
@@ -134,7 +136,7 @@ the weights after confirmation:
 ## Manual Daily Run
 
 ```bash
-/srv/signal-track/venv/bin/python -m signal_track.cli daily-run --provider auto --out /srv/signal-track/shared/dashboard.html
+/srv/signal-track/venv/bin/python -m signal_track.cli daily-run --out /srv/signal-track/shared/dashboard.html
 ```
 
 CLI update commands publish automatically when `GO_SITES_DEMO_PUBLISH_URL`,

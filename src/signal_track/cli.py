@@ -134,8 +134,7 @@ def main(argv: list[str] | None = None) -> int:
     check_parser.add_argument(
         "--provider",
         choices=["none", "auto", "fixture", "tushare", "yfinance"],
-        default="none",
-        help="Optional provider used to refresh prices before checking.",
+        help="Optional provider used to refresh prices before checking. Defaults to SIGNAL_TRACK_DAILY_PROVIDER.",
     )
 
     render_parser = subparsers.add_parser("render-dashboard", help="Render dashboard HTML.")
@@ -154,8 +153,7 @@ def main(argv: list[str] | None = None) -> int:
     daily_parser.add_argument(
         "--provider",
         choices=["none", "auto", "fixture", "tushare", "yfinance"],
-        default="none",
-        help="Optional provider used to refresh prices before checking.",
+        help="Optional provider used to refresh prices before checking. Defaults to SIGNAL_TRACK_DAILY_PROVIDER.",
     )
     daily_parser.add_argument("--out", default="dist/dashboard.html")
     daily_parser.add_argument("--publish", action="store_true")
@@ -525,7 +523,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "check":
         db.init()
         check_date = parse_date(args.date) if args.date else None
-        provider = None if args.provider == "none" else build_provider(args.provider, settings)
+        provider_name = args.provider or settings.daily_provider
+        provider = None if provider_name == "none" else build_provider(provider_name, settings)
         count = DailyChecker(
             repo,
             provider,
@@ -582,7 +581,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "daily-run":
         db.init()
         check_date = parse_date(args.date) if args.date else None
-        provider = None if args.provider == "none" else build_provider(args.provider, settings)
+        provider_name = args.provider or settings.daily_provider
+        provider = None if provider_name == "none" else build_provider(provider_name, settings)
         checked = DailyChecker(
             repo,
             provider,

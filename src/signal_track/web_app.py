@@ -56,7 +56,7 @@ def create_app():
         extractor: str = "auto"
 
     class CheckPayload(BaseModel):
-        provider: str = "none"
+        provider: str | None = None
 
     class RefreshInstrumentsPayload(BaseModel):
         provider: str = "tushare"
@@ -310,8 +310,9 @@ def create_app():
 
     @app.post("/api/checks/run", dependencies=[Depends(require_write_auth)])
     def run_checks(payload: CheckPayload = Body(default=CheckPayload())):
+        provider_name = payload.provider or settings.daily_provider
         try:
-            provider = build_market_data_provider(payload.provider, settings)
+            provider = build_market_data_provider(provider_name, settings)
         except ValueError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         checked = DailyChecker(

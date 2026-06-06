@@ -159,6 +159,22 @@ class FakeDailyEvaluator(DailyLogicEvaluator):
 
 
 class SignalTrackCoreTests(unittest.TestCase):
+    def test_settings_default_daily_provider_is_auto(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_ENABLE_SCHEDULER": "false",
+                "SIGNAL_TRACK_DAILY_PROVIDER": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=True):
+                settings = Settings.from_env()
+
+        self.assertEqual(settings.daily_provider, "auto")
+
     def test_resolves_seed_instruments_across_markets(self) -> None:
         resolver = InstrumentResolver()
 
@@ -1616,6 +1632,34 @@ class SignalTrackCoreTests(unittest.TestCase):
             listed = client.get("/api/inputs").json()
             self.assertEqual(len(listed), 2)
             self.assertEqual({Path(row["attachment_path"]).name for row in listed}, {"note.md", "note-1.md"})
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_check_run_uses_configured_daily_provider_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_API_KEY": "",
+                "SIGNAL_TRACK_DAILY_PROVIDER": "fixture",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+                created = client.post(
+                    "/api/inputs",
+                    json={"source": "Daily Desk", "content": "00700.HK long, watch ads recovery."},
+                )
+                project_id = created.json()["project_ids"][0]
+                checked = client.post("/api/checks/run", json={})
+                detail = client.get(f"/api/projects/{project_id}").json()
+                stored_bars = Repository(Database(Path(tmp) / "signal_track.sqlite3")).count_price_bars("00700.HK")
+
+            self.assertEqual(checked.status_code, 200)
+            self.assertEqual(checked.json()["checked_projects"], 1)
+            self.assertGreater(stored_bars, 0)
+            self.assertTrue(detail["daily_checks"])
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_research_item_update_publishes_when_configured(self) -> None:

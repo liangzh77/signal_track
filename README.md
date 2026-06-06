@@ -63,7 +63,8 @@ python -m signal_track.cli serve --host 127.0.0.1 --port 8000
 
 Set `SIGNAL_TRACK_ENABLE_SCHEDULER=true` to run the daily 19:00 Asia/Shanghai
 job inside the backend process. `SIGNAL_TRACK_DAILY_PROVIDER` controls the provider
-used by that job.
+used by that job and defaults to `auto`; set it to `none` only when you want checks
+to evaluate already-stored prices without refreshing market data.
 
 Useful endpoints:
 
@@ -82,7 +83,7 @@ Useful endpoints:
 - `PATCH /api/projects/{project_id}/weights` with `{ "weights": { "300750.SZ": 60, "600519.SH": 40 } }`
 - `GET /api/research-items`
 - `PATCH /api/research-items/{item_id}` with `{ "status": "verified" }`
-- `POST /api/checks/run` with optional `{ "provider": "auto" }`
+- `POST /api/checks/run` with optional `{ "provider": "auto" }`; if omitted, it uses `SIGNAL_TRACK_DAILY_PROVIDER`
 - `GET /dashboard`
 - `POST /api/publish`
 - `GET /api/publish/events`
@@ -146,8 +147,11 @@ python scripts/healthcheck.py http://127.0.0.1:8765/health
 Run the full daily flow locally:
 
 ```powershell
-python -m signal_track.cli daily-run --provider auto
+python -m signal_track.cli daily-run
 ```
+
+`daily-run` and `check` default to `SIGNAL_TRACK_DAILY_PROVIDER` (`auto` by
+default). Pass `--provider none` only for an offline rules-only check.
 
 Run a non-destructive smoke check with a temporary database:
 
