@@ -657,6 +657,16 @@ class Repository:
             )
 
     def close_project(self, project_id: int, closed_date: str, metadata: dict | None = None) -> None:
+        existing = self.get_project_row(project_id)
+        merged_metadata = metadata
+        if existing and metadata is not None:
+            try:
+                current_metadata = json.loads(existing["metadata"] or "{}")
+            except json.JSONDecodeError:
+                current_metadata = {}
+            if not isinstance(current_metadata, dict):
+                current_metadata = {}
+            merged_metadata = {**current_metadata, **metadata}
         with self.db.session() as conn:
             conn.execute(
                 """
@@ -673,8 +683,8 @@ class Repository:
                 """,
                 (
                     closed_date,
-                    json.dumps(metadata, ensure_ascii=False) if metadata is not None else None,
-                    json.dumps(metadata, ensure_ascii=False) if metadata is not None else None,
+                    json.dumps(merged_metadata, ensure_ascii=False) if merged_metadata is not None else None,
+                    json.dumps(merged_metadata, ensure_ascii=False) if merged_metadata is not None else None,
                     project_id,
                 ),
             )

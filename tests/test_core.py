@@ -1524,7 +1524,12 @@ class SignalTrackCoreTests(unittest.TestCase):
             closed = ingestor.ingest("Desk", "portfolio close: 300750.SZ and 600519.SH, thesis failed.")
 
             self.assertEqual(closed.project_ids, portfolio.project_ids)
-            self.assertEqual(repo.get_project_row(portfolio.project_ids[0])["status"], "closed")
+            row = repo.get_project_row(portfolio.project_ids[0])
+            metadata = json.loads(row["metadata"])
+            self.assertEqual(row["status"], "closed")
+            self.assertTrue(metadata["portfolio"])
+            self.assertEqual(metadata["closed_by_signal"], True)
+            self.assertIn("thesis failed", metadata["close_reason"])
 
     def test_unmatched_close_signal_does_not_create_tracking_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
