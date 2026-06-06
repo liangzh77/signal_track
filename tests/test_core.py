@@ -2523,7 +2523,8 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIn("performance", project)
         self.assertGreater(project["performance"]["point_count"], 0)
         self.assertEqual(project["performance"]["legs"][0]["symbol"], "00700.HK")
-        self.assertEqual(project["latest_check"]["conclusion"], "watch")
+        self.assertEqual(project["latest_check"]["conclusion"], "needs_review")
+        self.assertIn("Project logic score", project["latest_check"]["triggered_rules"])
         self.assertEqual(project["next_action"], "review_logic")
         self.assertEqual(short_code, 0)
         self.assertEqual(len(short_payload["projects"]), 1)
@@ -2848,9 +2849,31 @@ class SignalTrackCoreTests(unittest.TestCase):
 
             project = repo.get_project_row(project_id)
             check = repo.list_daily_checks(project_id=project_id)[0]
-            self.assertEqual(check["conclusion"], "watch")
+            self.assertEqual(check["conclusion"], "needs_review")
+            self.assertIn("Project logic score", check["triggered_rules"])
             self.assertEqual(project["status"], "needs_review")
             self.assertTrue(bool(project["needs_review"]))
+
+    def test_daily_check_surfaces_portfolio_weight_review_reason(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            opened = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                "Portfolio Desk",
+                "portfolio long: 300750.SZ, 600519.SH, watch margin and demand.",
+            )
+            project_id = opened.project_ids[0]
+
+            DailyChecker(repo, FixtureMarketDataProvider()).run(next_fixture_trading_day(date.today()))
+
+            project = repo.get_project_row(project_id)
+            check = repo.list_daily_checks(project_id=project_id)[0]
+            self.assertEqual(check["conclusion"], "needs_review")
+            self.assertTrue(bool(project["weight_needs_review"]))
+            self.assertIn("Portfolio weights need review", check["triggered_rules"])
 
     def test_daily_check_keeps_unresolved_instrument_project_in_review(self) -> None:
         class HoldEvaluator(DailyLogicEvaluator):
@@ -3255,7 +3278,8 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIn("points", projects[0]["performance"])
         self.assertGreater(projects[0]["performance"]["point_count"], 0)
         self.assertEqual(len(projects[0]["performance"]["legs"]), 1)
-        self.assertEqual(projects[0]["latest_check"]["conclusion"], "watch")
+        self.assertEqual(projects[0]["latest_check"]["conclusion"], "needs_review")
+        self.assertIn("Project logic score", projects[0]["latest_check"]["triggered_rules"])
         self.assertIn(projects[0]["next_action"], {"review_logic", "review_exit", "keep_tracking"})
         self.assertEqual([project["source_name"] for project in desk_a], ["Desk A"])
         self.assertEqual(len(active), 2)

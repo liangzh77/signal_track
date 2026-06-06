@@ -34,6 +34,13 @@ class DailyChecker:
             performance = project_performance(self.repo, project_id, current)
             conclusion = "watch"
             triggered_rules: list[str] = list(refresh_errors_by_project.get(project_id, []))
+            project = self.repo.get_project_row(project_id)
+
+            project_review_rules = project_level_review_rules(project) if project else []
+            if project_review_rules:
+                conclusion = "needs_review"
+                triggered_rules.extend(project_review_rules)
+                self.repo.update_project_status(project_id, "needs_review", needs_review=True)
 
             if triggered_rules:
                 conclusion = "needs_review"
@@ -75,11 +82,12 @@ class DailyChecker:
             if evaluation:
                 summary = merge_summary(summary, evaluation.summary)
                 triggered_rules.extend(evaluation.triggered_rules)
-                if conclusion not in {"exit_signal", "needs_review"}:
+                if evaluation.conclusion == "exit_signal" and conclusion != "exit_signal":
+                    conclusion = "exit_signal"
+                    self.repo.update_project_status(project_id, "exit_signal", needs_review=True)
+                elif conclusion not in {"exit_signal", "needs_review"}:
                     conclusion = evaluation.conclusion
-                    if evaluation.conclusion == "exit_signal":
-                        self.repo.update_project_status(project_id, "exit_signal", needs_review=True)
-                    elif evaluation.conclusion == "needs_review":
+                    if evaluation.conclusion == "needs_review":
                         self.repo.update_project_status(project_id, "needs_review", needs_review=True)
             self._clear_transient_review_if_resolved(project_id, conclusion)
             self.repo.add_daily_check(
@@ -176,4 +184,16 @@ def build_summary(performance) -> str:
 
 
 def has_project_level_review_reason(project) -> bool:
-    return float(project["logic_score"]) < 6 or bool(project["weight_needs_review"])
+    return bool(project_level_review_rules(project))
+
+
+def project_level_review_rules(project) -> list[str]:
+    rules: list[str] = []
+    if float(project["logic_score"]) < 6:
+        rules.append(
+            f"Project logic score {float(project['logic_score']):.1f} is below 6; "
+            "keep the project in review until the thesis and tracking logic are verified."
+        )
+    if bool(project["weight_needs_review"]):
+        rules.append("Portfolio weights need review; equal-weight tracking is provisional.")
+    return rules

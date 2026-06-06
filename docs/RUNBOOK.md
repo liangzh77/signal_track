@@ -187,6 +187,11 @@ the weights after confirmation:
 /srv/signal-track/venv/bin/python -m signal_track.cli daily-run --out /srv/signal-track/shared/dashboard.html
 ```
 
+Daily checks write project-level review reasons into `triggered_rules` when a
+project still has weak opening logic or provisional equal-weight portfolio
+weights. This is expected: price data can be healthy while the project remains
+`needs_review` until the thesis logic or portfolio weights are verified.
+
 HTTP manual run, including a backfill date:
 
 ```bash

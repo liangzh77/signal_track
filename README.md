@@ -239,7 +239,9 @@ daily check.
 When a later check has prices again and no review/exit rule is triggered, Signal
 Track clears transient `needs_review` status. Low-logic projects and portfolios
 with unconfirmed weights remain marked for review until their project-level issue
-is resolved.
+is resolved. Daily check records now also include those project-level review
+reasons, so the dashboard explains why a project is still in `needs_review` even
+when the latest price action is only `watch`.
 
 Closed projects keep refreshing prices for 31 days after `closed_date` so charts
 can show the requested post-close window without creating new daily check rows.
