@@ -2833,6 +2833,16 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(checked.json()["checked_projects"], 1)
             self.assertGreater(stored_bars, 0)
             self.assertTrue(detail["daily_checks"])
+            self.assertEqual(detail["summary"]["id"], project_id)
+            self.assertEqual(detail["summary"]["source_name"], "Daily Desk")
+            self.assertEqual(
+                detail["summary"]["latest_check"]["conclusion"],
+                detail["daily_checks"][0]["conclusion"],
+            )
+            self.assertIn(detail["summary"]["next_action"], {"review_logic", "review_exit", "keep_tracking"})
+            self.assertIn("performance", detail["summary"])
+            self.assertIn("point_count", detail["summary"]["performance"])
+            self.assertIn("missing_price_symbols", detail["summary"]["performance"])
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_unknown_provider_returns_bad_request(self) -> None:

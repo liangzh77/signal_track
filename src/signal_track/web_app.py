@@ -260,8 +260,11 @@ def create_app():
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         performance = project_performance(repo, project_id)
+        summary_row = repo.list_project_rows_by_ids([project_id])[0]
+        latest_check = next(iter(repo.list_daily_checks(project_id=project_id, limit=1)), None)
         return {
             "project": dict(project),
+            "summary": project_summary(summary_row, performance=performance, latest_check=latest_check),
             "legs": [dict(row) for row in repo.list_project_legs(project_id)],
             "logic_blocks": [dict(row) for row in repo.list_logic_blocks(project_id)],
             "research_items": [dict(row) for row in repo.list_research_items(project_id=project_id)],
