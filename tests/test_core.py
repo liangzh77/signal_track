@@ -1664,6 +1664,56 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("行情刷新失败：NVDA - provider unavailable", nvda_check["triggered_rules"])
             self.assertIn("缺少行情数据：NVDA", nvda_check["triggered_rules"])
 
+    def test_daily_check_clears_transient_needs_review_after_prices_recover(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+            opened = ingestor.ingest(
+                "Desk A",
+                "00700.HK 做多，因为广告恢复，观察是否跌破5日线，营收利润改善，ROE PB 估值。",
+            )
+            project_id = opened.project_ids[0]
+            check_date = next_fixture_trading_day(date.today())
+
+            DailyChecker(repo).run(check_date)
+            missing_price_project = repo.get_project_row(project_id)
+            self.assertEqual(missing_price_project["status"], "needs_review")
+            self.assertTrue(bool(missing_price_project["needs_review"]))
+
+            DailyChecker(repo, FixtureMarketDataProvider()).run(check_date)
+
+            recovered_project = repo.get_project_row(project_id)
+            recovered_check = repo.list_daily_checks(project_id=project_id)[0]
+            self.assertEqual(recovered_check["conclusion"], "watch")
+            self.assertEqual(recovered_project["status"], "active")
+            self.assertFalse(bool(recovered_project["needs_review"]))
+
+    def test_daily_check_keeps_project_level_needs_review_after_prices_recover(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            opened = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                "Desk A",
+                "00700.HK long",
+            )
+            project_id = opened.project_ids[0]
+            check_date = next_fixture_trading_day(date.today())
+
+            DailyChecker(repo, FixtureMarketDataProvider()).run(check_date)
+
+            project = repo.get_project_row(project_id)
+            check = repo.list_daily_checks(project_id=project_id)[0]
+            self.assertEqual(check["conclusion"], "watch")
+            self.assertEqual(project["status"], "needs_review")
+            self.assertTrue(bool(project["needs_review"]))
+
     def test_exit_signal_summaries_include_latest_check(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")

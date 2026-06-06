@@ -187,6 +187,10 @@ The flow is intentionally sequential:
 If one instrument's price refresh fails, the daily run continues for the other
 projects and records the failed symbol as a `needs_review` rule in that project's
 daily check.
+When a later check has prices again and no review/exit rule is triggered, Signal
+Track clears transient `needs_review` status. Low-logic projects and portfolios
+with unconfirmed weights remain marked for review until their project-level issue
+is resolved.
 
 Closed projects keep refreshing prices for 31 days after `closed_date` so charts
 can show the requested post-close window without creating new daily check rows.

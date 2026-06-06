@@ -77,6 +77,7 @@ class DailyChecker:
                         self.repo.update_project_status(project_id, "exit_signal", needs_review=True)
                     elif evaluation.conclusion == "needs_review":
                         self.repo.update_project_status(project_id, "needs_review", needs_review=True)
+            self._clear_transient_review_if_resolved(project_id, conclusion)
             self.repo.add_daily_check(
                 project_id=project_id,
                 check_date=current_date,
@@ -121,6 +122,16 @@ class DailyChecker:
         except Exception:
             return None
 
+    def _clear_transient_review_if_resolved(self, project_id: int, conclusion: str) -> None:
+        if conclusion not in {"watch", "hold"}:
+            return
+        project = self.repo.get_project_row(project_id)
+        if not project or project["status"] != "needs_review":
+            return
+        if has_project_level_review_reason(project):
+            return
+        self.repo.update_project_status(project_id, "active", needs_review=False)
+
 def merge_summary(base: str, evaluator_summary: str) -> str:
     if not evaluator_summary:
         return base
@@ -156,3 +167,7 @@ def build_summary(performance) -> str:
         else:
             leg_parts.append(f"{leg.symbol}: {leg.return_pct:.2%}")
     return f"项目当前收益 {performance.return_pct:.2%}，最新日期 {performance.latest_date or '未知'}；" + "；".join(leg_parts)
+
+
+def has_project_level_review_reason(project) -> bool:
+    return float(project["logic_score"]) < 6 or bool(project["weight_needs_review"])
