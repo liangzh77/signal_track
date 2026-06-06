@@ -24,6 +24,7 @@ def render_dashboard(repo: Repository) -> str:
     project_rows = "\n".join(render_project_row(row, performances[int(row["id"])]) for row in projects) or (
         "<tr><td colspan='8' class='empty'>暂无跟踪项目</td></tr>"
     )
+    source_cards = render_source_summary(projects, performances)
     detail_cards = "\n".join(render_project_detail(repo, row, performances[int(row["id"])]) for row in projects)
     check_items = "\n".join(
         render_check_item(row)
@@ -71,6 +72,7 @@ def render_dashboard(repo: Repository) -> str:
     h1 {{ margin: 0; font-size: 28px; line-height: 36px; letter-spacing: 0; }}
     .stamp {{ color: var(--muted); font-size: 13px; }}
     .metrics {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }}
+    .source-summary {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }}
     .card {{
       background: var(--surface);
       border: 1px solid var(--border);
@@ -81,6 +83,11 @@ def render_dashboard(repo: Repository) -> str:
     .metric {{ padding: 16px; }}
     .metric span {{ color: var(--muted); font-size: 12px; }}
     .metric strong {{ display: block; margin-top: 8px; font-size: 28px; line-height: 32px; font-variant-numeric: tabular-nums; }}
+    .source-card {{ padding: 14px; display: grid; gap: 10px; }}
+    .source-card h3 {{ margin: 0; font-size: 14px; line-height: 20px; }}
+    .source-card-grid {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }}
+    .source-stat span {{ color: var(--muted); display: block; font-size: 11px; line-height: 16px; }}
+    .source-stat strong {{ display: block; font-size: 16px; line-height: 22px; font-variant-numeric: tabular-nums; }}
     .grid {{ display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }}
     .details {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }}
     .panel {{ overflow: hidden; }}
@@ -121,6 +128,7 @@ def render_dashboard(repo: Repository) -> str:
     @media (max-width: 900px) {{
       .shell {{ padding: 16px; }}
       .metrics {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+      .source-summary {{ grid-template-columns: 1fr; }}
       .grid {{ grid-template-columns: 1fr; }}
       .details {{ grid-template-columns: 1fr; }}
       .topbar {{ align-items: start; flex-direction: column; }}
@@ -142,6 +150,7 @@ def render_dashboard(repo: Repository) -> str:
       <div class="card metric"><span>平仓信号</span><strong>{exits}</strong></div>
       <div class="card metric"><span>平均收益</span><strong>{format_return(avg_return)}</strong></div>
     </section>
+    <section class="source-summary">{source_cards}</section>
     <section class="grid">
       <div class="card panel">
         <div class="panel-header"><h2>跟踪项目</h2><span class="muted">按更新时间排序</span></div>
@@ -159,6 +168,46 @@ def render_dashboard(repo: Repository) -> str:
   </main>
 </body>
 </html>"""
+
+
+def render_source_summary(projects, performances: dict[int, object]) -> str:
+    if not projects:
+        return "<div class='card source-card empty'>暂无信息源统计</div>"
+    grouped: dict[str, dict[str, object]] = {}
+    for row in projects:
+        source = str(row["source_name"] or "manual")
+        group = grouped.setdefault(
+            source,
+            {"count": 0, "active": 0, "exits": 0, "needs_review": 0, "returns": []},
+        )
+        group["count"] = int(group["count"]) + 1
+        if row["status"] in {"active", "needs_review"}:
+            group["active"] = int(group["active"]) + 1
+        if row["status"] == "exit_signal":
+            group["exits"] = int(group["exits"]) + 1
+        if row["needs_review"]:
+            group["needs_review"] = int(group["needs_review"]) + 1
+        performance = performances.get(int(row["id"]))
+        if performance and performance.return_pct is not None:
+            group["returns"].append(performance.return_pct)
+
+    cards = []
+    for source, group in sorted(grouped.items(), key=lambda item: (-int(item[1]["count"]), item[0])):
+        returns = group["returns"]
+        avg_return = sum(returns) / len(returns) if returns else None
+        cards.append(
+            "<article class='card source-card'>"
+            f"<h3>{escape(source)}</h3>"
+            "<div class='source-card-grid'>"
+            f"<div class='source-stat'><span>项目</span><strong>{group['count']}</strong></div>"
+            f"<div class='source-stat'><span>活跃</span><strong>{group['active']}</strong></div>"
+            f"<div class='source-stat'><span>信号</span><strong>{group['exits']}</strong></div>"
+            f"<div class='source-stat'><span>均值</span><strong class='{return_css(avg_return)}'>{format_return(avg_return)}</strong></div>"
+            "</div>"
+            f"<div class='muted'>待复核 {group['needs_review']}</div>"
+            "</article>"
+        )
+    return "\n".join(cards)
 
 
 def render_project_row(row, performance) -> str:

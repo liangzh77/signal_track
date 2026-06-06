@@ -298,6 +298,25 @@ class SignalTrackCoreTests(unittest.TestCase):
             system_logic = [block["content"] for block in logic if block["logic_type"] == "system_logic"][0]
             self.assertIn("3C-5M-3D-3T", system_logic)
 
+    def test_dashboard_groups_projects_by_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+
+            ingestor.ingest(source_name="信息源A", content="腾讯 做多，先跟踪。")
+            ingestor.ingest(source_name="信息源B", content="英伟达 做多，观察订单。")
+
+            html = render_dashboard(repo)
+
+            self.assertIn("source-summary", html)
+            self.assertIn("信息源A", html)
+            self.assertIn("信息源B", html)
+            self.assertIn("待复核", html)
+
     def test_structured_extraction_can_create_portfolio_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
