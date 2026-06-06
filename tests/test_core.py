@@ -18,7 +18,7 @@ from signal_track.cli import refresh_markets as cli_refresh_markets
 from signal_track.cli import main as cli_main
 from signal_track.cli import run_self_check
 from signal_track.dashboard import render_dashboard
-from signal_track.analytics import LegPerformance, combine_weighted_points, project_performance
+from signal_track.analytics import LegPerformance, ProjectPerformance, combine_weighted_points, project_performance
 from signal_track.daily_evaluator import DailyEvaluation, DailyLogicEvaluator, OpenAIDailyLogicEvaluator
 from signal_track.exit_signals import exit_signal_summaries
 from signal_track.extraction import ExtractedInput, ExtractedSignal
@@ -39,6 +39,7 @@ from signal_track.providers.tushare_provider import TushareMarketDataProvider
 from signal_track.providers.yfinance_provider import get_price_field
 from signal_track.project_actions import ProjectActionError, update_tracking_project_weights
 from signal_track.resolver import InstrumentResolver, SEED_INSTRUMENTS
+from signal_track.rules import evaluate_return_rules
 from signal_track.signals import SignalIngestor
 from signal_track.source_detection import remove_source_marker_lines, resolve_source_name
 
@@ -2200,6 +2201,67 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(row["status"], "exit_signal")
             checks = repo.list_daily_checks(project_id=result.project_ids[0])
             self.assertIn("跌破 5 日均线", checks[0]["triggered_rules"])
+
+    def test_daily_check_triggers_english_moving_average_break_rule(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                source_name="English Source",
+                content="Tencent long. Exit if price breaks below 5 day moving average.",
+            )
+            instrument = repo.get_instrument("00700.HK")
+            self.assertIsNotNone(instrument)
+            instrument_id = repo.upsert_instrument(instrument)
+            closes = [100, 100, 100, 100, 80]
+            bars = [
+                DailyBar(
+                    symbol="00700.HK",
+                    provider_symbol="00700.HK",
+                    date=date(2026, 6, index + 1),
+                    open=close,
+                    high=close,
+                    low=close,
+                    close=close,
+                    provider="test",
+                )
+                for index, close in enumerate(closes)
+            ]
+            repo.upsert_bars(instrument_id, bars)
+
+            DailyChecker(repo).run(date(2026, 6, 5))
+
+            row = repo.get_project_row(result.project_ids[0])
+            self.assertEqual(row["status"], "exit_signal")
+            checks = repo.list_daily_checks(project_id=result.project_ids[0])
+            self.assertIn("跌破 5 日均线", checks[0]["triggered_rules"])
+
+    def test_return_rules_parse_english_stop_loss_and_take_profit(self) -> None:
+        loss_performance = ProjectPerformance(
+            project_id=1,
+            return_pct=-0.081,
+            latest_date="2026-06-05",
+            points=[],
+            legs=[],
+            missing_price_symbols=[],
+        )
+        profit_performance = ProjectPerformance(
+            project_id=1,
+            return_pct=0.151,
+            latest_date="2026-06-05",
+            points=[],
+            legs=[],
+            missing_price_symbols=[],
+        )
+
+        loss_hits = evaluate_return_rules("stop loss 8%; drawdown 12%", loss_performance)
+        profit_hits = evaluate_return_rules("take profit 15%; upside 20%", profit_performance)
+
+        self.assertEqual([hit.rule_type for hit in loss_hits], ["return_drawdown"])
+        self.assertEqual([hit.rule_type for hit in profit_hits], ["return_take_profit"])
 
     def test_daily_check_uses_contradicted_research_exit_condition(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
