@@ -6,12 +6,14 @@ from datetime import datetime
 
 from .analytics import project_performance
 from .db import Repository
+from .input_summary import input_summaries
 from .project_report import build_project_report, render_project_report_markdown
 
 
 def render_dashboard(repo: Repository) -> str:
     projects = repo.list_project_rows()
     checks = repo.list_daily_checks(limit=20)
+    recent_inputs = input_summaries(repo, limit=8)
     publish_events = repo.list_publish_events(limit=1)
     last_publish = publish_events[0] if publish_events else None
     performances = {int(row["id"]): project_performance(repo, int(row["id"])) for row in projects}
@@ -37,6 +39,7 @@ def render_dashboard(repo: Repository) -> str:
     status_filter = render_status_filter(projects)
     direction_filter = render_direction_filter(projects)
     detail_cards = "\n".join(render_project_detail(repo, row, performances[int(row["id"])]) for row in projects)
+    input_items = render_recent_inputs(recent_inputs)
     check_items = "\n".join(
         render_check_item(row)
         for row in checks
@@ -135,6 +138,18 @@ def render_dashboard(repo: Repository) -> str:
     .rail ul {{ list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }}
     .rail li {{ display: grid; gap: 4px; padding: 10px 0; border-bottom: 1px solid rgba(231,238,232,.08); }}
     .rail span, .rail em {{ color: var(--muted); font-size: 12px; font-style: normal; }}
+    .rail-section {{ margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(231,238,232,.1); }}
+    .rail-section-head {{ display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 8px; }}
+    .rail-section-head h2 {{ margin: 0; font-size: 16px; line-height: 22px; }}
+    .recent-inputs {{ list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }}
+    .recent-inputs li {{ border: 1px solid rgba(231,238,232,.08); border-radius: 8px; padding: 10px; background: rgba(255,255,255,.018); }}
+    .input-top {{ display: flex; justify-content: space-between; gap: 8px; align-items: start; }}
+    .input-action {{ border: 1px solid var(--border-strong); border-radius: 999px; padding: 2px 8px; font-size: 11px; line-height: 16px; }}
+    .input-action.close, .input-action.exit_signal {{ color: var(--red); border-color: rgba(255,107,107,.58); background: rgba(255,107,107,.08); }}
+    .input-action.update {{ color: var(--amber); border-color: rgba(216,179,93,.58); background: rgba(216,179,93,.08); }}
+    .input-action.track {{ color: var(--cyan); border-color: rgba(68,215,200,.55); background: rgba(68,215,200,.07); }}
+    .input-preview {{ color: var(--muted); font-size: 12px; line-height: 18px; margin-top: 6px; }}
+    .input-meta {{ color: var(--faint); font-size: 11px; line-height: 16px; margin-top: 6px; }}
     .rule-hit {{ color: var(--amber); font-size: 12px; line-height: 18px; }}
     .empty {{ color: var(--faint); padding: 20px; }}
     .detail-card {{ padding: 16px; }}
@@ -240,6 +255,10 @@ def render_dashboard(repo: Repository) -> str:
       <aside class="card rail">
         <div class="panel-header"><h2>每日检查</h2></div>
         <ul>{check_items}</ul>
+        <div class="rail-section">
+          <div class="rail-section-head"><h2>最近输入</h2><span>{len(recent_inputs)}</span></div>
+          <ul class="recent-inputs">{input_items}</ul>
+        </div>
       </aside>
     </section>
     <section class="details">{detail_cards}</section>
@@ -398,6 +417,29 @@ def render_check_item(row) -> str:
         f"<strong>{escape(row['title'])}</strong>"
         f"<em>{escape(row['conclusion'])}</em>"
         f"{rule_html}"
+        "</li>"
+    )
+
+
+def render_recent_inputs(inputs: list[dict]) -> str:
+    if not inputs:
+        return "<li class='empty'>暂无输入记录</li>"
+    return "\n".join(render_input_item(item) for item in inputs)
+
+
+def render_input_item(item: dict) -> str:
+    action = str(item.get("input_action") or "none")
+    symbols = item.get("resolved_symbols") or []
+    symbol_text = ", ".join(str(symbol) for symbol in symbols) or "--"
+    project_count = len(item.get("project_ids") or [])
+    return (
+        f"<li data-input-action='{escape(action)}'>"
+        "<div class='input-top'>"
+        f"<strong>{escape(item.get('source_name'))}</strong>"
+        f"<span class='input-action {escape(action)}'>{escape(action)}</span>"
+        "</div>"
+        f"<div class='input-preview'>{escape(item.get('content_preview'))}</div>"
+        f"<div class='input-meta'>{escape(item.get('received_at'))} · {escape(symbol_text)} · projects {project_count}</div>"
         "</li>"
     )
 

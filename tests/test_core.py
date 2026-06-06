@@ -1073,6 +1073,26 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("尚未发布", html)
             self.assertNotIn("Futuristic minimalism", html)
 
+    def test_dashboard_shows_recent_input_feed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+
+            ingestor.ingest(source_name="Input Desk", content="00700.HK long, watch ads recovery.")
+            ingestor.ingest(source_name="Input Desk", content="00700.HK close, ads failed.")
+
+            html = render_dashboard(repo)
+
+            self.assertIn("recent-inputs", html)
+            self.assertIn("data-input-action='close'", html)
+            self.assertIn("Input Desk", html)
+            self.assertIn("00700.HK", html)
+            self.assertIn("projects 1", html)
+
     def test_structured_extraction_can_create_portfolio_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
