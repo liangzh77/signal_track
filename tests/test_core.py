@@ -1679,6 +1679,42 @@ class SignalTrackCoreTests(unittest.TestCase):
             events = Repository(Database(db_path)).list_publish_events()
             self.assertEqual(events, [])
 
+    def test_cli_list_projects_includes_performance_and_filters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with redirect_stdout(StringIO()):
+                    cli_main(["ingest", "--source", "CLI Desk A", "--text", "00700.HK long, watch ads recovery."])
+                    cli_main(["ingest", "--source", "CLI Desk B", "--text", "NVDA long, watch orders."])
+                    cli_main([
+                        "check",
+                        "--provider",
+                        "fixture",
+                        "--date",
+                        next_fixture_trading_day(date.today()).isoformat(),
+                    ])
+                output = StringIO()
+                with redirect_stdout(output):
+                    code = cli_main(["list-projects", "--source", "CLI Desk A", "--status", "needs_review"])
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(len(payload["projects"]), 1)
+        project = payload["projects"][0]
+        self.assertEqual(project["source_name"], "CLI Desk A")
+        self.assertEqual(project["status"], "needs_review")
+        self.assertIn("performance", project)
+        self.assertGreater(project["performance"]["point_count"], 0)
+        self.assertEqual(project["performance"]["legs"][0]["symbol"], "00700.HK")
+
     def test_cli_ingest_auto_extractor_uses_openai_when_configured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"

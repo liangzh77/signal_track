@@ -8,6 +8,7 @@ import tempfile
 from datetime import date, timedelta
 from pathlib import Path
 
+from .analytics import project_performance
 from .checker import DailyChecker
 from .config import Settings
 from .daily_evaluator import build_daily_logic_evaluator
@@ -19,10 +20,10 @@ from .instrument_master import InstrumentMasterService
 from .input_summary import input_detail, input_summaries
 from .logic_supplement import build_logic_supplementer
 from .market_data import MarketDataService
-from .models import Market
+from .models import Market, ProjectStatus
 from .provider_diagnostics import market_data_coverage
 from .project_actions import ProjectActionError, close_tracking_project, update_tracking_project_weights
-from .project_summary import project_summaries
+from .project_summary import project_summaries, project_summary
 from .publisher import DemoPublisher, extract_published_address
 from .providers.factory import build_market_data_provider
 from .resolver import InstrumentResolver, SEED_INSTRUMENTS
@@ -74,6 +75,12 @@ def main(argv: list[str] | None = None) -> int:
 
     list_inputs_parser = subparsers.add_parser("list-inputs", help="List recent raw inputs and attachment paths.")
     list_inputs_parser.add_argument("--limit", type=int, default=50)
+
+    list_projects_parser = subparsers.add_parser("list-projects", help="List tracking projects with performance snapshots.")
+    list_projects_parser.add_argument("--source", help="Filter by exact source name.")
+    list_projects_parser.add_argument("--status", choices=[status.value for status in ProjectStatus], help="Filter by project status.")
+    list_projects_parser.add_argument("--no-performance", action="store_true", help="Omit return curves and leg performance.")
+    list_projects_parser.add_argument("--limit", type=int, default=100)
 
     show_input_parser = subparsers.add_parser("show-input", help="Show a raw input with full content.")
     show_input_parser.add_argument("input_id", type=int)
@@ -290,6 +297,26 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "list-inputs":
         db.init()
         print(json.dumps({"inputs": input_summaries(repo, limit=args.limit)}, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "list-projects":
+        db.init()
+        rows = repo.list_project_rows()
+        if args.source:
+            rows = [row for row in rows if str(row["source_name"]) == args.source]
+        if args.status:
+            rows = [row for row in rows if str(row["status"]) == args.status]
+        rows = rows[: args.limit]
+        performances = (
+            {int(row["id"]): project_performance(repo, int(row["id"])) for row in rows}
+            if not args.no_performance
+            else {}
+        )
+        projects = [
+            project_summary(row, performance=performances.get(int(row["id"])))
+            for row in rows
+        ]
+        print(json.dumps({"projects": projects}, ensure_ascii=False, indent=2))
         return 0
 
     if args.command == "show-input":

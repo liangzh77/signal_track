@@ -309,6 +309,7 @@ List recent raw inputs and uploaded attachment paths:
 ```powershell
 python -m signal_track.cli list-inputs --limit 20
 python -m signal_track.cli show-input 1
+python -m signal_track.cli list-projects --source 信息源A --status needs_review
 ```
 
 If `--source` is omitted, the first few lines of the note must include a marker
@@ -395,6 +396,7 @@ Research item statuses can be maintained manually while the research automation 
 being expanded:
 
 ```powershell
+python -m signal_track.cli list-projects
 python -m signal_track.cli list-research-items --project-id 1
 python -m signal_track.cli list-exit-signals
 python -m signal_track.cli update-research-item 1 --status verified --source-note "checked filing"
