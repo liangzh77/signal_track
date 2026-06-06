@@ -27,7 +27,7 @@ from signal_track.logic_supplement import LogicSupplement, LogicSupplementer
 from signal_track.market_data import MarketDataService
 from signal_track.models import DailyBar, Instrument, Market
 from signal_track.provider_diagnostics import market_data_coverage
-from signal_track.publisher import extract_published_address
+from signal_track.publisher import extract_published_address, publish_payload
 from signal_track.publisher import PublishResult
 from signal_track.providers.auto import AutoMarketDataProvider
 from signal_track.providers.base import MarketDataProvider
@@ -151,6 +151,16 @@ class FakeDemoPublisher:
     def publish(self, title: str, html: str, feature: str = "", disabled: bool = False) -> PublishResult:
         del title, html, feature, disabled
         return PublishResult(True, 200, '{"address":"https://example.com/demo/signal"}')
+
+
+class FailingDemoPublisher:
+    def __init__(self, publish_url: str, api_key: str):
+        self.publish_url = publish_url
+        self.api_key = api_key
+
+    def publish(self, title: str, html: str, feature: str = "", disabled: bool = False) -> PublishResult:
+        del title, html, feature, disabled
+        return PublishResult(False, 500, '{"error":"publish failed"}')
 
 
 class FakeOpenAIExtractor:
@@ -1263,7 +1273,22 @@ class SignalTrackCoreTests(unittest.TestCase):
     def test_extract_published_address(self) -> None:
         body = '{"address":"https://example.com/demo/a","title":"x"}'
         self.assertEqual(extract_published_address(body), "https://example.com/demo/a")
+        self.assertEqual(extract_published_address('{"url":"https://example.com/demo/b"}'), "https://example.com/demo/b")
+        self.assertEqual(
+            extract_published_address('{"data":{"public_url":"https://example.com/demo/c"}}'),
+            "https://example.com/demo/c",
+        )
         self.assertIsNone(extract_published_address("not json"))
+
+    def test_publish_payload_exposes_failure_body(self) -> None:
+        payload = publish_payload(PublishResult(False, 500, '{"error":"publish failed"}'), "https://example.com/api")
+
+        self.assertTrue(payload["attempted"])
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["status_code"], 500)
+        self.assertEqual(payload["publish_url"], "https://example.com/api")
+        self.assertEqual(payload["error"], '{"error":"publish failed"}')
+        self.assertEqual(payload["response_body"], '{"error":"publish failed"}')
 
     def test_scheduler_records_published_address(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1940,6 +1965,36 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(manual_publish.json()["url"], "https://example.com/demo/signal")
             self.assertEqual(events[0]["url"], "https://example.com/demo/signal")
             self.assertEqual(project_detail["project"]["status"], "needs_review")
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_auto_publish_failure_is_returned_and_recorded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
+                "GO_SITES_DEMO_API_KEY": "demo-key",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.web_app.DemoPublisher", FailingDemoPublisher):
+                    client = TestClient(create_app())
+                    created = client.post(
+                        "/api/inputs",
+                        json={"source": "测试源", "content": "腾讯 做多"},
+                    )
+                    events = client.get("/api/publish/events").json()
+
+            publish = created.json()["publish"]
+            self.assertEqual(created.status_code, 200)
+            self.assertTrue(publish["attempted"])
+            self.assertFalse(publish["ok"])
+            self.assertEqual(publish["status_code"], 500)
+            self.assertEqual(publish["error"], '{"error":"publish failed"}')
+            self.assertEqual(events[0]["status_code"], 500)
+            self.assertEqual(events[0]["response_body"], '{"error":"publish failed"}')
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_mutating_web_endpoints_require_api_key_when_configured(self) -> None:

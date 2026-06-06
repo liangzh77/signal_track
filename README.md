@@ -95,7 +95,9 @@ research item updates, and `POST /api/checks/run` automatically publish the refr
 CLI update commands do the same by default when `SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE=true`;
 use `--no-publish` for a one-off local update.
 Publish responses include `url` when the publish API returns a public dashboard
-address, plus `publish_url` for the API endpoint that was called.
+address, plus `publish_url` for the API endpoint that was called. Failed publish
+attempts keep the data update, record a publish event, and return `ok: false`
+with `error` and `response_body` so the caller can alert or retry.
 
 Ingestion responses include a `projects` summary so the caller can immediately
 see whether the input created a tracking item or closed one, plus each project's

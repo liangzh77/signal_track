@@ -59,15 +59,31 @@ def extract_published_address(body: str) -> str | None:
         data = json.loads(body)
     except json.JSONDecodeError:
         return None
-    address = data.get("address")
-    return str(address) if address else None
+    return find_address(data)
 
 
-def publish_payload(result: PublishResult, publish_url: str | None = None) -> dict:
+def find_address(value) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    for key in ("address", "url", "public_url", "href"):
+        address = value.get(key)
+        if address:
+            return str(address)
+    for key in ("demo", "item", "data"):
+        nested = find_address(value.get(key))
+        if nested:
+            return nested
+    return None
+
+
+def publish_payload(result: PublishResult, publish_url: str | None = None, body_limit: int = 500) -> dict:
+    body_preview = result.body[:body_limit] if result.body else ""
     return {
         "attempted": True,
         "ok": result.ok,
         "status_code": result.status_code,
         "url": extract_published_address(result.body),
         "publish_url": publish_url,
+        "error": None if result.ok else body_preview,
+        "response_body": body_preview,
     }
