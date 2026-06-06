@@ -89,6 +89,19 @@ def render_inbox_page() -> str:
     .result-grid { display: grid; gap: 10px; }
     .mini { display: grid; gap: 8px; margin-top: 10px; }
     .mini a { color: var(--cyan); text-decoration: none; }
+    .feed { display: grid; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(231,238,232,.1); }
+    .feed-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .feed-head h3 { margin: 0; font-size: 15px; line-height: 22px; }
+    .feed-head button { min-height: 30px; padding: 0 10px; }
+    .input-feed { display: grid; gap: 8px; }
+    .input-item { border: 1px solid rgba(231,238,232,.08); border-radius: 8px; padding: 10px; background: rgba(255,255,255,.018); }
+    .input-top { display: flex; justify-content: space-between; gap: 8px; align-items: start; }
+    .input-action { border: 1px solid var(--border-strong); border-radius: 999px; padding: 2px 8px; font-size: 11px; line-height: 16px; color: var(--muted); }
+    .input-action.close, .input-action.exit_signal { color: var(--red); border-color: rgba(255,107,107,.58); background: rgba(255,107,107,.08); }
+    .input-action.update { color: var(--amber); border-color: rgba(216,179,93,.58); background: rgba(216,179,93,.08); }
+    .input-action.track { color: var(--cyan); border-color: rgba(68,215,200,.55); background: rgba(68,215,200,.07); }
+    .input-preview { color: var(--muted); font-size: 12px; line-height: 18px; margin-top: 6px; }
+    .input-meta { color: var(--faint); font-size: 11px; line-height: 16px; margin-top: 6px; }
     @media (max-width: 820px) {
       .shell { padding: 16px; }
       .topbar { align-items: start; flex-direction: column; }
@@ -158,6 +171,13 @@ def render_inbox_page() -> str:
           <a href="/api/inputs">Recent inputs</a>
           <a href="/api/exit-signals">Exit signals</a>
           <a href="/health">Health</a>
+        </div>
+        <div class="feed">
+          <div class="feed-head">
+            <h3>Recent Inputs</h3>
+            <button class="button secondary" type="button" id="refresh-inputs">Refresh</button>
+          </div>
+          <div id="recent-inputs" class="input-feed"></div>
         </div>
       </aside>
 
@@ -322,6 +342,7 @@ def render_inbox_page() -> str:
     const researchRunCheckInput = document.getElementById('research-run-check');
     const checkProviderInput = document.getElementById('check-provider');
     const checkDateInput = document.getElementById('check-date');
+    const recentInputsNode = document.getElementById('recent-inputs');
 
     apiKeyInput.value = localStorage.getItem('signalTrackApiKey') || '';
     apiKeyInput.addEventListener('input', () => localStorage.setItem('signalTrackApiKey', apiKeyInput.value));
@@ -338,6 +359,7 @@ def render_inbox_page() -> str:
       if (ok && autoRefreshProjectsInput.checked) {
         loadProjects();
         loadResearchItems();
+        loadInputs();
       }
     }
 
@@ -429,6 +451,43 @@ def render_inbox_page() -> str:
       }
     }
 
+    async function loadInputs() {
+      try {
+        const response = await fetch('/api/inputs?limit=8');
+        const inputs = await parseResponse(response);
+        if (!response.ok || !Array.isArray(inputs)) return;
+        recentInputsNode.innerHTML = inputs.length
+          ? inputs.map(renderInputItem).join('')
+          : '<div class="input-item"><div class="input-preview">No inputs yet</div></div>';
+      } catch (error) {
+        recentInputsNode.innerHTML = '<div class="input-item"><div class="input-preview">Inputs unavailable</div></div>';
+      }
+    }
+
+    function renderInputItem(item) {
+      const action = item.input_action || 'none';
+      const symbols = (item.resolved_symbols || []).join(', ') || '--';
+      const count = (item.project_ids || []).length;
+      return `
+        <div class="input-item" data-input-action="${escapeHtml(action)}">
+          <div class="input-top">
+            <strong>${escapeHtml(item.source_name || '')}</strong>
+            <span class="input-action ${escapeHtml(action)}">${escapeHtml(action)}</span>
+          </div>
+          <div class="input-preview">${escapeHtml(item.content_preview || '')}</div>
+          <div class="input-meta">${escapeHtml(item.received_at || '')} · ${escapeHtml(symbols)} · projects ${count}</div>
+        </div>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
     projectSelectInput.addEventListener('change', () => {
       projectIdInput.value = projectSelectInput.value;
       loadResearchItems();
@@ -436,6 +495,7 @@ def render_inbox_page() -> str:
 
     document.getElementById('refresh-projects').addEventListener('click', loadProjects);
     document.getElementById('refresh-research').addEventListener('click', loadResearchItems);
+    document.getElementById('refresh-inputs').addEventListener('click', loadInputs);
 
     function projectId() {
       const id = projectIdInput.value.trim();
@@ -562,6 +622,7 @@ def render_inbox_page() -> str:
     });
     loadProjects();
     loadResearchItems();
+    loadInputs();
   </script>
 </body>
 </html>"""
