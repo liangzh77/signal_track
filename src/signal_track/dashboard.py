@@ -148,6 +148,7 @@ def render_dashboard(repo: Repository) -> str:
     .input-action {{ border: 1px solid var(--border-strong); border-radius: 999px; padding: 2px 8px; font-size: 11px; line-height: 16px; }}
     .input-action.close, .input-action.exit_signal {{ color: var(--red); border-color: rgba(255,107,107,.58); background: rgba(255,107,107,.08); }}
     .input-action.update {{ color: var(--amber); border-color: rgba(216,179,93,.58); background: rgba(216,179,93,.08); }}
+    .input-action.mixed {{ color: var(--green); border-color: rgba(88,214,141,.58); background: rgba(88,214,141,.08); }}
     .input-action.track {{ color: var(--cyan); border-color: rgba(68,215,200,.55); background: rgba(68,215,200,.07); }}
     .input-preview {{ color: var(--muted); font-size: 12px; line-height: 18px; margin-top: 6px; }}
     .input-meta {{ color: var(--faint); font-size: 11px; line-height: 16px; margin-top: 6px; }}

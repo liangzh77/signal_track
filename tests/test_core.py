@@ -1237,13 +1237,21 @@ class SignalTrackCoreTests(unittest.TestCase):
 
             ingestor.ingest(source_name="Input Desk", content="00700.HK long, watch ads recovery.")
             ingestor.ingest(source_name="Input Desk", content="00700.HK close, ads failed.")
+            ingestor.ingest(source_name="Mixed Desk", content="300750.SZ long, watch battery margin.")
+            ingestor.ingest(
+                source_name="Mixed Desk",
+                content="300750.SZ long update, 600519.SH long, watch margin and demand.",
+            )
 
             html = render_dashboard(repo)
 
             self.assertIn("recent-inputs", html)
             self.assertIn("data-input-action='close'", html)
+            self.assertIn("data-input-action='mixed'", html)
+            self.assertIn("input-action mixed", html)
             self.assertIn("Input history", html)
             self.assertIn("Input Desk", html)
+            self.assertIn("Mixed Desk", html)
             self.assertIn("00700.HK", html)
             self.assertIn("projects 1", html)
 
@@ -3444,6 +3452,7 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIn("loadProjects()", home.text)
         self.assertIn("loadInputs()", home.text)
         self.assertIn("renderInputItem", home.text)
+        self.assertIn(".input-action.mixed", home.text)
         self.assertIn("logic-blocks", home.text)
         self.assertIn("projectNoteRunCheckInput.checked", home.text)
         self.assertIn("projectNoteProviderInput.value", home.text)
