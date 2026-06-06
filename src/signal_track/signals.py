@@ -366,6 +366,8 @@ def supplement_evidence(supplement: LogicSupplement) -> list[str]:
 def fallback_evidence(name: str) -> list[str]:
     return [
         "source: local 3C-5M-3D-3T fallback",
+        "research_playbook: Step 1 financial/valuation, Step 2 industry/competition, Step 3 latest dynamics/management",
+        "cross_validation_rule: core financial data requires at least two independent sources before being marked verified",
         f"verification_note: {name} requires external financial, industry, and news verification before high-conviction use.",
         "verification_status: unverified",
     ]
@@ -407,10 +409,78 @@ def fallback_research_items(name: str) -> list[dict[str, object]]:
     return [
         {
             "item_type": "verification_note",
-            "content": f"{name} requires external financial, industry, and news verification before high-conviction use.",
+            "content": (
+                f"{name}: collect latest revenue, net profit, OPM, ROE, PE/PB, free cash flow, and leverage; "
+                "verify core financial numbers against at least two independent sources before using them."
+            ),
             "status": "unverified",
             "source_note": "local 3C-5M-3D-3T fallback",
-        }
+            "metadata": {
+                "framework": "Step 1",
+                "dimension": "financial_data_and_valuation",
+                "required_sources": 2,
+            },
+        },
+        {
+            "item_type": "verification_note",
+            "content": (
+                f"{name}: collect industry TAM/growth, market share trend, competitors, cycle position, "
+                "and entry barriers; mark unverified figures explicitly until source quality is checked."
+            ),
+            "status": "unverified",
+            "source_note": "local 3C-5M-3D-3T fallback",
+            "metadata": {"framework": "Step 1", "dimension": "industry_and_competition"},
+        },
+        {
+            "item_type": "verification_note",
+            "content": (
+                f"{name}: review latest company news, strategy changes, management changes, M&A, "
+                "analyst sentiment, and user-specific concerns from the original note."
+            ),
+            "status": "unverified",
+            "source_note": "local 3C-5M-3D-3T fallback",
+            "metadata": {"framework": "Step 1", "dimension": "latest_dynamics_and_management"},
+        },
+        {
+            "item_type": "tracking_metric",
+            "content": (
+                f"{name}: track whether the original thesis is improving or deteriorating through 3C signals "
+                "(cycle position, key change, certainty) and the most relevant 5M operating metrics."
+            ),
+            "status": "pending",
+            "source_note": "local 3C-5M-3D-3T fallback",
+            "metadata": {"framework": "3C-5M", "dimension": "thesis_tracking"},
+        },
+        {
+            "item_type": "tracking_metric",
+            "content": (
+                f"{name}: track price/return, moving-average breaks, valuation sentiment, and missing price data "
+                "as daily 3D/3T risk signals."
+            ),
+            "status": "pending",
+            "source_note": "local 3C-5M-3D-3T fallback",
+            "metadata": {"framework": "3D-3T", "dimension": "price_and_sentiment"},
+        },
+        {
+            "item_type": "exit_condition",
+            "content": (
+                f"{name}: if verified data contradicts the original opening thesis or shows the key 3C change "
+                "has reversed, mark this item contradicted and run a check."
+            ),
+            "status": "pending",
+            "source_note": "local 3C-5M-3D-3T fallback",
+            "metadata": {"framework": "3C", "dimension": "thesis_invalidated"},
+        },
+        {
+            "item_type": "exit_condition",
+            "content": (
+                f"{name}: if price action confirms thesis failure, for example a decisive moving-average break "
+                "or configured drawdown/stop-loss threshold, trigger exit review."
+            ),
+            "status": "pending",
+            "source_note": "local 3C-5M-3D-3T fallback",
+            "metadata": {"framework": "3D-3T", "dimension": "price_exit"},
+        },
     ]
 
 
@@ -512,6 +582,8 @@ def build_system_logic(name: str, direction: Direction) -> str:
     side = "做空" if direction == Direction.SHORT else "做多/观察"
     return (
         f"系统补充逻辑（{side}）：围绕 {name} 建立 3C-5M-3D-3T 跟踪框架。"
+        "先按三轮信息采集法补齐证据：第一轮财务与估值，第二轮行业格局与竞争，第三轮最新动态与管理层；"
+        "核心财务数据必须至少由两个独立来源交叉验证，无法验证的数据保持 unverified。"
         "3C：跟踪行业周期位置、关键变化是否兑现、变化确定性是否提升或下降。"
         "5M：跟踪市场空间、份额变化、经营利润率、商业模式现金流质量、管理层执行。"
         "3D：跟踪 ROE/PB 匹配度、外延变化催化、情绪与估值分位。"

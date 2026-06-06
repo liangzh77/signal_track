@@ -283,7 +283,10 @@ When `OPENAI_API_KEY` is configured, weak-logic projects also get a structured
 tracking supplement with concrete metrics, exit/review conditions, and data
 verification notes. These are saved as `research_items` so the dashboard and
 project API can expose pending metrics, exit conditions, and unverified data
-requirements. Without an API key, the local 3C-5M-3D-3T fallback is used.
+requirements. Without an API key, the local 3C-5M-3D-3T fallback still creates
+a research checklist covering financial/valuation cross-checks, industry and
+competition review, latest company dynamics, daily price/sentiment metrics, and
+exit-review conditions.
 
 Research item statuses can be maintained manually while the research automation is
 being expanded:

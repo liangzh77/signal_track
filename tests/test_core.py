@@ -464,8 +464,17 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("3C-5M-3D-3T", system_logic)
             self.assertIn("verification_status: unverified", evidence)
             research_items = repo.list_research_items(project_id=result.project_ids[0])
+            self.assertGreaterEqual(len(research_items), 7)
+            item_types = {item["item_type"] for item in research_items}
+            self.assertIn("verification_note", item_types)
+            self.assertIn("tracking_metric", item_types)
+            self.assertIn("exit_condition", item_types)
             self.assertEqual(research_items[0]["item_type"], "verification_note")
             self.assertEqual(research_items[0]["status"], "unverified")
+            self.assertTrue(any("at least two independent sources" in item["content"] for item in research_items))
+            self.assertTrue(any("moving-average break" in item["content"] for item in research_items))
+            metadata = [json.loads(item["metadata"] or "{}") for item in research_items]
+            self.assertTrue(any(item.get("framework") == "Step 1" for item in metadata))
 
     def test_dashboard_groups_projects_by_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
