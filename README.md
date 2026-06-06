@@ -211,6 +211,8 @@ python -m signal_track.cli backup-db --out data\backup.sqlite3
 - `yfinance`: temporary fallback for US stocks, Hong Kong stocks, and US futures.
 
 US futures support is intentionally provider-abstracted. For production-grade historical futures data, wire the same interface to CME DataMine or another licensed futures source.
+yfinance parsing accepts both ordinary columns and MultiIndex columns returned by
+newer yfinance versions.
 
 Inspect current provider coverage without calling remote market APIs:
 

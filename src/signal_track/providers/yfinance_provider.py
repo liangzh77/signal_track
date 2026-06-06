@@ -38,29 +38,61 @@ class YFinanceMarketDataProvider(MarketDataProvider):
         bars: list[DailyBar] = []
         for index, row in frame.iterrows():
             bar_date = index.date()
-            close = to_optional_float(row.get("Close"))
+            close = get_price_field(row, instrument.provider_symbol, "Close")
             bars.append(
                 DailyBar(
                     symbol=instrument.symbol,
                     provider_symbol=instrument.provider_symbol,
                     date=bar_date,
-                    open=to_optional_float(row.get("Open")),
-                    high=to_optional_float(row.get("High")),
-                    low=to_optional_float(row.get("Low")),
+                    open=get_price_field(row, instrument.provider_symbol, "Open"),
+                    high=get_price_field(row, instrument.provider_symbol, "High"),
+                    low=get_price_field(row, instrument.provider_symbol, "Low"),
                     close=close,
-                    adj_close=to_optional_float(row.get("Adj Close")) or close,
-                    volume=to_optional_float(row.get("Volume")),
+                    adj_close=get_price_field(row, instrument.provider_symbol, "Adj Close") or close,
+                    volume=get_price_field(row, instrument.provider_symbol, "Volume"),
                     provider=self.name,
                 )
             )
         return bars
 
 
+def get_price_field(row: object, provider_symbol: str, field: str) -> float | None:
+    candidates = [
+        field,
+        (field, provider_symbol),
+        (provider_symbol, field),
+    ]
+    for key in candidates:
+        value = get_row_value(row, key)
+        parsed = to_optional_float(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def get_row_value(row: object, key: object) -> object | None:
+    try:
+        return row[key]  # type: ignore[index]
+    except (KeyError, TypeError, IndexError):
+        pass
+    getter = getattr(row, "get", None)
+    if getter is None:
+        return None
+    try:
+        return getter(key)
+    except (KeyError, TypeError, IndexError):
+        return None
+
+
 def to_optional_float(value: object) -> float | None:
     if value is None:
         return None
+    if hasattr(value, "iloc"):
+        try:
+            value = value.iloc[0]  # type: ignore[attr-defined]
+        except (IndexError, TypeError, ValueError):
+            return None
     try:
         return float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
-

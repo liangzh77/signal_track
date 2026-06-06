@@ -27,6 +27,7 @@ from signal_track.providers.auto import AutoMarketDataProvider
 from signal_track.providers.base import MarketDataProvider
 from signal_track.providers.factory import build_auto_provider
 from signal_track.providers.fixture import FixtureMarketDataProvider
+from signal_track.providers.yfinance_provider import get_price_field
 from signal_track.resolver import InstrumentResolver, SEED_INSTRUMENTS
 from signal_track.signals import SignalIngestor
 from signal_track.source_detection import resolve_source_name
@@ -79,6 +80,11 @@ class RecordingMarketDataProvider(MarketDataProvider):
         if self.instruments is None:
             raise NotImplementedError
         return [instrument for instrument in self.instruments if instrument.market == market]
+
+
+class FakeSeries:
+    def __init__(self, value: float):
+        self.iloc = [value]
 
 
 class FakeLogicSupplementer(LogicSupplementer):
@@ -292,6 +298,18 @@ class SignalTrackCoreTests(unittest.TestCase):
 
         self.assertEqual(tushare_provider.calls, ["00700.HK"])
         self.assertEqual(yfinance_provider.calls, ["NQ"])
+
+    def test_yfinance_price_field_handles_multiindex_shapes(self) -> None:
+        normal_row = {"Close": 101.5}
+        field_first_row = {("Close", "AAPL"): 102.5}
+        ticker_first_row = {("AAPL", "Close"): 103.5}
+        series_row = {"Close": FakeSeries(104.5)}
+
+        self.assertEqual(get_price_field(normal_row, "AAPL", "Close"), 101.5)
+        self.assertEqual(get_price_field(field_first_row, "AAPL", "Close"), 102.5)
+        self.assertEqual(get_price_field(ticker_first_row, "AAPL", "Close"), 103.5)
+        self.assertEqual(get_price_field(series_row, "AAPL", "Close"), 104.5)
+        self.assertIsNone(get_price_field({}, "AAPL", "Close"))
 
     def test_market_coverage_reports_auto_routes_without_remote_calls(self) -> None:
         settings = Settings(
