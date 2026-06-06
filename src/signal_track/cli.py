@@ -793,15 +793,18 @@ def main(argv: list[str] | None = None) -> int:
                 feature=f"每日检查完成，更新 {checked} 个项目",
                 flow="daily-run",
             )
+        publish_status = publish_payload(publish_result, settings.demo_publish_url) if publish_result else None
         print(
             json.dumps(
                 {
                     "checked_projects": checked,
                     "html": str(out_path),
                     "published": publish_result.ok if publish_result else False,
-                    "status_code": publish_result.status_code if publish_result else None,
-                    "published_url": extract_published_address(publish_result.body) if publish_result else None,
-                    "publish_url": settings.demo_publish_url if publish_result else None,
+                    "status_code": publish_status["status_code"] if publish_status else None,
+                    "published_url": publish_status["url"] if publish_status else None,
+                    "publish_url": publish_status["publish_url"] if publish_status else None,
+                    "error": publish_status["error"] if publish_status else None,
+                    "response_body": publish_status["response_body"] if publish_status else None,
                 },
                 ensure_ascii=False,
                 indent=2,

@@ -2241,6 +2241,44 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(metadata["flow"], "publish-dashboard")
             self.assertEqual(metadata["exception_type"], "RuntimeError")
 
+    def test_cli_daily_run_returns_publish_error_details(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            html_path = Path(tmp) / "dashboard.html"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "true",
+                "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
+                "GO_SITES_DEMO_API_KEY": "demo-key",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            output = StringIO()
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.cli.DemoPublisher", ThrowingDemoPublisher):
+                    with redirect_stdout(output):
+                        code = cli_main([
+                            "daily-run",
+                            "--provider",
+                            "fixture",
+                            "--out",
+                            str(html_path),
+                            "--publish",
+                        ])
+
+            payload = json.loads(output.getvalue())
+            events = Repository(Database(db_path)).list_publish_events()
+            metadata = json.loads(events[0]["metadata"])
+            self.assertEqual(code, 1)
+            self.assertTrue(html_path.exists())
+            self.assertFalse(payload["published"])
+            self.assertIsNone(payload["status_code"])
+            self.assertIn("network exploded", payload["error"])
+            self.assertIn("network exploded", payload["response_body"])
+            self.assertEqual(events[0]["url"], "https://example.com/api/publish")
+            self.assertEqual(metadata["flow"], "daily-run")
+            self.assertEqual(metadata["exception_type"], "RuntimeError")
+
     def test_cli_serve_passes_global_db_path_to_app_factory_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "serve.sqlite3"
