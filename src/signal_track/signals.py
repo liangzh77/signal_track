@@ -16,6 +16,7 @@ SHORT_WORDS = ("做空", "卖空", "开空", "short", "看空", "空头")
 EXIT_WORDS = ("平仓", "止盈", "止损", "退出", "close", "exit")
 LOGIC_WORDS = ("因为", "逻辑", "观察", "跟踪", "如果", "若", "触发", "催化", "风险", "验证")
 PORTFOLIO_WORDS = ("组合", "一篮子", "篮子", "配对", "权重", "占比", "portfolio", "basket", "pair trade")
+TRACK_WORDS = ("开仓", "建仓", "观察", "跟踪", "关注", "open", "track", "watch")
 
 
 @dataclass(frozen=True)
@@ -56,7 +57,7 @@ class SignalIngestor:
         direction = detect_direction(content)
         logic_score = score_tracking_logic(content)
         needs_review = logic_score < 6
-        system_logic_added = needs_review
+        system_logic_added = False
 
         if is_close_action(content) and resolutions:
             closed_project_ids = self._close_existing_projects(source_id, content, resolutions, logic_score)
@@ -92,6 +93,17 @@ class SignalIngestor:
                 logic_score=logic_score,
                 system_logic_added=False,
             )
+
+        if not has_tracking_intent(content, direction, as_portfolio):
+            return IngestResult(
+                raw_input_id=raw_input_id,
+                project_ids=[],
+                resolved_symbols=[resolution.instrument.symbol for resolution in resolutions],
+                logic_score=logic_score,
+                system_logic_added=False,
+            )
+
+        system_logic_added = needs_review
 
         if not resolutions:
             project_id = self.repo.create_tracking_project(
@@ -146,10 +158,13 @@ class SignalIngestor:
             direction = Direction(signal.direction)
             logic_score = max(0.0, min(10.0, signal.logic_score))
             needs_review = logic_score < 6 or extraction.needs_review
-            system_logic_added = system_logic_added or needs_review
             source_logic = signal.source_logic or summarize_source_logic(original_content)
             if signal.observation_logic:
                 source_logic = f"{source_logic}\n\n观察逻辑：{signal.observation_logic}"
+
+            if is_noop_action(signal):
+                resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
+                continue
 
             if is_extracted_close_action(signal, source_logic, original_content) and resolutions:
                 closed_project_ids = self._close_existing_projects(source_id, source_logic, resolutions, logic_score)
@@ -182,6 +197,8 @@ class SignalIngestor:
                     project_ids.extend(updated_project_ids)
                     resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
                     continue
+
+            system_logic_added = system_logic_added or needs_review
 
             if not resolutions:
                 project_id = self.repo.create_tracking_project(
@@ -629,6 +646,15 @@ def is_extracted_close_action(signal: ExtractedSignal, source_logic: str, origin
     if action == "close":
         return True
     return is_close_action(source_logic) or is_close_action(original_content)
+
+
+def is_noop_action(signal: ExtractedSignal) -> bool:
+    return (signal.action or "").strip().lower() == "none"
+
+
+def has_tracking_intent(content: str, direction: Direction, as_portfolio: bool = False) -> bool:
+    lowered = content.lower()
+    return direction != Direction.NEUTRAL or as_portfolio or any(word in lowered for word in TRACK_WORDS)
 
 
 def score_tracking_logic(content: str) -> float:

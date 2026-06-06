@@ -288,6 +288,12 @@ automatically. If no weights are found, it creates an equal-weight project and
 marks the weight for review. Plain multi-instrument notes without portfolio
 markers still split into separate tracking projects.
 
+Pure background mentions are intentionally not promoted into tracking projects.
+For example, a note that only says `00700.HK earnings released` is stored as a
+raw input with resolved symbols, but returns empty `project_ids`. Structured
+extractor results with `action: "none"` behave the same way. Weak open/tracking
+signals still create tracking projects and receive system-supplemented logic.
+
 If a later input contains close words such as `平仓`, `止盈`, `止损`, `退出`, or
 `exit`, Signal Track first looks for active projects from the same source that
 contain the resolved instrument and closes those projects instead of creating

@@ -805,6 +805,44 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(repo.list_project_rows(), [])
             self.assertEqual(len(repo.list_raw_inputs()), 1)
 
+    def test_heuristic_plain_instrument_mention_does_not_create_tracking_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                "Background Source",
+                "00700.HK earnings released without a trade signal.",
+            )
+
+            self.assertEqual(result.project_ids, [])
+            self.assertEqual(result.resolved_symbols, ["00700.HK"])
+            self.assertFalse(result.system_logic_added)
+            self.assertEqual(repo.list_project_rows(), [])
+            self.assertEqual(len(repo.list_raw_inputs()), 1)
+
+    def test_heuristic_no_instrument_without_intent_does_not_create_tracking_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                "Background Source",
+                "market color only, no actionable trade signal today.",
+            )
+
+            self.assertEqual(result.project_ids, [])
+            self.assertEqual(result.resolved_symbols, [])
+            self.assertFalse(result.system_logic_added)
+            self.assertEqual(repo.list_project_rows(), [])
+            self.assertEqual(len(repo.list_raw_inputs()), 1)
+
     def test_same_source_followup_updates_existing_project_without_duplicate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
@@ -932,6 +970,37 @@ class SignalTrackCoreTests(unittest.TestCase):
 
             self.assertEqual(result.project_ids, [])
             self.assertEqual(result.resolved_symbols, ["00700.HK"])
+            self.assertEqual(repo.list_project_rows(), [])
+            self.assertEqual(len(repo.list_raw_inputs()), 1)
+
+    def test_structured_none_action_does_not_create_tracking_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                "Background Source",
+                "00700.HK quarterly earnings summary only.",
+                extraction=ExtractedInput(
+                    signals=[
+                        ExtractedSignal(
+                            instruments=["00700.HK"],
+                            direction="neutral",
+                            source_logic="background only",
+                            observation_logic="",
+                            logic_score=2,
+                            action="none",
+                        )
+                    ],
+                ),
+            )
+
+            self.assertEqual(result.project_ids, [])
+            self.assertEqual(result.resolved_symbols, ["00700.HK"])
+            self.assertFalse(result.system_logic_added)
             self.assertEqual(repo.list_project_rows(), [])
             self.assertEqual(len(repo.list_raw_inputs()), 1)
 
@@ -1348,6 +1417,31 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["project_ids"], [])
             self.assertEqual(response.json()["resolved_symbols"], ["00700.HK"])
+            self.assertEqual(projects, [])
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_plain_instrument_mention_does_not_create_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+                response = client.post(
+                    "/api/inputs",
+                    json={"source": "Background Source", "content": "00700.HK earnings released without a trade signal."},
+                )
+                projects = client.get("/api/projects").json()
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["project_ids"], [])
+            self.assertEqual(response.json()["resolved_symbols"], ["00700.HK"])
+            self.assertEqual(response.json()["projects"], [])
             self.assertEqual(projects, [])
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
