@@ -888,8 +888,9 @@ def extract_probe_terms(content: str) -> list[str]:
 
 
 def should_probe_term(term: str) -> bool:
+    upper = term.upper()
     cn_future_exchange_suffixes = {"SHF", "DCE", "CZC", "CFX", "INE", "GFE"}
-    if term.upper() in cn_future_exchange_suffixes:
+    if upper in cn_future_exchange_suffixes:
         return False
     financial_metric_terms = {
         "PE",
@@ -906,7 +907,29 @@ def should_probe_term(term: str) -> bool:
         "EBIT",
         "EBITDA",
     }
-    if term.upper() in financial_metric_terms:
+    if upper in financial_metric_terms:
+        return False
+    non_instrument_terms = {
+        "HK",
+        "US",
+        "SZ",
+        "SH",
+        "LONG",
+        "SHORT",
+        "BUY",
+        "SELL",
+        "HOLD",
+        "WATCH",
+        "TRACK",
+        "CLOSE",
+        "EXIT",
+        "PORTFOLIO",
+        "BASKET",
+        "PAIR",
+        "TRADE",
+        "THESIS",
+    }
+    if upper in non_instrument_terms:
         return False
     if re.search(r"[\u4e00-\u9fff]", term):
         return True

@@ -1920,6 +1920,37 @@ class SignalTrackCoreTests(unittest.TestCase):
         for metric in ["PE", "PB", "ROE", "TAM", "FCF", "EBITDA"]:
             self.assertNotIn(metric, terms)
 
+    def test_extract_probe_terms_ignores_common_research_words(self) -> None:
+        terms = extract_probe_terms(
+            "portfolio long 300750.SZ and 600519.SH. Watch margin trend, orders, revenue, "
+            "cash flow, valuation sentiment, channel inventory, and thesis quality. AAPL, OPEN, CASH.US, ES=F."
+        )
+
+        self.assertIn("300750.SZ", terms)
+        self.assertIn("600519.SH", terms)
+        self.assertIn("AAPL", terms)
+        self.assertIn("OPEN", terms)
+        self.assertIn("CASH.US", terms)
+        self.assertIn("ES=F", terms)
+        for word in [
+            "SZ",
+            "SH",
+            "Watch",
+            "margin",
+            "trend",
+            "orders",
+            "revenue",
+            "cash",
+            "flow",
+            "valuation",
+            "sentiment",
+            "channel",
+            "inventory",
+            "thesis",
+            "quality",
+        ]:
+            self.assertNotIn(word, terms)
+
     def test_heuristic_china_future_contract_code_creates_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
