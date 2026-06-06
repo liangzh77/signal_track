@@ -4211,6 +4211,12 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(denied_close.status_code, 401)
             denied_weights = client.patch("/api/projects/1/weights", json={"weights": {"00700.HK": 1}})
             self.assertEqual(denied_weights.status_code, 401)
+            denied_bearer = client.post(
+                "/api/inputs",
+                headers={"Authorization": "Bearer wrong-key"},
+                json={"source": "test", "content": "00700.HK long"},
+            )
+            self.assertEqual(denied_bearer.status_code, 401)
 
             allowed = client.post(
                 "/api/inputs",
@@ -4219,6 +4225,13 @@ class SignalTrackCoreTests(unittest.TestCase):
             )
             self.assertEqual(allowed.status_code, 200)
             self.assertEqual(allowed.json()["resolved_symbols"], ["00700.HK"])
+            allowed_bearer = client.post(
+                "/api/inputs",
+                headers={"Authorization": "Bearer secret-key"},
+                json={"source": "test", "content": "300750.SZ long"},
+            )
+            self.assertEqual(allowed_bearer.status_code, 200)
+            self.assertEqual(allowed_bearer.json()["resolved_symbols"], ["300750.SZ"])
 
             health = client.get("/health")
             self.assertEqual(health.status_code, 200)

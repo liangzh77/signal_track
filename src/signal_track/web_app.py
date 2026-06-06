@@ -1,3 +1,4 @@
+import hmac
 import json
 from dataclasses import dataclass
 from datetime import date
@@ -111,7 +112,10 @@ def create_app():
         bearer = None
         if authorization and authorization.lower().startswith("bearer "):
             bearer = authorization.split(" ", 1)[1].strip()
-        if x_signal_track_key == settings.signal_track_api_key or bearer == settings.signal_track_api_key:
+        if constant_time_secret_match(x_signal_track_key, settings.signal_track_api_key) or constant_time_secret_match(
+            bearer,
+            settings.signal_track_api_key,
+        ):
             return
         raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -697,6 +701,12 @@ def parse_json_dict(value: str | None) -> dict:
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def constant_time_secret_match(candidate: str | None, expected: str | None) -> bool:
+    if not candidate or not expected:
+        return False
+    return hmac.compare_digest(candidate.encode("utf-8"), expected.encode("utf-8"))
 
 
 def build_daily_evaluator_from_settings(settings: Settings):
