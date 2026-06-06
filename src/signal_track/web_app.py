@@ -368,6 +368,7 @@ def ingest_content(
 ):
     resolver = InstrumentResolver(repo.list_instruments())
     extraction = None
+    extractor = normalize_extractor(extractor)
     if extractor in {"auto", "openai"}:
         from fastapi import HTTPException
 
@@ -407,6 +408,15 @@ def ingest_content(
         extraction=extraction,
         attachment_path=attachment_path,
     )
+
+
+def normalize_extractor(value: str) -> str:
+    extractor = (value or "auto").strip().lower()
+    if extractor in {"auto", "openai", "heuristic"}:
+        return extractor
+    from fastapi import HTTPException
+
+    raise HTTPException(status_code=400, detail=f"Unknown extractor: {value}")
 
 
 def result_response(repo: Repository, result, publish_result: dict) -> dict:

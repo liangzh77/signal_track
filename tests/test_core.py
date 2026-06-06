@@ -1889,6 +1889,35 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("OpenAI extractor failed", response.json()["detail"])
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_rejects_unknown_extractor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+                response = client.post(
+                    "/api/inputs",
+                    json={
+                        "source": "Web Desk",
+                        "content": "00700.HK long, watch ads recovery.",
+                        "extractor": "typo",
+                    },
+                )
+
+            repo = Repository(Database(db_path))
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("Unknown extractor", response.json()["detail"])
+            self.assertEqual(repo.list_raw_inputs(), [])
+            self.assertEqual(repo.list_project_rows(), [])
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_exit_signals_endpoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"

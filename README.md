@@ -74,7 +74,7 @@ Useful endpoints:
 - `GET /api/market-data/coverage?provider=auto`
 - `GET /api/inputs`
 - `GET /api/inputs/{input_id}`
-- `POST /api/inputs` with `{ "source": "...", "content": "...", "portfolio": false }`
+- `POST /api/inputs` with `{ "source": "...", "content": "...", "portfolio": false, "extractor": "auto" }`
 - `POST /api/inputs/file` multipart upload with `file`, `source`, `portfolio`, `extractor`
 - `GET /api/instruments`
 - `POST /api/instruments/refresh` with `{ "provider": "auto", "market": "CN_A" }`
@@ -102,6 +102,8 @@ with `error` and `response_body` so the caller can alert or retry.
 Ingestion responses include a `projects` summary so the caller can immediately
 see whether the input created a tracking item or closed one, plus each project's
 status, direction, symbols, source, logic score, and review flags.
+`extractor` accepts `auto`, `heuristic`, or `openai`; unknown values return `400`
+instead of silently changing extraction behavior.
 
 Inputs require a real source name. Pass `source`, or put a marker in the first
 few lines of the note, for example `source: Alpha Desk` or `信息源：Alpha Desk`.
