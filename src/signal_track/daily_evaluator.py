@@ -22,6 +22,7 @@ class DailyLogicEvaluator:
         *,
         project: Any,
         logic_blocks: list[Any],
+        research_items: list[Any],
         performance: ProjectPerformance,
         previous_checks: list[Any],
         check_date: date,
@@ -56,6 +57,7 @@ class OpenAIDailyLogicEvaluator(DailyLogicEvaluator):
         *,
         project: Any,
         logic_blocks: list[Any],
+        research_items: list[Any],
         performance: ProjectPerformance,
         previous_checks: list[Any],
         check_date: date,
@@ -71,7 +73,14 @@ class OpenAIDailyLogicEvaluator(DailyLogicEvaluator):
             input=[
                 {
                     "role": "user",
-                    "content": build_evaluation_prompt(project, logic_blocks, performance, previous_checks, check_date),
+                    "content": build_evaluation_prompt(
+                        project,
+                        logic_blocks,
+                        research_items,
+                        performance,
+                        previous_checks,
+                        check_date,
+                    ),
                 }
             ],
             text={
@@ -89,6 +98,7 @@ class OpenAIDailyLogicEvaluator(DailyLogicEvaluator):
 def build_evaluation_prompt(
     project: Any,
     logic_blocks: list[Any],
+    research_items: list[Any],
     performance: ProjectPerformance,
     previous_checks: list[Any],
     check_date: date,
@@ -109,6 +119,7 @@ def build_evaluation_prompt(
         f"- {row['check_date']} {row['conclusion']}: {row['summary']}"
         for row in previous_checks[:5]
     ) or "无"
+    research_text = format_research_items(research_items)
     return (
         f"检查日期：{check_date.isoformat()}\n"
         f"项目：{project['title']} / {project['direction']} / {project['status']}\n"
@@ -116,6 +127,7 @@ def build_evaluation_prompt(
         f"缺失行情：{', '.join(performance.missing_price_symbols) or '无'}\n\n"
         f"标的：\n{leg_text or '无'}\n\n"
         f"逻辑：\n{logic_text or '无'}\n\n"
+        f"Research items / pending verification:\n{research_text}\n\n"
         f"最近检查：\n{checks_text}"
     )
 
@@ -129,6 +141,15 @@ def daily_evaluation_from_dict(data: dict) -> DailyEvaluation:
         summary=str(data.get("summary") or ""),
         triggered_rules=[str(item) for item in data.get("triggered_rules", [])],
         confidence=float(data.get("confidence") or 0.5),
+    )
+
+
+def format_research_items(research_items: list[Any]) -> str:
+    if not research_items:
+        return "none"
+    return "\n".join(
+        f"- {row['item_type']} / {row['status']}: {row['content']}"
+        for row in research_items[:12]
     )
 
 

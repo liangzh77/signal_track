@@ -87,6 +87,7 @@ class DailyChecker:
             return self.evaluator.evaluate(
                 project=project,
                 logic_blocks=self.repo.list_logic_blocks(project_id),
+                research_items=self.repo.list_research_items(project_id=project_id),
                 performance=performance,
                 previous_checks=self.repo.list_daily_checks(project_id=project_id, limit=5),
                 check_date=current,

@@ -108,8 +108,12 @@ class FakeDemoPublisher:
 
 
 class FakeDailyEvaluator(DailyLogicEvaluator):
-    def evaluate(self, *, project, logic_blocks, performance, previous_checks, check_date):
+    def __init__(self):
+        self.research_item_count = 0
+
+    def evaluate(self, *, project, logic_blocks, research_items, performance, previous_checks, check_date):
         del project, logic_blocks, performance, previous_checks, check_date
+        self.research_item_count = len(research_items)
         return DailyEvaluation(
             conclusion="exit_signal",
             summary="核心跟踪假设被证伪，建议平仓。",
@@ -522,12 +526,12 @@ class SignalTrackCoreTests(unittest.TestCase):
                 content="腾讯 做多，观察广告恢复和游戏流水。",
             )
 
-            DailyChecker(repo, FixtureMarketDataProvider(), evaluator=FakeDailyEvaluator()).run(
-                next_fixture_trading_day(date.today())
-            )
+            evaluator = FakeDailyEvaluator()
+            DailyChecker(repo, FixtureMarketDataProvider(), evaluator=evaluator).run(next_fixture_trading_day(date.today()))
 
             row = repo.get_project_row(result.project_ids[0])
             self.assertEqual(row["status"], "exit_signal")
+            self.assertGreater(evaluator.research_item_count, 0)
             checks = repo.list_daily_checks(project_id=result.project_ids[0])
             self.assertIn("核心跟踪假设被证伪", checks[0]["summary"])
             self.assertIn("逻辑评估：核心假设被证伪", checks[0]["triggered_rules"])
