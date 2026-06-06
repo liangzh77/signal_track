@@ -108,6 +108,8 @@ status, direction, symbols, source, logic score, and review flags.
 `GET /api/projects` returns the same normalized project summary plus current
 performance, curve points, missing price symbols, and leg-level return snapshots;
 use `source` and `status` query parameters to drive filtered project lists.
+Project summaries also include `latest_check` and `next_action` so callers can
+surface the current decision without fetching full project details.
 `GET /api/exit-signals` and `list-exit-signals` use the same performance-bearing
 summary and include the latest check that triggered the signal.
 `extractor` accepts `auto`, `heuristic`, or `openai`; unknown values return `400`

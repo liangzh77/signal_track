@@ -14,6 +14,10 @@ def render_dashboard(repo: Repository) -> str:
     publish_events = repo.list_publish_events(limit=1)
     last_publish = publish_events[0] if publish_events else None
     performances = {int(row["id"]): project_performance(repo, int(row["id"])) for row in projects}
+    latest_checks = {
+        int(row["id"]): next(iter(repo.list_daily_checks(project_id=int(row["id"]), limit=1)), None)
+        for row in projects
+    }
     active = sum(1 for row in projects if row["status"] in {"active", "needs_review"})
     exits = sum(1 for row in projects if row["status"] == "exit_signal")
     needs_review = sum(1 for row in projects if project_needs_review(row))
@@ -21,8 +25,11 @@ def render_dashboard(repo: Repository) -> str:
     avg_return = sum(returns) / len(returns) if returns else None
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    project_rows = "\n".join(render_project_row(row, performances[int(row["id"])]) for row in projects) or (
-        "<tr><td colspan='8' class='empty'>暂无跟踪项目</td></tr>"
+    project_rows = "\n".join(
+        render_project_row(row, performances[int(row["id"])], latest_checks[int(row["id"])])
+        for row in projects
+    ) or (
+        "<tr><td colspan='10' class='empty'>暂无跟踪项目</td></tr>"
     )
     source_cards = render_source_summary(projects, performances)
     source_filter = render_source_filter(projects)
@@ -112,6 +119,9 @@ def render_dashboard(repo: Repository) -> str:
     th, td {{ padding: 11px 12px; border-bottom: 1px solid rgba(231,238,232,.08); text-align: left; vertical-align: middle; }}
     th {{ color: var(--muted); font-weight: 600; position: sticky; top: 0; background: rgba(13,15,14,.92); }}
     td.num {{ text-align: right; font-variant-numeric: tabular-nums; font-family: "IBM Plex Mono", "Geist Mono", monospace; }}
+    td.check-cell {{ min-width: 92px; }}
+    td.check-cell span:first-child {{ white-space: nowrap; }}
+    td.action-cell {{ min-width: 72px; }}
     .symbol {{ color: var(--cyan); font-family: "IBM Plex Mono", "Geist Mono", monospace; }}
     .positive {{ color: var(--green); }}
     .negative {{ color: var(--red); }}
@@ -161,7 +171,7 @@ def render_dashboard(repo: Repository) -> str:
       .grid {{ grid-template-columns: 1fr; }}
       .details {{ grid-template-columns: 1fr; }}
       .topbar {{ align-items: start; flex-direction: column; }}
-      table {{ min-width: 720px; }}
+      table {{ min-width: 880px; }}
       .research-item {{ grid-template-columns: 1fr; gap: 6px; }}
       .research-item em {{ text-align: left; }}
       .detail-top {{ flex-direction: column; }}
@@ -204,7 +214,7 @@ def render_dashboard(repo: Repository) -> str:
         <div class="panel-header"><h2>跟踪项目</h2><span class="muted">按更新时间排序</span></div>
         <div class="table-wrap" tabindex="0" aria-label="跟踪项目表格">
           <table>
-            <thead><tr><th>状态</th><th>信息源</th><th>项目</th><th>标的</th><th>方向</th><th>逻辑分</th><th>收益</th><th>复核</th></tr></thead>
+            <thead><tr><th>状态</th><th>信息源</th><th>项目</th><th>标的</th><th>方向</th><th>逻辑分</th><th>收益</th><th>最新检查</th><th>动作</th><th>复核</th></tr></thead>
             <tbody>{project_rows}</tbody>
           </table>
         </div>
@@ -340,7 +350,7 @@ def render_source_summary(projects, performances: dict[int, object]) -> str:
     return "\n".join(cards)
 
 
-def render_project_row(row, performance) -> str:
+def render_project_row(row, performance, latest_check=None) -> str:
     status = escape(row["status"])
     review = "是" if project_needs_review(row) else "否"
     return_class = return_css(performance.return_pct)
@@ -354,6 +364,8 @@ def render_project_row(row, performance) -> str:
         f"<td>{escape(row['direction'])}</td>"
         f"<td class='num'>{float(row['logic_score']):.1f}</td>"
         f"<td class='num {return_class}'>{format_return(performance.return_pct)}</td>"
+        f"<td class='check-cell'>{format_latest_check(latest_check)}</td>"
+        f"<td class='action-cell'>{escape(next_action_label(row))}</td>"
         f"<td>{review}</td>"
         "</tr>"
     )
@@ -532,6 +544,28 @@ def return_css(value: float | None) -> str:
     if value >= 0:
         return "positive"
     return "negative"
+
+
+def format_latest_check(row) -> str:
+    if not row:
+        return "<span class='muted'>--</span>"
+    return (
+        f"<span>{escape(row['check_date'])}</span><br>"
+        f"<span class='muted'>{escape(row['conclusion'])}</span>"
+    )
+
+
+def next_action_label(row) -> str:
+    status = str(row["status"])
+    if status == "exit_signal":
+        return "复核平仓"
+    if status == "closed":
+        return "平仓后观察"
+    if bool(row["weight_needs_review"]):
+        return "确认权重"
+    if status == "needs_review" or bool(row["needs_review"]):
+        return "复核逻辑"
+    return "继续跟踪"
 
 
 def logic_label(value: str) -> str:

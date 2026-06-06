@@ -338,7 +338,11 @@ def main(argv: list[str] | None = None) -> int:
             else {}
         )
         projects = [
-            project_summary(row, performance=performances.get(int(row["id"])))
+            project_summary(
+                row,
+                performance=performances.get(int(row["id"])),
+                latest_check=next(iter(repo.list_daily_checks(project_id=int(row["id"]), limit=1)), None),
+            )
             for row in rows
         ]
         print(json.dumps({"projects": projects}, ensure_ascii=False, indent=2))

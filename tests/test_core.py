@@ -910,6 +910,9 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("data-filter-type='direction' data-value='short'", html)
             self.assertIn("class='card detail-card' data-source='信息源B'", html)
             self.assertIn("applyFilters", html)
+            self.assertIn("最新检查", html)
+            self.assertIn("动作", html)
+            self.assertIn("复核逻辑", html)
             self.assertIn("信息源A", html)
             self.assertIn("信息源B", html)
             self.assertIn("待复核", html)
@@ -1862,6 +1865,8 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIn("performance", project)
         self.assertGreater(project["performance"]["point_count"], 0)
         self.assertEqual(project["performance"]["legs"][0]["symbol"], "00700.HK")
+        self.assertEqual(project["latest_check"]["conclusion"], "watch")
+        self.assertEqual(project["next_action"], "review_logic")
 
     def test_cli_ingest_auto_extractor_uses_openai_when_configured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2372,6 +2377,8 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIn("points", projects[0]["performance"])
         self.assertGreater(projects[0]["performance"]["point_count"], 0)
         self.assertEqual(len(projects[0]["performance"]["legs"]), 1)
+        self.assertEqual(projects[0]["latest_check"]["conclusion"], "watch")
+        self.assertIn(projects[0]["next_action"], {"review_logic", "review_exit", "keep_tracking"})
         self.assertEqual([project["source_name"] for project in desk_a], ["Desk A"])
         self.assertEqual(len(active), 2)
 

@@ -8,18 +8,29 @@ def project_summaries(
     repo: Repository,
     project_ids: list[int],
     performances: dict[int, ProjectPerformance] | None = None,
+    include_latest_check: bool = False,
 ) -> list[dict]:
-    return [
-        project_summary(row, performance=(performances or {}).get(int(row["id"])))
-        for row in repo.list_project_rows_by_ids(project_ids)
-    ]
+    summaries = []
+    for row in repo.list_project_rows_by_ids(project_ids):
+        project_id = int(row["id"])
+        checks = repo.list_daily_checks(project_id=project_id, limit=1) if include_latest_check else []
+        latest_check = checks[0] if checks else None
+        summaries.append(
+            project_summary(
+                row,
+                performance=(performances or {}).get(project_id),
+                latest_check=latest_check,
+            )
+        )
+    return summaries
 
 
-def project_summary(row, performance: ProjectPerformance | None = None) -> dict:
+def project_summary(row, performance: ProjectPerformance | None = None, latest_check=None) -> dict:
     status = str(row["status"])
     summary = {
         "id": int(row["id"]),
         "action": action_for_status(status),
+        "next_action": next_action_for_status(status, bool(row["needs_review"]), bool(row["weight_needs_review"])),
         "title": row["title"],
         "source_name": row["source_name"],
         "status": status,
@@ -34,6 +45,15 @@ def project_summary(row, performance: ProjectPerformance | None = None) -> dict:
     }
     if performance:
         summary["performance"] = performance_summary(performance)
+    if latest_check:
+        summary["latest_check"] = {
+            "check_date": latest_check["check_date"],
+            "conclusion": latest_check["conclusion"],
+            "summary": latest_check["summary"],
+            "triggered_rules": latest_check["triggered_rules"],
+        }
+    else:
+        summary["latest_check"] = None
     return summary
 
 
@@ -65,6 +85,18 @@ def action_for_status(status: str) -> str:
     if status == "exit_signal":
         return "exit_signal"
     return "track"
+
+
+def next_action_for_status(status: str, needs_review: bool = False, weight_needs_review: bool = False) -> str:
+    if status == "exit_signal":
+        return "review_exit"
+    if status == "closed":
+        return "monitor_post_close"
+    if weight_needs_review:
+        return "confirm_weights"
+    if status == "needs_review" or needs_review:
+        return "review_logic"
+    return "keep_tracking"
 
 
 def split_joined(value: str | None) -> list[str]:

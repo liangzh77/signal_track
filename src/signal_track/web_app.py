@@ -196,7 +196,14 @@ def create_app():
         if status:
             rows = [row for row in rows if str(row["status"]) == status]
         performances = {int(row["id"]): project_performance(repo, int(row["id"])) for row in rows}
-        return [project_summary(row, performance=performances[int(row["id"])]) for row in rows]
+        return [
+            project_summary(
+                row,
+                performance=performances[int(row["id"])],
+                latest_check=next(iter(repo.list_daily_checks(project_id=int(row["id"]), limit=1)), None),
+            )
+            for row in rows
+        ]
 
     @app.get("/api/exit-signals")
     def list_exit_signals(limit: int = 100):
