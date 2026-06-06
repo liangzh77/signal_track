@@ -505,10 +505,14 @@ def health_payload(repo: Repository, scheduler_enabled: bool = False) -> dict:
     latest_check = checks[0] if checks else None
     latest_publish = publish_events[0] if publish_events else None
     publish_metadata = parse_json_dict(latest_publish["metadata"]) if latest_publish else {}
+    degraded_reasons = []
+    if latest_publish and publish_metadata.get("ok") is False:
+        degraded_reasons.append("latest_publish_failed")
     return {
-        "ok": True,
+        "ok": not degraded_reasons,
         "database": {"ok": True},
         "scheduler_enabled": scheduler_enabled,
+        "degraded_reasons": degraded_reasons,
         "projects": {
             "total": len(projects),
             "active_or_review": active,

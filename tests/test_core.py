@@ -2632,6 +2632,7 @@ class SignalTrackCoreTests(unittest.TestCase):
                         json={"source": "测试源", "content": "腾讯 做多"},
                     )
                     events = client.get("/api/publish/events").json()
+                    health = client.get("/health").json()
 
             publish = created.json()["publish"]
             self.assertEqual(created.status_code, 200)
@@ -2641,6 +2642,9 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(publish["error"], '{"error":"publish failed"}')
             self.assertEqual(events[0]["status_code"], 500)
             self.assertEqual(events[0]["response_body"], '{"error":"publish failed"}')
+            self.assertFalse(health["ok"])
+            self.assertIn("latest_publish_failed", health["degraded_reasons"])
+            self.assertFalse(health["latest_publish"]["ok"])
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_mutating_web_endpoints_require_api_key_when_configured(self) -> None:
@@ -2706,6 +2710,7 @@ class SignalTrackCoreTests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(response.status_code, 200)
         self.assertTrue(payload["ok"])
+        self.assertEqual(payload["degraded_reasons"], [])
         self.assertTrue(payload["database"]["ok"])
         self.assertEqual(payload["projects"]["total"], 1)
         self.assertEqual(payload["projects"]["needs_review"], 1)

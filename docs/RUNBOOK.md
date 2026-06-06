@@ -73,12 +73,17 @@ Expected shape:
   "body": {
     "ok": true,
     "database": {"ok": true},
+    "degraded_reasons": [],
     "projects": {"total": 0, "active_or_review": 0, "exit_signal": 0, "needs_review": 0},
     "latest_check": null,
     "latest_publish": null
   }
 }
 ```
+
+If the latest dashboard publish attempt failed, `/health` returns `ok: false`
+with `degraded_reasons: ["latest_publish_failed"]`, so `scripts/healthcheck.py`
+exits non-zero.
 
 Local smoke check without touching the production database:
 
