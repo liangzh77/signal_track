@@ -168,6 +168,13 @@ def render_inbox_page() -> str:
             <label>Project ID
               <input id="project-id" autocomplete="off" inputmode="numeric" placeholder="1">
             </label>
+            <label>Project
+              <select id="project-select">
+                <option value="">Load projects</option>
+              </select>
+            </label>
+          </div>
+          <div class="row">
             <label>Note Type
               <select id="note-type">
                 <option value="source_update">source_update</option>
@@ -175,12 +182,14 @@ def render_inbox_page() -> str:
                 <option value="system_logic">system_logic</option>
               </select>
             </label>
+            <label class="inline"><input id="auto-refresh-projects" type="checkbox" checked> Auto refresh</label>
           </div>
           <label>Observation
             <textarea id="project-note" class="compact" placeholder="manual observation: ads recovered"></textarea>
           </label>
           <div class="actions">
             <button class="button primary" type="button" id="submit-note">Add Note</button>
+            <button class="button secondary" type="button" id="refresh-projects">Refresh Projects</button>
           </div>
           <label>Weights JSON
             <textarea id="weights-json" class="compact" placeholder='{"300750.SZ": 60, "600519.SH": 40}'></textarea>
@@ -220,6 +229,8 @@ def render_inbox_page() -> str:
     const fileInput = document.getElementById('file');
     const dropZone = document.getElementById('drop-zone');
     const projectIdInput = document.getElementById('project-id');
+    const projectSelectInput = document.getElementById('project-select');
+    const autoRefreshProjectsInput = document.getElementById('auto-refresh-projects');
     const noteTypeInput = document.getElementById('note-type');
     const projectNoteInput = document.getElementById('project-note');
     const weightsJsonInput = document.getElementById('weights-json');
@@ -238,6 +249,7 @@ def render_inbox_page() -> str:
       statusNode.className = ok ? 'status ok' : 'status error';
       statusNode.textContent = ok ? 'Saved' : 'Failed';
       resultNode.textContent = JSON.stringify(payload, null, 2);
+      if (ok && autoRefreshProjectsInput.checked) loadProjects();
     }
 
     async function parseResponse(response) {
@@ -285,6 +297,32 @@ def render_inbox_page() -> str:
       statusNode.textContent = '';
       resultNode.textContent = '{}';
     });
+
+    async function loadProjects() {
+      try {
+        const response = await fetch('/api/projects');
+        const projects = await parseResponse(response);
+        if (!response.ok || !Array.isArray(projects)) return;
+        const current = projectIdInput.value;
+        projectSelectInput.innerHTML = '<option value="">Select project</option>';
+        projects.forEach((project) => {
+          const option = document.createElement('option');
+          option.value = project.id;
+          option.textContent = `#${project.id} ${project.source_name} · ${project.title} · ${project.status}`;
+          projectSelectInput.appendChild(option);
+        });
+        if (current) projectSelectInput.value = current;
+      } catch (error) {
+        statusNode.className = 'status warn';
+        statusNode.textContent = 'Project list unavailable';
+      }
+    }
+
+    projectSelectInput.addEventListener('change', () => {
+      projectIdInput.value = projectSelectInput.value;
+    });
+
+    document.getElementById('refresh-projects').addEventListener('click', loadProjects);
 
     function projectId() {
       const id = projectIdInput.value.trim();
@@ -360,6 +398,7 @@ def render_inbox_page() -> str:
     dropZone.addEventListener('drop', (event) => {
       if (event.dataTransfer.files.length) fileInput.files = event.dataTransfer.files;
     });
+    loadProjects();
   </script>
 </body>
 </html>"""
