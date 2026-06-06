@@ -314,6 +314,9 @@ includes weights such as `宁德时代 60%，贵州茅台 40%`, Signal Track app
 automatically. If no weights, or only partial weights, are found, it creates an
 equal-weight project and marks the weight for review. Plain multi-instrument
 notes without portfolio markers still split into separate tracking projects.
+Percentages are treated as weights only when they appear directly after a leg or
+inside an explicit weight context such as `weights 60%, 40%`, so upside/downside
+or stop-loss percentages do not become accidental portfolio weights.
 
 Pure background mentions are intentionally not promoted into tracking projects.
 For example, a note that only says `00700.HK earnings released` is stored as a

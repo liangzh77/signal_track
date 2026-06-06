@@ -726,17 +726,22 @@ def parse_weight_hints(content: str, resolutions) -> dict[str, float]:
         instrument = resolution.instrument
         keys = [instrument.symbol, instrument.name, instrument.provider_symbol, *instrument.aliases]
         for key in keys:
-            pattern = rf"{re.escape(key)}[^\d%]{{0,16}}(\d+(?:\.\d+)?)\s*%"
+            pattern = (
+                rf"{re.escape(key)}"
+                rf"(?P<label>[\s,，:：;；()（）\-—]*"
+                rf"(?:(?:权重|占比|仓位|weight|allocation)[\s,，:：;；()（）\-—]*)?)"
+                rf"(?P<weight>\d+(?:\.\d+)?)\s*%"
+            )
             match = re.search(pattern, normalized_content, flags=re.IGNORECASE)
             if match:
-                weights[instrument.symbol] = float(match.group(1)) / 100
+                weights[instrument.symbol] = float(match.group("weight")) / 100
                 break
 
     if len(weights) == len(resolutions):
         return normalize_weights(weights)
 
     percentages = [float(value) / 100 for value in re.findall(r"(\d+(?:\.\d+)?)\s*%", normalized_content)]
-    if len(percentages) == len(resolutions):
+    if len(percentages) == len(resolutions) and has_weight_context(normalized_content):
         return normalize_weights(
             {
                 resolution.instrument.symbol: percentages[index]
@@ -745,6 +750,11 @@ def parse_weight_hints(content: str, resolutions) -> dict[str, float]:
         )
 
     return normalize_weights(weights)
+
+
+def has_weight_context(content: str) -> bool:
+    lowered = content.lower()
+    return any(word in lowered for word in ("权重", "占比", "仓位", "weight", "allocation"))
 
 
 def should_treat_as_portfolio(content: str, resolutions, weights: dict[str, float] | None = None) -> bool:
