@@ -63,6 +63,9 @@ pip install -e .[web]
 python -m signal_track.cli serve --host 127.0.0.1 --port 8000
 ```
 
+Open `http://127.0.0.1:8000/` or `/inbox` to paste source notes, upload files,
+store the API key locally in the browser, and jump to the dashboard.
+
 Set `SIGNAL_TRACK_ENABLE_SCHEDULER=true` to run scheduled checks inside the
 backend process. The built-in scheduler runs at 19:00 Asia/Shanghai for A shares,
 Hong Kong, and China futures, plus 07:00 Asia/Shanghai as a US-market catch-up
@@ -74,6 +77,7 @@ registered.
 
 Useful endpoints:
 
+- `GET /` or `/inbox`
 - `GET /health`
 - `GET /api/market-data/coverage?provider=auto`
 - `GET /api/market-data/smoke?provider=fixture&market=US_FUT&days=30`

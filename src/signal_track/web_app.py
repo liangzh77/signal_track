@@ -27,6 +27,7 @@ from .resolver import InstrumentResolver, SEED_INSTRUMENTS
 from .scheduler import build_scheduler, scheduler_job_summaries
 from .signals import SignalIngestor
 from .source_detection import remove_source_marker_lines, resolve_source_name
+from .web_inbox import render_inbox_page
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,14 @@ def create_app():
         note: str | None = None
 
     app = FastAPI(title="Signal Track", version="0.1.0")
+
+    @app.get("/", response_class=HTMLResponse)
+    def inbox():
+        return HTMLResponse(render_inbox_page())
+
+    @app.get("/inbox", response_class=HTMLResponse)
+    def inbox_alias():
+        return HTMLResponse(render_inbox_page())
 
     def require_write_auth(
         authorization: str | None = Header(default=None),

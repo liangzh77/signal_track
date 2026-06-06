@@ -2481,6 +2481,32 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("研究验证项被证伪", checks[0]["triggered_rules"])
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_inbox_page_exposes_text_and_file_ingestion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+                home = client.get("/")
+                inbox = client.get("/inbox")
+
+        self.assertEqual(home.status_code, 200)
+        self.assertEqual(inbox.status_code, 200)
+        self.assertIn("Signal Track Inbox", home.text)
+        self.assertIn("id=\"text-form\"", home.text)
+        self.assertIn("id=\"file-form\"", home.text)
+        self.assertIn("fetch('/api/inputs'", home.text)
+        self.assertIn("fetch('/api/inputs/file'", home.text)
+        self.assertIn("Authorization: `Bearer ${key}`", home.text)
+        self.assertIn("/dashboard", home.text)
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_ingest_requires_or_infers_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             env = {
