@@ -63,6 +63,8 @@ def performance_summary(performance: ProjectPerformance) -> dict:
         "latest_date": performance.latest_date,
         "points": performance.points,
         "point_count": len(performance.points),
+        "window_start": performance.window_start,
+        "window_end": performance.window_end,
         "missing_price_symbols": performance.missing_price_symbols,
         "legs": [
             {

@@ -1725,6 +1725,9 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("00700.HK", provider.calls)
             self.assertEqual(repo.count_price_bars("00700.HK"), 1)
             self.assertEqual(repo.list_daily_checks(project_id=opened.project_ids[0]), [])
+            performance = project_performance(repo, opened.project_ids[0])
+            self.assertEqual(performance.window_start, "2026-05-06")
+            self.assertEqual(performance.window_end, "2026-07-06")
             late_provider = RecordingMarketDataProvider("fixture")
             late_checked = DailyChecker(repo, late_provider).run(date(2026, 7, 10))
             self.assertEqual(late_checked, 0)
@@ -2842,7 +2845,11 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn(detail["summary"]["next_action"], {"review_logic", "review_exit", "keep_tracking"})
             self.assertIn("performance", detail["summary"])
             self.assertIn("point_count", detail["summary"]["performance"])
+            self.assertIn("window_start", detail["summary"]["performance"])
+            self.assertIn("window_end", detail["summary"]["performance"])
             self.assertIn("missing_price_symbols", detail["summary"]["performance"])
+            self.assertEqual(detail["performance"]["window_start"], detail["summary"]["performance"]["window_start"])
+            self.assertEqual(detail["performance"]["window_end"], detail["summary"]["performance"]["window_end"])
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_unknown_provider_returns_bad_request(self) -> None:

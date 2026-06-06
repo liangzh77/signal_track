@@ -32,6 +32,8 @@ class ProjectPerformance:
     points: list[tuple[str, float]]
     legs: list[LegPerformance]
     missing_price_symbols: list[str]
+    window_start: str | None = None
+    window_end: str | None = None
 
 
 def project_performance(repo: Repository, project_id: int, end_date: date | None = None) -> ProjectPerformance:
@@ -105,7 +107,7 @@ def project_performance(repo: Repository, project_id: int, end_date: date | None
         if weights_by_leg:
             portfolio_return = sum((leg.return_pct or 0) * weights_by_leg[leg.leg_id] for leg in legs)
     latest_date = max((leg.latest_date for leg in legs if leg.latest_date), default=None)
-    return ProjectPerformance(project_id, portfolio_return, latest_date, portfolio_points, legs, missing)
+    return ProjectPerformance(project_id, portfolio_return, latest_date, portfolio_points, legs, missing, chart_start, current_end)
 
 
 def instrument_from_leg_row(row) -> Instrument:

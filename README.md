@@ -110,8 +110,9 @@ see whether the input created a tracking item or closed one, plus each project's
 status, direction, symbols, source, logic score, and review flags.
 `GET /api/projects` returns the same normalized project summary plus current
 performance, curve points, missing price symbols, and leg-level return snapshots;
-use `source`, `status`, and `direction` query parameters to drive filtered
-project lists.
+performance also includes `window_start` and `window_end` so callers know the
+chart coverage range. Use `source`, `status`, and `direction` query parameters
+to drive filtered project lists.
 Project summaries also include `latest_check` and `next_action` so callers can
 surface the current decision without fetching full project details.
 `GET /api/projects/{project_id}` includes the same normalized summary under
