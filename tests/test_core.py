@@ -2810,6 +2810,71 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual({Path(row["attachment_path"]).name for row in listed}, {"note.md", "note-1.md"})
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_file_ingest_decodes_cjk_text_and_rejects_binary_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+                cjk = client.post(
+                    "/api/inputs/file",
+                    data={"source": "File Source"},
+                    files={"file": ("note.txt", "腾讯 做多，观察广告。".encode("gb18030"), "text/plain")},
+                )
+                utf16 = client.post(
+                    "/api/inputs/file",
+                    data={"source": "File Source"},
+                    files={"file": ("utf16.txt", "NVDA long, watch orders.".encode("utf-16"), "text/plain")},
+                )
+                binary = client.post(
+                    "/api/inputs/file",
+                    data={"source": "File Source"},
+                    files={"file": ("note.pdf", b"%PDF-1.7\nbinary", "application/pdf")},
+                )
+
+            raw_inputs = Repository(Database(db_path)).list_raw_inputs()
+            self.assertEqual(cjk.status_code, 200)
+            self.assertEqual(cjk.json()["resolved_symbols"], ["00700.HK"])
+            self.assertEqual(utf16.status_code, 200)
+            self.assertEqual(utf16.json()["resolved_symbols"], ["NVDA"])
+            self.assertEqual(binary.status_code, 415)
+            self.assertEqual(binary.json()["detail"]["code"], "unsupported_input_file")
+            self.assertEqual(len(raw_inputs), 2)
+            self.assertTrue(any("腾讯" in row["content"] for row in raw_inputs))
+            self.assertTrue(any("NVDA" in row["content"] for row in raw_inputs))
+
+    def test_cli_file_ingest_rejects_unsupported_binary_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            pdf_path = Path(tmp) / "note.pdf"
+            pdf_path.write_bytes(b"%PDF-1.7\nbinary")
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            output = StringIO()
+            with patch.dict("os.environ", env, clear=False):
+                with redirect_stdout(output):
+                    code = cli_main(["ingest", "--source", "CLI File Source", "--file", str(pdf_path)])
+            raw_inputs = Repository(Database(db_path)).list_raw_inputs()
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(code, 4)
+        self.assertEqual(payload["code"], "unsupported_input_file")
+        self.assertEqual(raw_inputs, [])
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_check_run_uses_configured_daily_provider_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             env = {

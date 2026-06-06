@@ -341,6 +341,11 @@ You can also ingest a text or markdown file:
 python -m signal_track.cli ingest --source 信息源A --file .\notes\source-note.md
 ```
 
+File ingestion supports text-like files such as `.txt`, `.md`, `.csv`, `.tsv`,
+and `.html`, with UTF-8/UTF-16/GB18030 decoding. Binary formats such as PDF,
+Word, Excel, PowerPoint, images, and zip archives are rejected with
+`unsupported_input_file`; convert those documents to text before ingestion.
+
 List recent raw inputs and uploaded attachment paths:
 
 ```powershell

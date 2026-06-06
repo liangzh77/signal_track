@@ -12,6 +12,7 @@ from .db import Database, Repository
 from .extraction import OpenAISignalExtractor
 from .exit_signals import exit_signal_summaries
 from .instrument_master import InstrumentMasterService
+from .input_files import UnsupportedInputFileError, decode_input_file
 from .input_summary import input_detail, input_summaries
 from .logic_supplement import build_logic_supplementer
 from .market_smoke import market_data_smoke
@@ -177,7 +178,10 @@ def create_app():
         attachments_dir.mkdir(parents=True, exist_ok=True)
         content_bytes = await file.read()
         attachment_path = save_unique_attachment(attachments_dir, file.filename, content_bytes)
-        content = content_bytes.decode("utf-8", errors="replace")
+        try:
+            content = decode_input_file(content_bytes, file.filename)
+        except UnsupportedInputFileError as exc:
+            raise HTTPException(status_code=415, detail={"code": "unsupported_input_file", "message": str(exc)}) from exc
         result = ingest_content(
             repo,
             settings,

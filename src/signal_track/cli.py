@@ -18,6 +18,7 @@ from .extraction import OpenAISignalExtractor
 from .exit_signals import exit_signal_summaries
 from .instrument_master import InstrumentMasterService
 from .input_summary import input_detail, input_summaries
+from .input_files import UnsupportedInputFileError, read_input_file
 from .logic_supplement import build_logic_supplementer
 from .market_data import MarketDataService
 from .market_smoke import market_data_smoke
@@ -538,7 +539,11 @@ def main(argv: list[str] | None = None) -> int:
         attachment_path = None
         if args.file:
             attachment = Path(args.file)
-            content = attachment.read_text(encoding="utf-8", errors="replace")
+            try:
+                content = read_input_file(attachment)
+            except UnsupportedInputFileError as exc:
+                print(json.dumps({"ok": False, "code": "unsupported_input_file", "message": str(exc)}, ensure_ascii=False))
+                return 4
             attachment_path = str(attachment)
         else:
             content = args.text if args.text is not None else sys.stdin.read()
