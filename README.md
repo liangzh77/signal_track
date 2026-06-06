@@ -292,9 +292,9 @@ Otherwise the CLI returns `source_required` and skips ingestion.
 For portfolio notes, either pass `--portfolio` or write an explicit portfolio
 marker in the note, such as `组合`, `portfolio`, `权重`, or `占比`. If the note
 includes weights such as `宁德时代 60%，贵州茅台 40%`, Signal Track applies them
-automatically. If no weights are found, it creates an equal-weight project and
-marks the weight for review. Plain multi-instrument notes without portfolio
-markers still split into separate tracking projects.
+automatically. If no weights, or only partial weights, are found, it creates an
+equal-weight project and marks the weight for review. Plain multi-instrument
+notes without portfolio markers still split into separate tracking projects.
 
 Pure background mentions are intentionally not promoted into tracking projects.
 For example, a note that only says `00700.HK earnings released` is stored as a

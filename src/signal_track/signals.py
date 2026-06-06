@@ -411,7 +411,9 @@ class SignalIngestor:
     ) -> int:
         weights = weights or {}
         default_weight = round(1 / len(resolutions), 6)
-        weight_needs_review = not weights
+        weights_complete = has_complete_weights(weights, resolutions)
+        effective_weights = normalize_weights(weights) if weights_complete else {}
+        weight_needs_review = not weights_complete
         title = "组合跟踪：" + " / ".join(resolution.instrument.name for resolution in resolutions)
         project_id = self.repo.create_tracking_project(
             title=title,
@@ -427,7 +429,7 @@ class SignalIngestor:
         )
         for resolution in resolutions:
             instrument_id = self.repo.upsert_instrument(resolution.instrument)
-            weight = resolve_weight_for_instrument(weights, resolution.instrument, default_weight)
+            weight = resolve_weight_for_instrument(effective_weights, resolution.instrument, default_weight)
             self.repo.add_project_leg(project_id, instrument_id, direction.value, weight)
         self.repo.add_logic_block(project_id, "source_logic", summarize_source_logic(content), logic_score / 10, [content[:240]])
         if needs_review or weight_needs_review:
@@ -754,6 +756,15 @@ def normalize_weights(weights: dict[str, float]) -> dict[str, float]:
     if abs(total - 1) <= 0.02:
         return weights
     return {key: value / total for key, value in weights.items()}
+
+
+def has_complete_weights(weights: dict[str, float], resolutions) -> bool:
+    if not weights or not resolutions:
+        return False
+    for resolution in resolutions:
+        if resolve_weight_for_instrument(weights, resolution.instrument, -1) <= 0:
+            return False
+    return True
 
 
 def resolve_weight_for_instrument(weights: dict[str, float], instrument, default_weight: float) -> float:
