@@ -3285,6 +3285,43 @@ class SignalTrackCoreTests(unittest.TestCase):
             checks = repo.list_daily_checks(project_id=result.project_ids[0])
             self.assertIn("跌破 5 日均线", checks[0]["triggered_rules"])
 
+    def test_daily_check_triggers_moving_average_break_above_rule(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                source_name="Short Source",
+                content="NVDA short. Exit if price breaks above 5 day moving average.",
+            )
+            instrument = repo.get_instrument("NVDA")
+            self.assertIsNotNone(instrument)
+            instrument_id = repo.upsert_instrument(instrument)
+            closes = [100, 100, 100, 100, 120]
+            bars = [
+                DailyBar(
+                    symbol="NVDA",
+                    provider_symbol="NVDA",
+                    date=date(2026, 6, index + 1),
+                    open=close,
+                    high=close,
+                    low=close,
+                    close=close,
+                    provider="test",
+                )
+                for index, close in enumerate(closes)
+            ]
+            repo.upsert_bars(instrument_id, bars)
+
+            DailyChecker(repo).run(date(2026, 6, 5))
+
+            row = repo.get_project_row(result.project_ids[0])
+            self.assertEqual(row["status"], "exit_signal")
+            checks = repo.list_daily_checks(project_id=result.project_ids[0])
+            self.assertIn("突破 5 日均线", checks[0]["triggered_rules"])
+
     def test_return_rules_parse_english_stop_loss_and_take_profit(self) -> None:
         loss_performance = ProjectPerformance(
             project_id=1,

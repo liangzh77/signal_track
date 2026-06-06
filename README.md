@@ -264,6 +264,7 @@ can show the requested post-close window without creating new daily check rows.
 Daily checks currently execute deterministic price rules found in the stored logic:
 
 - `跌破 N 日线` or `breaks below N day moving average` / `MA N`: triggers an exit signal when the latest close is below the N-day moving average.
+- `突破/高于 N 日线` or `breaks above N day moving average`: triggers an exit signal when the latest close is above the N-day moving average, useful for short-side stop logic.
 - `回撤/亏损/跌幅/止损 N%` or `drawdown/stop loss/loss/downside N%`: triggers an exit signal when project return is at or below `-N%`.
 - `止盈/涨幅/收益/盈利 N%` or `take profit/gain/upside/return N%`: triggers an exit signal when project return is at or above `N%`.
 

@@ -15,6 +15,12 @@ class RuleHit:
     severity: str = "exit_signal"
 
 
+@dataclass(frozen=True)
+class MovingAverageRule:
+    window: int
+    direction: str
+
+
 def evaluate_project_rules(
     repo: Repository,
     project_id: int,
@@ -89,24 +95,31 @@ def evaluate_moving_average_rules(
     logic_text: str,
     check_date: date,
 ) -> list[RuleHit]:
-    windows = extract_moving_average_windows(logic_text)
-    if not windows:
+    rules = extract_moving_average_rules(logic_text)
+    if not rules:
         return []
 
     hits: list[RuleHit] = []
     for leg in repo.list_project_legs(project_id):
-        for window in windows:
+        for rule in rules:
             bars = repo.list_price_bars(int(leg["instrument_id"]), end_date=check_date.isoformat())
             closes = [float(bar["close"]) for bar in bars if bar["close"] is not None]
-            if len(closes) < window:
+            if len(closes) < rule.window:
                 continue
             latest = closes[-1]
-            average = sum(closes[-window:]) / window
-            if latest < average:
+            average = sum(closes[-rule.window:]) / rule.window
+            if rule.direction == "below" and latest < average:
                 hits.append(
                     RuleHit(
                         "moving_average_break",
-                        f"{leg['symbol']} 收盘价 {latest:.2f} 跌破 {window} 日均线 {average:.2f}",
+                        f"{leg['symbol']} 收盘价 {latest:.2f} 跌破 {rule.window} 日均线 {average:.2f}",
+                    )
+                )
+            if rule.direction == "above" and latest > average:
+                hits.append(
+                    RuleHit(
+                        "moving_average_break",
+                        f"{leg['symbol']} 收盘价 {latest:.2f} 突破 {rule.window} 日均线 {average:.2f}",
                     )
                 )
     return hits
@@ -126,17 +139,26 @@ def extract_percent_thresholds(logic_text: str, keywords: tuple[str, ...]) -> li
 
 
 def extract_moving_average_windows(logic_text: str) -> list[int]:
+    return sorted({rule.window for rule in extract_moving_average_rules(logic_text)})
+
+
+def extract_moving_average_rules(logic_text: str) -> list[MovingAverageRule]:
     patterns = [
-        r"跌破\s*(\d{1,3})\s*日(?:线|均线)",
-        r"(?:breaks?|falls?|drops?)\s+below[^\n.;]{0,40}?(\d{1,3})\s*(?:day|d)[-\s]*(?:moving\s+average|ma)",
-        r"(?:below|under)[^\n.;]{0,40}?(\d{1,3})\s*(?:day|d)[-\s]*(?:moving\s+average|ma)",
-        r"(?:breaks?|falls?|drops?)\s+below[^\n.;]{0,20}?MA\s*(\d{1,3})",
-        r"\bMA\s*(\d{1,3})[^\n.;]{0,30}?(?:break|below|under)",
+        ("below", r"跌破\s*(\d{1,3})\s*日(?:线|均线)"),
+        ("below", r"(?:breaks?|falls?|drops?)\s+below[^\n.;]{0,40}?(\d{1,3})\s*(?:day|d)[-\s]*(?:moving\s+average|ma)"),
+        ("below", r"(?:below|under)[^\n.;]{0,40}?(\d{1,3})\s*(?:day|d)[-\s]*(?:moving\s+average|ma)"),
+        ("below", r"(?:breaks?|falls?|drops?)\s+below[^\n.;]{0,20}?MA\s*(\d{1,3})"),
+        ("below", r"\bMA\s*(\d{1,3})[^\n.;]{0,30}?(?:break|below|under)"),
+        ("above", r"(?:突破|升破|站上|高于)\s*(\d{1,3})\s*日(?:线|均线)"),
+        ("above", r"(?:breaks?|rises?|moves?|closes?)\s+above[^\n.;]{0,40}?(\d{1,3})\s*(?:day|d)[-\s]*(?:moving\s+average|ma)"),
+        ("above", r"(?:above|over)[^\n.;]{0,40}?(\d{1,3})\s*(?:day|d)[-\s]*(?:moving\s+average|ma)"),
+        ("above", r"(?:breaks?|rises?|moves?|closes?)\s+above[^\n.;]{0,20}?MA\s*(\d{1,3})"),
+        ("above", r"\bMA\s*(\d{1,3})[^\n.;]{0,30}?(?:break|above|over)"),
     ]
-    windows: set[int] = set()
-    for pattern in patterns:
+    rules: set[MovingAverageRule] = set()
+    for direction, pattern in patterns:
         for value in re.findall(pattern, logic_text, flags=re.IGNORECASE):
             window = int(value)
             if 1 <= window <= 250:
-                windows.add(window)
-    return sorted(windows)
+                rules.add(MovingAverageRule(window, direction))
+    return sorted(rules, key=lambda rule: (rule.window, rule.direction))
