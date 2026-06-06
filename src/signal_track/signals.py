@@ -1039,6 +1039,16 @@ def parse_weight_hints(content: str, resolutions) -> dict[str, float]:
             if match:
                 weights[instrument.symbol] = float(match.group("weight")) / 100
                 break
+            ratio_pattern = (
+                rf"{re.escape(key)}"
+                rf"[\s,，:：;；()（）\-—]*"
+                rf"(?:权重|占比|仓位|weight|allocation)[\s,，:：;；()（）\-—]*"
+                rf"(?P<weight>\d+(?:\.\d+)?)\b(?!\s*%)"
+            )
+            ratio_match = re.search(ratio_pattern, normalized_content, flags=re.IGNORECASE)
+            if ratio_match:
+                weights[instrument.symbol] = float(ratio_match.group("weight"))
+                break
 
     if len(weights) == len(resolutions):
         return normalize_weights(weights)
@@ -1052,12 +1062,39 @@ def parse_weight_hints(content: str, resolutions) -> dict[str, float]:
             }
         )
 
+    ordered_values = parse_ordered_weight_values(normalized_content, len(resolutions))
+    if ordered_values:
+        return normalize_weights(
+            {
+                resolution.instrument.symbol: ordered_values[index]
+                for index, resolution in enumerate(resolutions)
+            }
+        )
+
     return normalize_weights(weights)
 
 
 def has_weight_context(content: str) -> bool:
     lowered = content.lower()
     return any(word in lowered for word in ("权重", "占比", "仓位", "weight", "allocation"))
+
+
+def parse_ordered_weight_values(content: str, count: int) -> list[float]:
+    if count <= 0 or not has_weight_context(content):
+        return []
+    lowered = content.lower()
+    markers = ("权重", "占比", "仓位", "weights", "weight", "allocation")
+    positions = [lowered.find(marker) for marker in markers if lowered.find(marker) >= 0]
+    if not positions:
+        return []
+    tail = content[min(positions) : min(positions) + 160]
+    values = [
+        float(value)
+        for value in re.findall(r"(?<![A-Za-z0-9.])(\d+(?:\.\d+)?)(?![A-Za-z0-9.])", tail)
+    ]
+    if len(values) < count:
+        return []
+    return values[:count]
 
 
 def should_treat_as_portfolio(content: str, resolutions, weights: dict[str, float] | None = None) -> bool:

@@ -1571,6 +1571,44 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertAlmostEqual(weights["600519.SH"], 0.4)
             self.assertFalse(bool(repo.get_project_row(result.project_ids[0])["weight_needs_review"]))
 
+    def test_portfolio_ordered_ratio_weights_are_parsed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                source_name="Portfolio Desk",
+                content="portfolio long: 300750.SZ, 600519.SH, weights 6:4, watch margin and demand.",
+            )
+
+            legs = repo.list_project_legs(result.project_ids[0])
+            weights = {leg["symbol"]: leg["weight"] for leg in legs}
+            self.assertAlmostEqual(weights["300750.SZ"], 0.6)
+            self.assertAlmostEqual(weights["600519.SH"], 0.4)
+            self.assertFalse(bool(repo.get_project_row(result.project_ids[0])["weight_needs_review"]))
+
+    def test_portfolio_per_symbol_decimal_weights_are_parsed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                source_name="Portfolio Desk",
+                content="portfolio long: 300750.SZ allocation 0.6, 600519.SH allocation 0.4, watch margin and demand.",
+            )
+
+            legs = repo.list_project_legs(result.project_ids[0])
+            weights = {leg["symbol"]: leg["weight"] for leg in legs}
+            self.assertAlmostEqual(weights["300750.SZ"], 0.6)
+            self.assertAlmostEqual(weights["600519.SH"], 0.4)
+            self.assertFalse(bool(repo.get_project_row(result.project_ids[0])["weight_needs_review"]))
+
     def test_plain_multi_instrument_note_still_splits_projects(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
