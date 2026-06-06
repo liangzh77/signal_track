@@ -175,6 +175,11 @@ Run a non-destructive smoke check with a temporary database:
 python -m signal_track.cli self-check --provider fixture --out dist/self-check.html
 ```
 
+`self-check` covers source-required validation, single-project ingestion,
+low-logic system supplement, multi-instrument splitting, portfolio handling,
+fixture daily checks, and dashboard rendering without touching the configured
+database.
+
 For development without provider credentials:
 
 ```powershell

@@ -595,7 +595,12 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertTrue(result["ok"])
             self.assertTrue(result["temporary_db"])
             self.assertEqual(result["resolved_symbols"], ["00700.HK"])
-            self.assertEqual(result["checked_projects"], 1)
+            self.assertEqual(result["checked_projects"], result["project_count"])
+            self.assertGreaterEqual(result["project_count"], 5)
+            self.assertTrue(all(result["scenario_results"].values()))
+            self.assertTrue(result["scenario_results"]["requires_source"])
+            self.assertTrue(result["scenario_results"]["multi_instrument_split"])
+            self.assertTrue(result["scenario_results"]["portfolio_project"])
             self.assertTrue(html_path.exists())
 
     def test_source_name_can_be_inferred_from_content_marker(self) -> None:

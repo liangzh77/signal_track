@@ -744,12 +744,49 @@ def run_self_check(settings: Settings, provider_name: str = "fixture", out: str 
         for instrument in SEED_INSTRUMENTS:
             repo.upsert_instrument(instrument)
         resolver = InstrumentResolver(repo.list_instruments())
+        scenario_results: dict[str, bool] = {}
+
+        missing_source = resolve_source_name(None, "00700.HK long, observe ads and games.", None) is None
+        scenario_results["requires_source"] = missing_source
+
         ingest_result = SignalIngestor(repo, resolver).ingest(
             source_name="self-check",
             content="00700.HK long, observe ads and games.",
         )
+        scenario_results["single_project"] = bool(
+            ingest_result.project_ids and ingest_result.resolved_symbols == ["00700.HK"]
+        )
+
+        low_logic = SignalIngestor(repo, resolver).ingest(
+            source_name="self-check-low-logic",
+            content="腾讯 做多，先跟踪。",
+        )
+        scenario_results["low_logic_supplement"] = bool(
+            low_logic.project_ids
+            and low_logic.system_logic_added
+            and repo.list_research_items(project_id=low_logic.project_ids[0])
+        )
+
+        split = SignalIngestor(repo, resolver).ingest(
+            source_name="self-check-split",
+            content="00700.HK and NVDA long, watch ads and orders.",
+        )
+        scenario_results["multi_instrument_split"] = len(split.project_ids) == 2
+
+        portfolio = SignalIngestor(repo, resolver).ingest(
+            source_name="self-check-portfolio",
+            content="portfolio long: 300750.SZ 60%, 600519.SH 40%, watch margin and demand.",
+        )
+        portfolio_legs = repo.list_project_legs(portfolio.project_ids[0]) if portfolio.project_ids else []
+        scenario_results["portfolio_project"] = bool(
+            len(portfolio.project_ids) == 1
+            and len(portfolio_legs) == 2
+            and not bool(repo.get_project_row(portfolio.project_ids[0])["weight_needs_review"])
+        )
+
         provider = None if provider_name == "none" else build_provider(provider_name, settings)
-        checked = DailyChecker(repo, provider).run()
+        check_date = next_business_day(date.today()) if provider_name == "fixture" else date.today()
+        checked = DailyChecker(repo, provider).run(check_date)
         html = render_dashboard(repo)
         html_path = None
         if out:
@@ -759,12 +796,17 @@ def run_self_check(settings: Settings, provider_name: str = "fixture", out: str 
             html_path = str(output)
         projects = repo.list_project_rows()
         checks = repo.list_daily_checks()
+        scenario_results["daily_checks"] = bool(checked == len(projects) and checks)
+        scenario_results["dashboard"] = bool(
+            "Signal Track" in html
+            and "source-summary" in html
+            and "leg-curves" in html
+            and "研究验证项" in html
+        )
         ok = bool(
             ingest_result.project_ids
             and ingest_result.resolved_symbols
-            and checked == len(projects)
-            and checks
-            and "Signal Track" in html
+            and all(scenario_results.values())
         )
         return {
             "ok": ok,
@@ -773,8 +815,17 @@ def run_self_check(settings: Settings, provider_name: str = "fixture", out: str 
             "resolved_symbols": ingest_result.resolved_symbols,
             "checked_projects": checked,
             "daily_checks": len(checks),
+            "project_count": len(projects),
+            "scenario_results": scenario_results,
             "html": html_path,
         }
+
+
+def next_business_day(value: date) -> date:
+    current = value
+    while current.weekday() >= 5:
+        current += timedelta(days=1)
+    return current
 
 
 def default_backup_path(db_path: Path) -> Path:
