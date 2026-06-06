@@ -791,6 +791,10 @@ class SignalTrackCoreTests(unittest.TestCase):
 
             projects = client.get("/api/projects").json()
             self.assertEqual(projects[0]["source_name"], "Alpha Desk")
+            inputs = client.get("/api/inputs").json()
+            self.assertEqual(inputs[0]["source_name"], "Alpha Desk")
+            self.assertIn("00700.HK", inputs[0]["content_preview"])
+            self.assertGreater(inputs[0]["content_length"], 0)
             project_detail = client.get(f"/api/projects/{projects[0]['id']}").json()
             self.assertEqual(project_detail["research_items"][0]["item_type"], "verification_note")
             item_id = project_detail["research_items"][0]["id"]
@@ -846,6 +850,9 @@ class SignalTrackCoreTests(unittest.TestCase):
                 "00700.HK long, watch ads.",
                 "NVDA long, watch orders.",
             })
+            listed = client.get("/api/inputs").json()
+            self.assertEqual(len(listed), 2)
+            self.assertEqual({Path(row["attachment_path"]).name for row in listed}, {"note.md", "note-1.md"})
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_research_item_update_publishes_when_configured(self) -> None:

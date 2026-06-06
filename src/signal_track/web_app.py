@@ -9,6 +9,7 @@ from .dashboard import render_dashboard
 from .db import Database, Repository
 from .extraction import OpenAISignalExtractor
 from .instrument_master import InstrumentMasterService
+from .input_summary import input_summaries
 from .logic_supplement import build_logic_supplementer
 from .models import Market
 from .provider_diagnostics import market_data_coverage
@@ -108,6 +109,10 @@ def create_app():
             return market_data_coverage(settings, provider)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/inputs")
+    def list_inputs(limit: int = 100):
+        return input_summaries(repo, limit=limit)
 
     @app.post("/api/inputs", dependencies=[Depends(require_write_auth)])
     def ingest(payload: InputPayload):
