@@ -1598,6 +1598,15 @@ class SignalTrackCoreTests(unittest.TestCase):
             with self.assertRaises(ProjectActionError) as ctx:
                 add_project_logic_block(repo, result.project_ids[0], "bad", logic_type="close_logic")
             self.assertEqual(ctx.exception.code, "invalid_logic_type")
+            for bad_confidence in (float("nan"), float("inf")):
+                with self.assertRaises(ProjectActionError) as bad_ctx:
+                    add_project_logic_block(
+                        repo,
+                        result.project_ids[0],
+                        "bad confidence",
+                        confidence=bad_confidence,
+                    )
+                self.assertEqual(bad_ctx.exception.code, "invalid_confidence")
 
     def test_close_signal_updates_existing_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

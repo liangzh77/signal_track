@@ -132,8 +132,11 @@ def add_project_logic_block(
     clean_content = content.strip()
     if not clean_content:
         raise ProjectActionError("logic_content_required", "Logic content is required")
-    clean_confidence = float(confidence)
-    if clean_confidence < 0 or clean_confidence > 1:
+    try:
+        clean_confidence = float(confidence)
+    except (TypeError, ValueError) as exc:
+        raise ProjectActionError("invalid_confidence", "confidence must be a finite number between 0 and 1") from exc
+    if not math.isfinite(clean_confidence) or clean_confidence < 0 or clean_confidence > 1:
         raise ProjectActionError("invalid_confidence", "confidence must be between 0 and 1")
     repo.add_logic_block(project_id, clean_type, clean_content, clean_confidence, evidence or [clean_content[:240]])
     updated = repo.get_project_row(project_id)
