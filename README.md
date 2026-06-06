@@ -12,7 +12,7 @@ Current implementation status:
 - Unified daily bar interface with fixture, Tushare, yfinance, and auto-routed providers.
 - Heuristic extraction plus optional OpenAI Structured Outputs extraction and low-logic tracking supplement.
 - Daily check flow with price refresh, return calculation, exit-signal thresholding, and HTML rendering.
-- Glassmorphism dashboard with source/status/direction filters, project list, detail cards, report snapshots, logic blocks, and SVG return curves.
+- Glassmorphism dashboard with source/status/direction filters, project list, detail cards, embedded report snapshots, logic blocks, and SVG return curves.
 - CLI and FastAPI backend for ingestion, checking, rendering, publishing, and serving.
 
 ## Quick Start
@@ -116,7 +116,9 @@ surface the current decision without fetching full project details.
 research report assembled from source logic, system-supplemented
 3C-5M-3D-3T tracking logic, research verification items, latest checks, and
 price performance. It marks unverified data as review material rather than
-confirmed facts.
+confirmed facts. The published dashboard also embeds the Markdown report body in
+each project detail card so the static uploaded page remains usable without a
+live backend.
 `GET /api/exit-signals` and `list-exit-signals` use the same performance-bearing
 summary and include the latest check that triggered the signal.
 `extractor` accepts `auto`, `heuristic`, or `openai`; unknown values return `400`

@@ -6,7 +6,7 @@ from datetime import datetime
 
 from .analytics import project_performance
 from .db import Repository
-from .project_report import build_project_report
+from .project_report import build_project_report, render_project_report_markdown
 
 
 def render_dashboard(repo: Repository) -> str:
@@ -177,6 +177,9 @@ def render_dashboard(repo: Repository) -> str:
     .framework-tags {{ display: flex; flex-wrap: wrap; gap: 6px; }}
     .framework-tag {{ border: 1px solid rgba(231,238,232,.14); border-radius: 999px; padding: 3px 8px; color: var(--muted); font-size: 11px; line-height: 16px; }}
     .framework-tag.covered {{ color: var(--cyan); border-color: rgba(68,215,200,.45); background: rgba(68,215,200,.08); }}
+    .report-body {{ border: 1px solid rgba(231,238,232,.1); border-radius: 8px; background: rgba(0,0,0,.16); overflow: hidden; }}
+    .report-body summary {{ cursor: pointer; padding: 9px 10px; color: var(--cyan); font-size: 12px; line-height: 18px; }}
+    .report-body pre {{ margin: 0; max-height: 360px; overflow: auto; padding: 12px; white-space: pre-wrap; word-break: break-word; color: var(--muted); font: 12px/18px "IBM Plex Mono", "Geist Mono", monospace; border-top: 1px solid rgba(231,238,232,.08); }}
     @media (max-width: 900px) {{
       .shell {{ padding: 16px; }}
       .metrics {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
@@ -433,6 +436,7 @@ def render_report_snapshot(repo: Repository, project_id: int) -> str:
     if not report:
         return ""
     verification = report["data_verification"]
+    markdown = render_project_report_markdown(report)
     covered = {section["name"] for section in report["framework"] if section["items"]}
     tags = "".join(
         f"<span class='framework-tag{' covered' if name in covered else ''}'>{escape(name)}</span>"
@@ -450,6 +454,10 @@ def render_report_snapshot(repo: Repository, project_id: int) -> str:
         f"<div class='report-stat'><span>contradicted</span><strong>{verification['contradicted_count']}</strong></div>"
         "</div>"
         f"<div class='framework-tags'>{tags}</div>"
+        "<details class='report-body'>"
+        "<summary>View embedded report</summary>"
+        f"<pre>{escape(markdown)}</pre>"
+        "</details>"
         "</section>"
     )
 
