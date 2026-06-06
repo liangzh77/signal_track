@@ -52,7 +52,7 @@ def auto_coverage(tushare_ready: bool, yfinance_ready: bool) -> list[dict]:
             master_provider = "tushare"
             real_master = True
 
-        if market in {Market.HK, Market.US, Market.US_FUT} and price_provider is None and yfinance_ready:
+        if market in {Market.HK, Market.HK_FUT, Market.US, Market.US_FUT} and price_provider is None and yfinance_ready:
             price_provider = "yfinance"
 
         if master_provider == "seed_fallback":
@@ -88,7 +88,7 @@ def tushare_coverage(tushare_ready: bool) -> list[dict]:
 def yfinance_coverage(yfinance_ready: bool) -> list[dict]:
     rows: list[dict] = []
     for market in all_markets():
-        supported = market in {Market.HK, Market.US, Market.US_FUT}
+        supported = market in {Market.HK, Market.HK_FUT, Market.US, Market.US_FUT}
         notes: list[str] = []
         if supported:
             notes.append("instrument master refresh is not supported; use Tushare or seed fallback")
@@ -128,7 +128,7 @@ def coverage_row(
 def missing_dependency_note(market: Market, tushare_ready: bool, yfinance_ready: bool) -> str:
     if market in {Market.CN_A, Market.CN_FUT}:
         return "requires TUSHARE_TOKEN and installed tushare package"
-    if market == Market.US_FUT:
+    if market in {Market.HK_FUT, Market.US_FUT}:
         return "requires installed yfinance package"
     if market in {Market.HK, Market.US}:
         if not tushare_ready and not yfinance_ready:
@@ -141,4 +141,4 @@ def dependency_available(package_name: str) -> bool:
 
 
 def all_markets() -> tuple[Market, ...]:
-    return (Market.CN_A, Market.HK, Market.CN_FUT, Market.US, Market.US_FUT)
+    return (Market.CN_A, Market.HK, Market.CN_FUT, Market.HK_FUT, Market.US, Market.US_FUT)

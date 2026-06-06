@@ -165,6 +165,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             ("宁德时代", Market.CN_A, "300750.SZ"),
             ("00700", Market.HK, "00700.HK"),
             ("铜主连", Market.CN_FUT, "CU.SHF"),
+            ("恒指期货", Market.HK_FUT, "HSI"),
             ("NVDA.US", Market.US, "NVDA"),
             ("纳指期货", Market.US_FUT, "NQ"),
         ]
@@ -184,6 +185,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             ("9868", Market.HK, "09868.HK", Market.HK),
             ("TSLA.US", None, "TSLA", Market.US),
             ("TSLA", None, "TSLA", Market.US),
+            ("MHI=F", Market.HK_FUT, "MHI", Market.HK_FUT),
             ("ES=F", None, "ES", Market.US_FUT),
             ("CU2601.SHF", None, "CU2601.SHF", Market.CN_FUT),
         ]
@@ -271,37 +273,58 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIsNotNone(repo.get_instrument("300750.SZ"))
             self.assertIsNotNone(repo.get_instrument("600519.SH"))
 
-    def test_refresh_all_markets_includes_us_futures(self) -> None:
+    def test_instrument_master_refresh_many_marks_unsupported_markets_skipped(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            results = InstrumentMasterService(repo, RecordingMarketDataProvider("limited")).refresh_many(
+                [Market.HK_FUT]
+            )
+
+            self.assertEqual(results[0].market, Market.HK_FUT)
+            self.assertTrue(results[0].skipped)
+            self.assertIsNotNone(results[0].error)
+
+    def test_refresh_all_markets_includes_hk_and_us_futures(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
             db.init()
             repo = Repository(db)
             markets = cli_refresh_markets("all")
 
+            self.assertIn(Market.HK_FUT, markets)
             self.assertIn(Market.US_FUT, markets)
             results = InstrumentMasterService(repo, FixtureMarketDataProvider()).refresh_many(markets)
 
+            self.assertTrue(any(result.market == Market.HK_FUT and result.count >= 2 for result in results))
             self.assertTrue(any(result.market == Market.US_FUT and result.count >= 2 for result in results))
+            self.assertIsNotNone(repo.get_instrument("HSI"))
             self.assertIsNotNone(repo.get_instrument("NQ"))
 
     def test_auto_market_provider_routes_by_market_and_falls_back_to_seed_master(self) -> None:
         cn_provider = RecordingMarketDataProvider("cn")
+        hk_future_provider = RecordingMarketDataProvider("hk-fut")
         us_provider = RecordingMarketDataProvider("us")
         provider = AutoMarketDataProvider.from_market_map(
             {
                 Market.CN_A: cn_provider,
+                Market.HK_FUT: hk_future_provider,
                 Market.US_FUT: us_provider,
             }
         )
 
         provider.get_daily_bars(SEED_INSTRUMENTS[0], date(2026, 6, 1), date(2026, 6, 5))
+        provider.get_daily_bars(next(item for item in SEED_INSTRUMENTS if item.symbol == "HSI"), date(2026, 6, 1), date(2026, 6, 5))
         provider.get_daily_bars(SEED_INSTRUMENTS[-1], date(2026, 6, 1), date(2026, 6, 5))
 
         self.assertEqual(cn_provider.calls, ["300750.SZ"])
+        self.assertEqual(hk_future_provider.calls, ["HSI"])
         self.assertEqual(us_provider.calls, ["NQ"])
+        self.assertEqual([instrument.symbol for instrument in provider.list_instruments(Market.HK_FUT)], ["HSI", "HHI"])
         self.assertEqual([instrument.symbol for instrument in provider.list_instruments(Market.US_FUT)], ["ES", "NQ"])
 
-    def test_auto_provider_prefers_tushare_and_uses_yfinance_for_us_futures(self) -> None:
+    def test_auto_provider_prefers_tushare_and_uses_yfinance_for_futures_fallbacks(self) -> None:
         tushare_provider = RecordingMarketDataProvider("tushare")
         yfinance_provider = RecordingMarketDataProvider("yfinance")
         settings = Settings(
@@ -321,10 +344,11 @@ class SignalTrackCoreTests(unittest.TestCase):
                 provider = build_auto_provider(settings)
 
         provider.get_daily_bars(SEED_INSTRUMENTS[2], date(2026, 6, 1), date(2026, 6, 5))
+        provider.get_daily_bars(next(item for item in SEED_INSTRUMENTS if item.symbol == "HSI"), date(2026, 6, 1), date(2026, 6, 5))
         provider.get_daily_bars(SEED_INSTRUMENTS[-1], date(2026, 6, 1), date(2026, 6, 5))
 
         self.assertEqual(tushare_provider.calls, ["00700.HK"])
-        self.assertEqual(yfinance_provider.calls, ["NQ"])
+        self.assertEqual(yfinance_provider.calls, ["HSI", "NQ"])
 
     def test_yfinance_price_field_handles_multiindex_shapes(self) -> None:
         normal_row = {"Close": 101.5}
@@ -358,6 +382,9 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(by_market["CN_A"]["price_provider"], "tushare")
         self.assertEqual(by_market["HK"]["price_provider"], "tushare")
         self.assertEqual(by_market["CN_FUT"]["instrument_master_provider"], "tushare")
+        self.assertEqual(by_market["HK_FUT"]["price_provider"], "yfinance")
+        self.assertEqual(by_market["HK_FUT"]["instrument_master_provider"], "seed_fallback")
+        self.assertFalse(by_market["HK_FUT"]["real_instrument_master"])
         self.assertEqual(by_market["US_FUT"]["price_provider"], "yfinance")
         self.assertEqual(by_market["US_FUT"]["instrument_master_provider"], "seed_fallback")
         self.assertFalse(by_market["US_FUT"]["real_instrument_master"])
@@ -381,6 +408,7 @@ class SignalTrackCoreTests(unittest.TestCase):
         by_market = {row["market"]: row for row in coverage["markets"]}
         self.assertFalse(by_market["CN_A"]["price_available"])
         self.assertIn("TUSHARE_TOKEN", by_market["CN_A"]["notes"][1])
+        self.assertFalse(by_market["HK_FUT"]["price_available"])
         self.assertFalse(by_market["US_FUT"]["price_available"])
 
     def test_cli_self_check_runs_non_destructive_smoke_flow(self) -> None:
@@ -1387,7 +1415,7 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(response.json()["provider"], "auto")
         self.assertEqual(
             {row["market"] for row in response.json()["markets"]},
-            {"CN_A", "HK", "CN_FUT", "US", "US_FUT"},
+            {"CN_A", "HK", "CN_FUT", "HK_FUT", "US", "US_FUT"},
         )
 
 

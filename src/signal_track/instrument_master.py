@@ -12,6 +12,8 @@ class RefreshResult:
     market: Market
     count: int
     symbols: list[str]
+    skipped: bool = False
+    error: str | None = None
 
 
 class InstrumentMasterService:
@@ -28,5 +30,10 @@ class InstrumentMasterService:
         return RefreshResult(market=market, count=len(symbols), symbols=symbols)
 
     def refresh_many(self, markets: list[Market]) -> list[RefreshResult]:
-        return [self.refresh(market) for market in markets]
-
+        results: list[RefreshResult] = []
+        for market in markets:
+            try:
+                results.append(self.refresh(market))
+            except (NotImplementedError, ValueError) as exc:
+                results.append(RefreshResult(market=market, count=0, symbols=[], skipped=True, error=str(exc)))
+        return results

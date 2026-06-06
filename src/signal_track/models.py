@@ -10,6 +10,7 @@ class Market(StrEnum):
     CN_A = "CN_A"
     HK = "HK"
     CN_FUT = "CN_FUT"
+    HK_FUT = "HK_FUT"
     US = "US"
     US_FUT = "US_FUT"
 

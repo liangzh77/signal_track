@@ -8,7 +8,7 @@ Current implementation status:
 
 - Local configuration via `.env`.
 - SQLite schema for instruments, prices, sources, inputs, tracking projects, logic blocks, research items, daily checks, and publish events.
-- Instrument resolver for A shares, Hong Kong stocks, China futures, US stocks, and US futures seed symbols.
+- Instrument resolver for A shares, Hong Kong stocks, China futures, Hong Kong futures, US stocks, and US futures seed symbols.
 - Unified daily bar interface with fixture, Tushare, yfinance, and auto-routed providers.
 - Heuristic extraction plus optional OpenAI Structured Outputs extraction and low-logic tracking supplement.
 - Daily check flow with price refresh, return calculation, exit-signal thresholding, and HTML rendering.
@@ -212,11 +212,11 @@ python -m signal_track.cli backup-db --out data\backup.sqlite3
 ## Market Data Providers
 
 - `fixture`: deterministic local bars for tests and UI development.
-- `auto`: routes by market. Tushare handles A shares, Hong Kong stocks, China futures, and US stocks when `TUSHARE_TOKEN` is configured; yfinance handles Hong Kong stocks, US stocks, and US futures when installed.
+- `auto`: routes by market. Tushare handles A shares, Hong Kong stocks, China futures, and US stocks when `TUSHARE_TOKEN` is configured; yfinance handles Hong Kong stocks, Hong Kong futures, US stocks, and US futures when installed.
 - `tushare`: A shares, Hong Kong stocks, China futures, and US stocks when `TUSHARE_TOKEN` is configured.
-- `yfinance`: temporary fallback for US stocks, Hong Kong stocks, and US futures.
+- `yfinance`: temporary fallback for US stocks, Hong Kong stocks, Hong Kong futures, and US futures.
 
-US futures support is intentionally provider-abstracted. For production-grade historical futures data, wire the same interface to CME DataMine or another licensed futures source.
+Hong Kong and US futures support is intentionally provider-abstracted. For production-grade historical futures data, wire the same interface to HKEX Data Services, CME DataMine, or another licensed futures source.
 yfinance parsing accepts both ordinary columns and MultiIndex columns returned by
 newer yfinance versions.
 

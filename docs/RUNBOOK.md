@@ -76,7 +76,8 @@ curl http://127.0.0.1:8765/api/market-data/coverage?provider=auto
 
 Before relying on the daily job, confirm the report marks the required markets as
 `price_available: true`. A shares and China futures require Tushare credentials;
-US futures require the yfinance package or a future licensed futures adapter.
+Hong Kong futures and US futures require the yfinance package or a future
+licensed futures adapter.
 
 ## Initial Data Setup
 

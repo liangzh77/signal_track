@@ -76,6 +76,30 @@ SEED_INSTRUMENTS: tuple[Instrument, ...] = (
         metadata={"continuous": True, "root": "IF"},
     ),
     Instrument(
+        symbol="HSI",
+        provider_symbol="HSI=F",
+        name="Hang Seng Index Futures",
+        aliases=("HSI", "HSI=F", "恒指期货", "恒生指数期货", "Hang Seng futures"),
+        market=Market.HK_FUT,
+        asset_type=AssetType.CONTINUOUS_FUTURE,
+        exchange="HKEX",
+        currency="HKD",
+        timezone="Asia/Hong_Kong",
+        metadata={"continuous": True, "root": "HSI"},
+    ),
+    Instrument(
+        symbol="HHI",
+        provider_symbol="HHI=F",
+        name="Hang Seng China Enterprises Index Futures",
+        aliases=("HHI", "HHI=F", "国指期货", "恒生国企期货", "HSCEI futures"),
+        market=Market.HK_FUT,
+        asset_type=AssetType.CONTINUOUS_FUTURE,
+        exchange="HKEX",
+        currency="HKD",
+        timezone="Asia/Hong_Kong",
+        metadata={"continuous": True, "root": "HHI"},
+    ),
+    Instrument(
         symbol="AAPL",
         provider_symbol="AAPL",
         name="Apple Inc.",
@@ -260,6 +284,20 @@ def synthesize_instrument(raw_value: str, symbol: str, market_hint: Market | Non
             timezone="Asia/Shanghai",
             metadata={"synthetic": True, "continuous": True, "root": root},
         )
+    if is_hk_future_root(symbol) and (re.fullmatch(r"[A-Z]{2,3}=F", upper) or market_hint == Market.HK_FUT):
+        root = symbol.removesuffix("=F")
+        return Instrument(
+            symbol=root,
+            provider_symbol=f"{root}=F",
+            name=f"{root} Hong Kong continuous future",
+            aliases=(root, f"{root}=F"),
+            market=Market.HK_FUT,
+            asset_type=AssetType.CONTINUOUS_FUTURE,
+            exchange="HKEX",
+            currency="HKD",
+            timezone="Asia/Hong_Kong",
+            metadata={"synthetic": True, "continuous": True, "root": root},
+        )
     if re.fullmatch(r"[A-Z]{1,3}=F", upper) or market_hint == Market.US_FUT:
         root = symbol.removesuffix("=F")
         if not re.fullmatch(r"[A-Z]{1,3}", root):
@@ -308,3 +346,7 @@ def cn_future_exchange(suffix: str) -> str:
         "INE": "INE",
         "GFE": "GFEX",
     }[suffix]
+
+
+def is_hk_future_root(symbol: str) -> bool:
+    return symbol.removesuffix("=F").upper() in {"HSI", "HHI", "MHI"}

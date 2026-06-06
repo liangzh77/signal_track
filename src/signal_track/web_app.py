@@ -203,7 +203,12 @@ def create_app():
         return {
             "provider": provider.name,
             "results": [
-                {"market": result.market.value, "count": result.count}
+                {
+                    "market": result.market.value,
+                    "count": result.count,
+                    "skipped": result.skipped,
+                    "error": result.error,
+                }
                 for result in results
             ],
         }
@@ -405,7 +410,7 @@ def result_response(repo: Repository, result, publish_result: dict) -> dict:
 
 def refresh_markets(value: str) -> list[Market]:
     if value == "all":
-        return [Market.CN_A, Market.HK, Market.CN_FUT, Market.US, Market.US_FUT]
+        return [Market.CN_A, Market.HK, Market.CN_FUT, Market.HK_FUT, Market.US, Market.US_FUT]
     try:
         return [Market(value)]
     except ValueError as exc:

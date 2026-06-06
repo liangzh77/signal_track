@@ -23,7 +23,7 @@ class YFinanceMarketDataProvider(MarketDataProvider):
         end_date: date,
         adjustment: str = "none",
     ) -> list[DailyBar]:
-        if instrument.market not in {Market.US, Market.US_FUT, Market.HK}:
+        if instrument.market not in {Market.US, Market.US_FUT, Market.HK, Market.HK_FUT}:
             raise ValueError(f"yfinance provider does not support {instrument.market}")
 
         auto_adjust = adjustment in {"adj", "auto"}
