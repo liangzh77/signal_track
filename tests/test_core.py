@@ -864,6 +864,44 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(repo.get_project_row(source_a.project_ids[0])["status"], "closed")
             self.assertIn(repo.get_project_row(source_b.project_ids[0])["status"], {"active", "needs_review"})
 
+    def test_single_leg_close_does_not_close_portfolio_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+            single = ingestor.ingest("Desk", "300750.SZ long, watch battery margin.")
+            portfolio = ingestor.ingest(
+                "Desk",
+                "portfolio long: 300750.SZ 60%, 600519.SH 40%, watch margin and demand.",
+            )
+
+            closed = ingestor.ingest("Desk", "300750.SZ close, margin signal failed.")
+
+            self.assertEqual(closed.project_ids, single.project_ids)
+            self.assertEqual(repo.get_project_row(single.project_ids[0])["status"], "closed")
+            self.assertIn(repo.get_project_row(portfolio.project_ids[0])["status"], {"active", "needs_review"})
+
+    def test_full_portfolio_close_closes_matching_portfolio_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+            portfolio = ingestor.ingest(
+                "Desk",
+                "portfolio long: 300750.SZ 60%, 600519.SH 40%, watch margin and demand.",
+            )
+
+            closed = ingestor.ingest("Desk", "portfolio close: 300750.SZ and 600519.SH, thesis failed.")
+
+            self.assertEqual(closed.project_ids, portfolio.project_ids)
+            self.assertEqual(repo.get_project_row(portfolio.project_ids[0])["status"], "closed")
+
     def test_unmatched_close_signal_does_not_create_tracking_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")

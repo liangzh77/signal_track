@@ -315,6 +315,11 @@ raw input but does not create a new tracking project:
 python -m signal_track.cli ingest --source 信息源A --text "腾讯 平仓，游戏复苏低于预期。"
 ```
 
+For portfolio projects, a close signal must resolve the full portfolio symbol set
+before the portfolio is closed. A close signal for only one leg closes a matching
+single-instrument project from the same source, but does not close the whole
+portfolio.
+
 If the same source sends a non-close follow-up for the same active instrument and
 direction, Signal Track appends a `source_update` logic block to the existing
 project instead of creating a duplicate tracking item.

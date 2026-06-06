@@ -277,27 +277,34 @@ class SignalIngestor:
     def _close_existing_projects(self, source_id: int, content: str, resolutions, logic_score: float) -> list[int]:
         closed_ids: list[int] = []
         closed_at = date.today().isoformat()
+        close_symbols = {resolution.instrument.symbol for resolution in resolutions}
+        candidate_ids: set[int] = set()
         for resolution in resolutions:
             for project_id in self.repo.find_active_project_ids_by_source_symbol(
                 source_id,
                 resolution.instrument.symbol,
             ):
-                self.repo.close_project(
-                    project_id,
-                    closed_at,
-                    metadata={
-                        "close_reason": summarize_source_logic(content),
-                        "closed_by_signal": True,
-                    },
-                )
-                self.repo.add_logic_block(
-                    project_id,
-                    "close_logic",
-                    summarize_source_logic(content),
-                    logic_score / 10,
-                    [content[:240]],
-                )
-                closed_ids.append(project_id)
+                candidate_ids.add(project_id)
+        for project_id in sorted(candidate_ids):
+            leg_symbols = {str(leg["symbol"]) for leg in self.repo.list_project_legs(project_id)}
+            if len(leg_symbols) > 1 and leg_symbols != close_symbols:
+                continue
+            self.repo.close_project(
+                project_id,
+                closed_at,
+                metadata={
+                    "close_reason": summarize_source_logic(content),
+                    "closed_by_signal": True,
+                },
+            )
+            self.repo.add_logic_block(
+                project_id,
+                "close_logic",
+                summarize_source_logic(content),
+                logic_score / 10,
+                [content[:240]],
+            )
+            closed_ids.append(project_id)
         return sorted(set(closed_ids))
 
     def _append_existing_project_updates(
