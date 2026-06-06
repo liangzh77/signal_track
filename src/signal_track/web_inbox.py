@@ -65,6 +65,7 @@ def render_inbox_page() -> str:
       padding: 10px 11px; outline: none;
     }
     textarea { min-height: 280px; resize: vertical; line-height: 1.55; }
+    textarea.compact { min-height: 96px; }
     input:focus, textarea:focus, select:focus { border-color: rgba(68,215,200,.65); box-shadow: 0 0 0 3px rgba(68,215,200,.08); }
     .row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     .inline { display: flex; align-items: center; gap: 9px; color: var(--muted); min-height: 38px; }
@@ -161,6 +162,47 @@ def render_inbox_page() -> str:
       </aside>
 
       <article class="card panel">
+        <h2>Project Update</h2>
+        <div class="form">
+          <div class="row">
+            <label>Project ID
+              <input id="project-id" autocomplete="off" inputmode="numeric" placeholder="1">
+            </label>
+            <label>Note Type
+              <select id="note-type">
+                <option value="source_update">source_update</option>
+                <option value="manual_note">manual_note</option>
+                <option value="system_logic">system_logic</option>
+              </select>
+            </label>
+          </div>
+          <label>Observation
+            <textarea id="project-note" class="compact" placeholder="manual observation: ads recovered"></textarea>
+          </label>
+          <div class="actions">
+            <button class="button primary" type="button" id="submit-note">Add Note</button>
+          </div>
+          <label>Weights JSON
+            <textarea id="weights-json" class="compact" placeholder='{"300750.SZ": 60, "600519.SH": 40}'></textarea>
+          </label>
+          <div class="actions">
+            <button class="button secondary" type="button" id="submit-weights">Update Weights</button>
+          </div>
+          <div class="row">
+            <label>Close Date
+              <input id="close-date" type="date">
+            </label>
+            <label>Close Reason
+              <input id="close-reason" autocomplete="off" placeholder="manual exit after thesis broke">
+            </label>
+          </div>
+          <div class="actions">
+            <button class="button secondary" type="button" id="submit-close">Close Project</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="card panel">
         <h2>Result</h2>
         <div id="status" class="status"></div>
         <pre id="result">{}</pre>
@@ -177,6 +219,12 @@ def render_inbox_page() -> str:
     const resultNode = document.getElementById('result');
     const fileInput = document.getElementById('file');
     const dropZone = document.getElementById('drop-zone');
+    const projectIdInput = document.getElementById('project-id');
+    const noteTypeInput = document.getElementById('note-type');
+    const projectNoteInput = document.getElementById('project-note');
+    const weightsJsonInput = document.getElementById('weights-json');
+    const closeDateInput = document.getElementById('close-date');
+    const closeReasonInput = document.getElementById('close-reason');
 
     apiKeyInput.value = localStorage.getItem('signalTrackApiKey') || '';
     apiKeyInput.addEventListener('input', () => localStorage.setItem('signalTrackApiKey', apiKeyInput.value));
@@ -236,6 +284,69 @@ def render_inbox_page() -> str:
       statusNode.className = 'status';
       statusNode.textContent = '';
       resultNode.textContent = '{}';
+    });
+
+    function projectId() {
+      const id = projectIdInput.value.trim();
+      if (!id) {
+        show({ error: 'Project ID is required' }, false);
+        return null;
+      }
+      return id;
+    }
+
+    async function runProjectAction(path, options) {
+      try {
+        statusNode.className = 'status warn';
+        statusNode.textContent = 'Updating...';
+        const response = await fetch(path, options);
+        show(await parseResponse(response), response.ok);
+      } catch (error) {
+        show({ error: error.message }, false);
+      }
+    }
+
+    document.getElementById('submit-note').addEventListener('click', async () => {
+      const id = projectId();
+      if (!id) return;
+      await runProjectAction(`/api/projects/${id}/logic-blocks`, {
+        method: 'POST',
+        headers: headers({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          logic_type: noteTypeInput.value,
+          content: projectNoteInput.value,
+          confidence: 1.0,
+        }),
+      });
+    });
+
+    document.getElementById('submit-weights').addEventListener('click', async () => {
+      const id = projectId();
+      if (!id) return;
+      let weights;
+      try { weights = JSON.parse(weightsJsonInput.value || '{}'); }
+      catch (error) {
+        show({ error: 'Weights JSON is invalid' }, false);
+        return;
+      }
+      await runProjectAction(`/api/projects/${id}/weights`, {
+        method: 'PATCH',
+        headers: headers({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ weights }),
+      });
+    });
+
+    document.getElementById('submit-close').addEventListener('click', async () => {
+      const id = projectId();
+      if (!id) return;
+      await runProjectAction(`/api/projects/${id}/close`, {
+        method: 'POST',
+        headers: headers({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          closed_date: closeDateInput.value || null,
+          reason: closeReasonInput.value || null,
+        }),
+      });
     });
 
     ['dragenter', 'dragover'].forEach((name) => dropZone.addEventListener(name, (event) => {
