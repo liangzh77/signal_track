@@ -61,3 +61,13 @@ def extract_published_address(body: str) -> str | None:
         return None
     address = data.get("address")
     return str(address) if address else None
+
+
+def publish_payload(result: PublishResult, publish_url: str | None = None) -> dict:
+    return {
+        "attempted": True,
+        "ok": result.ok,
+        "status_code": result.status_code,
+        "url": extract_published_address(result.body),
+        "publish_url": publish_url,
+    }

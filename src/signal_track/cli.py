@@ -307,6 +307,8 @@ def main(argv: list[str] | None = None) -> int:
                     "checked_projects": checked,
                     "published": publish_result.ok if publish_result else False,
                     "status_code": publish_result.status_code if publish_result else None,
+                    "published_url": extract_published_address(publish_result.body) if publish_result else None,
+                    "publish_url": settings.demo_publish_url if publish_result else None,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -387,6 +389,8 @@ def main(argv: list[str] | None = None) -> int:
                     "system_logic_added": result.system_logic_added,
                     "published": publish_result.ok if publish_result else False,
                     "status_code": publish_result.status_code if publish_result else None,
+                    "published_url": extract_published_address(publish_result.body) if publish_result else None,
+                    "publish_url": settings.demo_publish_url if publish_result else None,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -438,7 +442,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(
             json.dumps(
-                {"ok": result.ok, "status_code": result.status_code, "body": result.body[:500]},
+                {
+                    "ok": result.ok,
+                    "status_code": result.status_code,
+                    "url": extract_published_address(result.body),
+                    "publish_url": settings.demo_publish_url,
+                    "body": result.body[:500],
+                },
                 ensure_ascii=False,
                 indent=2,
             )
@@ -481,6 +491,8 @@ def main(argv: list[str] | None = None) -> int:
                     "html": str(out_path),
                     "published": publish_result.ok if publish_result else False,
                     "status_code": publish_result.status_code if publish_result else None,
+                    "published_url": extract_published_address(publish_result.body) if publish_result else None,
+                    "publish_url": settings.demo_publish_url if publish_result else None,
                 },
                 ensure_ascii=False,
                 indent=2,

@@ -754,6 +754,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(updated_item.status_code, 200)
             self.assertEqual(updated_item.json()["item"]["status"], "verified")
             self.assertFalse(updated_item.json()["publish"]["attempted"])
+            self.assertIsNone(updated_item.json()["publish"]["url"])
 
             closed = client.post("/api/inputs", json={"source": "Alpha Desk", "content": "00700.HK 平仓，广告低于预期"})
             self.assertEqual(closed.status_code, 200)
@@ -787,10 +788,15 @@ class SignalTrackCoreTests(unittest.TestCase):
                     )
                     events = client.get("/api/publish/events").json()
                     project_detail = client.get(f"/api/projects/{project_id}").json()
+                    manual_publish = client.post("/api/publish")
 
             self.assertEqual(updated.status_code, 200)
             self.assertEqual(updated.json()["checked_projects"], 1)
             self.assertTrue(updated.json()["publish"]["ok"])
+            self.assertEqual(updated.json()["publish"]["url"], "https://example.com/demo/signal")
+            self.assertEqual(updated.json()["publish"]["publish_url"], "https://example.com/api/publish")
+            self.assertEqual(manual_publish.status_code, 200)
+            self.assertEqual(manual_publish.json()["url"], "https://example.com/demo/signal")
             self.assertEqual(events[0]["url"], "https://example.com/demo/signal")
             self.assertEqual(project_detail["project"]["status"], "needs_review")
 

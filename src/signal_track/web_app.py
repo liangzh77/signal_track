@@ -13,7 +13,7 @@ from .logic_supplement import build_logic_supplementer
 from .models import Market
 from .provider_diagnostics import market_data_coverage
 from .project_summary import project_summaries
-from .publisher import DemoPublisher, extract_published_address
+from .publisher import DemoPublisher, extract_published_address, publish_payload
 from .providers.factory import build_market_data_provider
 from .resolver import InstrumentResolver, SEED_INSTRUMENTS
 from .scheduler import build_scheduler
@@ -272,16 +272,17 @@ def create_app():
             title="Signal Track 投资信号看板",
             html=render_dashboard(repo),
         )
+        published_url = extract_published_address(result.body)
         repo.record_publish_event(
             title="Signal Track 投资信号看板",
-            url=extract_published_address(result.body) or settings.demo_publish_url,
+            url=published_url or settings.demo_publish_url,
             status_code=result.status_code,
             response_body=result.body,
             metadata={"ok": result.ok},
         )
         if not result.ok:
             raise HTTPException(status_code=result.status_code or 502, detail=result.body)
-        return {"ok": True, "status_code": result.status_code}
+        return {"ok": True, "status_code": result.status_code, "url": published_url, "publish_url": settings.demo_publish_url}
 
     return app
 
@@ -354,17 +355,24 @@ def refresh_markets(value: str) -> list[Market]:
 
 def maybe_publish(repo: Repository, settings: Settings, feature: str) -> dict:
     if not settings.demo_publish_url or not settings.demo_api_key:
-        return {"attempted": False, "ok": False, "reason": "publish credentials not configured"}
+        return {
+            "attempted": False,
+            "ok": False,
+            "url": None,
+            "publish_url": settings.demo_publish_url,
+            "reason": "publish credentials not configured",
+        }
     result = DemoPublisher(settings.demo_publish_url, settings.demo_api_key).publish(
         title="Signal Track 投资信号看板",
         html=render_dashboard(repo),
         feature=feature,
     )
+    payload = publish_payload(result, settings.demo_publish_url)
     repo.record_publish_event(
         title="Signal Track 投资信号看板",
-        url=extract_published_address(result.body) or settings.demo_publish_url,
+        url=payload["url"] or settings.demo_publish_url,
         status_code=result.status_code,
         response_body=result.body,
         metadata={"ok": result.ok, "feature": feature},
     )
-    return {"attempted": True, "ok": result.ok, "status_code": result.status_code}
+    return payload

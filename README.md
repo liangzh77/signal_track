@@ -83,6 +83,8 @@ Useful endpoints:
 
 When publish credentials are configured, `POST /api/inputs` and `POST /api/checks/run`
 automatically publish the refreshed dashboard.
+Publish responses include `url` when the publish API returns a public dashboard
+address, plus `publish_url` for the API endpoint that was called.
 
 Ingestion responses include a `projects` summary so the caller can immediately
 see whether the input created a tracking item or closed one, plus each project's
