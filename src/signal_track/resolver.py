@@ -213,6 +213,8 @@ def infer_symbol(value: str, market_hint: Market | None = None) -> str | None:
             return f"{raw}.SH"
     if market_hint == Market.HK and re.fullmatch(r"\d{1,5}", raw):
         return raw.zfill(5) + ".HK"
+    if market_hint is None and re.fullmatch(r"\d{4,5}", raw) and not is_likely_year(raw):
+        return raw.zfill(5) + ".HK"
     if re.fullmatch(r"\d{1,5}\.HK", raw):
         number = raw.split(".", 1)[0].zfill(5)
         return f"{number}.HK"
@@ -382,3 +384,7 @@ def cn_future_exchange(suffix: str) -> str:
 
 def is_hk_future_root(symbol: str) -> bool:
     return symbol.removesuffix("=F").upper() in {"HSI", "HHI", "MHI"}
+
+
+def is_likely_year(value: str) -> bool:
+    return bool(re.fullmatch(r"(?:19|20)\d{2}", value))

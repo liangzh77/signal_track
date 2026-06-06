@@ -152,6 +152,9 @@ If no source can be determined, ingestion returns `source_required` and does not
 create a tracking project.
 If you put the source and note on one line, separate them with `;`, `；`, or `|`,
 for example `信息源：Alpha Desk；00700.HK 做多，观察广告`.
+Hong Kong stock codes can be written as `9868`, `09868`, or `9868.HK`; plain
+4-5 digit codes are normalized to `.HK` while common years and percentages are
+ignored as instrument candidates.
 
 If `SIGNAL_TRACK_API_KEY` is configured, mutating endpoints require either:
 

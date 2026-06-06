@@ -813,6 +813,7 @@ def extract_probe_terms(content: str) -> list[str]:
     patterns = [
         (r"\b\d{6}(?:\.(?:SZ|SH))?\b", re.IGNORECASE),
         (r"\b\d{1,5}\.HK\b", re.IGNORECASE),
+        (r"\b\d{4,5}\b", 0),
         (r"\b[A-Z]{1,5}(?:\.US|=F)?\b", 0),
         (r"[\u4e00-\u9fffA-Za-z0-9\-]{2,20}", 0),
     ]
@@ -831,11 +832,17 @@ def should_probe_term(term: str) -> bool:
         return True
     if re.fullmatch(r"\d{1,5}\.HK", term, flags=re.IGNORECASE):
         return True
+    if re.fullmatch(r"\d{4,5}", term):
+        return not is_likely_year(term)
     if re.fullmatch(r"[A-Z]{1,5}(?:\.US|=F)?", term):
         return True
     if re.fullmatch(r"[A-Z]{1,4}\d{3,4}\.(?:SHF|DCE|CZC|CFX|INE|GFE)", term):
         return True
     return bool(re.fullmatch(r"[A-Z][A-Za-z]{2,19}", term))
+
+
+def is_likely_year(term: str) -> bool:
+    return bool(re.fullmatch(r"(?:19|20)\d{2}", term))
 
 
 def detect_direction(content: str) -> Direction:

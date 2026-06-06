@@ -44,7 +44,7 @@ from signal_track.providers.yfinance_provider import get_price_field
 from signal_track.project_actions import ProjectActionError, add_project_logic_block, update_tracking_project_weights
 from signal_track.resolver import InstrumentResolver, SEED_INSTRUMENTS
 from signal_track.rules import evaluate_return_rules
-from signal_track.signals import SignalIngestor
+from signal_track.signals import SignalIngestor, extract_probe_terms
 from signal_track.source_detection import remove_source_marker_lines, resolve_source_name
 
 try:
@@ -390,6 +390,7 @@ class SignalTrackCoreTests(unittest.TestCase):
         cases = [
             ("002594", None, "002594.SZ", Market.CN_A),
             ("9868", Market.HK, "09868.HK", Market.HK),
+            ("9868", None, "09868.HK", Market.HK),
             ("TSLA.US", None, "TSLA", Market.US),
             ("TSLA", None, "TSLA", Market.US),
             ("MHI=F", Market.HK_FUT, "MHI", Market.HK_FUT),
@@ -411,6 +412,7 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIsNone(resolver.resolve("if"))
         self.assertIsNone(resolver.resolve("pipeline"))
         self.assertIsNone(resolver.resolve("IF"))
+        self.assertIsNone(resolver.resolve("2026"))
         self.assertEqual(InstrumentResolver().resolve("IF").instrument.symbol, "IF.CFX")
 
     def test_database_initialization_and_fixture_bar_storage(self) -> None:
@@ -1653,6 +1655,35 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertFalse(result.system_logic_added)
             self.assertEqual(repo.list_project_rows(), [])
             self.assertEqual(len(repo.list_raw_inputs()), 1)
+
+    def test_heuristic_plain_hk_numeric_code_creates_synthetic_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                "HK Desk",
+                "9868 做多，观察毛利率和订单恢复。",
+            )
+
+            self.assertEqual(result.resolved_symbols, ["09868.HK"])
+            self.assertEqual(len(result.project_ids), 1)
+            project = repo.list_project_rows()[0]
+            self.assertEqual(project["symbols"], "09868.HK")
+            instrument = repo.get_instrument("09868.HK")
+            self.assertEqual(instrument.market, Market.HK)
+            self.assertTrue(instrument.metadata["synthetic"])
+
+    def test_heuristic_year_and_percentages_are_not_synthetic_hk_symbols(self) -> None:
+        resolver = InstrumentResolver()
+        terms = extract_probe_terms("2026 年收入增长 20%，止损 10%，观察 20 日线")
+
+        self.assertNotIn("2026", terms)
+        self.assertNotIn("20", terms)
+        self.assertIsNone(resolver.resolve("2026"))
 
     def test_heuristic_later_symbol_resolves_unresolved_project_without_duplicate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
