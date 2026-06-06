@@ -40,7 +40,7 @@ from signal_track.providers.factory import build_market_data_provider
 from signal_track.providers.fixture import FixtureMarketDataProvider
 from signal_track.providers.tushare_provider import TushareMarketDataProvider
 from signal_track.providers.yfinance_provider import get_price_field
-from signal_track.project_actions import ProjectActionError, update_tracking_project_weights
+from signal_track.project_actions import ProjectActionError, add_project_logic_block, update_tracking_project_weights
 from signal_track.resolver import InstrumentResolver, SEED_INSTRUMENTS
 from signal_track.rules import evaluate_return_rules
 from signal_track.signals import SignalIngestor
@@ -1391,6 +1391,35 @@ class SignalTrackCoreTests(unittest.TestCase):
                 update_tracking_project_weights(repo, result.project_ids[0], {"300750.SZ": 1.0})
             self.assertEqual(ctx.exception.code, "incomplete_weights")
 
+    def test_add_project_logic_block_appends_manual_observation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            result = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                source_name="Manual Desk",
+                content="00700.HK long, watch ads recovery.",
+            )
+
+            updated = add_project_logic_block(
+                repo,
+                result.project_ids[0],
+                "manual check: ad revenue recovered faster than expected",
+                logic_type="manual_note",
+                confidence=0.8,
+                evidence=["checked company update"],
+            )
+            logic = repo.list_logic_blocks(result.project_ids[0])
+
+            self.assertIsNotNone(updated)
+            self.assertTrue(any(block["logic_type"] == "manual_note" for block in logic))
+            self.assertTrue(any("ad revenue recovered" in block["content"] for block in logic))
+            with self.assertRaises(ProjectActionError) as ctx:
+                add_project_logic_block(repo, result.project_ids[0], "bad", logic_type="close_logic")
+            self.assertEqual(ctx.exception.code, "invalid_logic_type")
+
     def test_close_signal_updates_existing_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
@@ -2172,6 +2201,51 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertAlmostEqual(weights["300750.SZ"], 0.65)
             self.assertAlmostEqual(weights["600519.SH"], 0.35)
 
+    def test_cli_add_project_note_appends_logic_block(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with redirect_stdout(StringIO()):
+                    create_code = cli_main([
+                        "ingest",
+                        "--source",
+                        "CLI Note Desk",
+                        "--text",
+                        "00700.HK long, watch ads.",
+                    ])
+                repo = Repository(Database(db_path))
+                project_id = int(repo.list_project_rows()[0]["id"])
+                note_output = StringIO()
+                with redirect_stdout(note_output):
+                    note_code = cli_main([
+                        "add-project-note",
+                        str(project_id),
+                        "--text",
+                        "manual observation: ads data improved",
+                        "--type",
+                        "manual_note",
+                        "--confidence",
+                        "0.7",
+                        "--evidence-json",
+                        '["checked internal note"]',
+                    ])
+
+            payload = json.loads(note_output.getvalue())
+            logic = Repository(Database(db_path)).list_logic_blocks(project_id)
+            self.assertEqual(create_code, 0)
+            self.assertEqual(note_code, 0)
+            self.assertTrue(payload["ok"])
+            self.assertTrue(any(block["logic_type"] == "manual_note" for block in logic))
+            self.assertTrue(any("ads data improved" in block["content"] for block in logic))
+
     def test_daily_logic_evaluator_can_trigger_exit_signal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
@@ -2836,6 +2910,47 @@ class SignalTrackCoreTests(unittest.TestCase):
                 ).status_code,
                 400,
             )
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_add_project_logic_block_endpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_API_KEY": "",
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+
+            created = client.post(
+                "/api/inputs",
+                json={"source": "Manual Desk", "content": "00700.HK long, watch ads recovery."},
+            )
+            project_id = created.json()["project_ids"][0]
+            added = client.post(
+                f"/api/projects/{project_id}/logic-blocks",
+                json={
+                    "logic_type": "manual_note",
+                    "content": "manual observation: ads trend improved",
+                    "confidence": 0.75,
+                    "evidence": ["checked ad tracker"],
+                },
+            )
+            invalid = client.post(
+                f"/api/projects/{project_id}/logic-blocks",
+                json={"logic_type": "close_logic", "content": "bad"},
+            )
+
+            self.assertEqual(added.status_code, 200)
+            self.assertFalse(added.json()["publish"]["attempted"])
+            self.assertTrue(any(block["logic_type"] == "manual_note" for block in added.json()["logic_blocks"]))
+            self.assertTrue(any("ads trend improved" in block["content"] for block in added.json()["logic_blocks"]))
+            self.assertEqual(invalid.status_code, 400)
+            self.assertEqual(invalid.json()["detail"]["code"], "invalid_logic_type")
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_update_project_weights_endpoint(self) -> None:

@@ -5,6 +5,8 @@ from datetime import date
 
 from .db import Repository
 
+ALLOWED_MANUAL_LOGIC_TYPES = {"source_update", "system_logic", "manual_note"}
+
 
 class ProjectActionError(ValueError):
     def __init__(self, code: str, message: str):
@@ -102,6 +104,34 @@ def update_tracking_project_weights(
         1.0,
         [f"{leg_id}: {weight:.6f}" for leg_id, weight in sorted(normalized.items())],
     )
+    updated = repo.get_project_row(project_id)
+    return dict(updated) if updated else None
+
+
+def add_project_logic_block(
+    repo: Repository,
+    project_id: int,
+    content: str,
+    logic_type: str = "source_update",
+    confidence: float = 1.0,
+    evidence: list[str] | None = None,
+) -> dict | None:
+    project = repo.get_project_row(project_id)
+    if not project:
+        return None
+    clean_type = (logic_type or "source_update").strip()
+    if clean_type not in ALLOWED_MANUAL_LOGIC_TYPES:
+        raise ProjectActionError(
+            "invalid_logic_type",
+            "logic_type must be one of: " + ", ".join(sorted(ALLOWED_MANUAL_LOGIC_TYPES)),
+        )
+    clean_content = content.strip()
+    if not clean_content:
+        raise ProjectActionError("logic_content_required", "Logic content is required")
+    clean_confidence = float(confidence)
+    if clean_confidence < 0 or clean_confidence > 1:
+        raise ProjectActionError("invalid_confidence", "confidence must be between 0 and 1")
+    repo.add_logic_block(project_id, clean_type, clean_content, clean_confidence, evidence or [clean_content[:240]])
     updated = repo.get_project_row(project_id)
     return dict(updated) if updated else None
 

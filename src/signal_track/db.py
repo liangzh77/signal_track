@@ -701,6 +701,14 @@ class Repository:
                     json.dumps(evidence or [], ensure_ascii=False),
                 ),
             )
+            conn.execute(
+                """
+                UPDATE tracking_projects
+                SET updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (project_id,),
+            )
             return int(cur.lastrowid)
 
     def add_research_items(

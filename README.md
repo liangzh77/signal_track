@@ -93,6 +93,7 @@ Useful endpoints:
 - `GET /api/projects/{project_id}/report?format=markdown` or `format=json`
 - `POST /api/projects/{project_id}/close` with `{ "closed_date": "2026-06-10", "reason": "..." }`
 - `PATCH /api/projects/{project_id}/weights` with `{ "weights": { "300750.SZ": 60, "600519.SH": 40 } }`
+- `POST /api/projects/{project_id}/logic-blocks` with `{ "logic_type": "manual_note", "content": "...", "confidence": 0.8 }`
 - `GET /api/research-items`
 - `PATCH /api/research-items/{item_id}` with `{ "status": "verified" }`
 - `POST /api/checks/run` with optional `{ "provider": "auto", "date": "2026-06-10" }`; if provider is omitted, it uses `SIGNAL_TRACK_DAILY_PROVIDER`
@@ -466,6 +467,7 @@ python -m signal_track.cli export-project-report 1 --out reports/project-1.md
 python -m signal_track.cli export-project-report 1 --format json
 python -m signal_track.cli update-research-item 1 --status verified --source-note "checked filing"
 python -m signal_track.cli update-research-item 1 --status contradicted --check --provider auto --publish
+python -m signal_track.cli add-project-note 1 --text "manual observation: ads recovered" --type manual_note
 python -m signal_track.cli update-project-weights 1 --weights-json '{"300750.SZ":60,"600519.SH":40}'
 python -m signal_track.cli close-project 1 --date 2026-06-10 --reason "manual exit after thesis broke" --publish
 ```
@@ -473,4 +475,6 @@ python -m signal_track.cli close-project 1 --date 2026-06-10 --reason "manual ex
 When publish credentials are configured, research item updates publish the
 refreshed dashboard automatically unless `--no-publish` is passed. Pass
 `run_check: true` in the API, or `--check` in the CLI, to recalculate active
-project status immediately after a research item update.
+project status immediately after a research item update. Use `add-project-note`
+or `POST /api/projects/{project_id}/logic-blocks` to append manual observation
+logic without pretending it came from the original source note.

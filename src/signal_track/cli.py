@@ -24,7 +24,7 @@ from .market_data import MarketDataService
 from .market_smoke import market_data_smoke
 from .models import Direction, Market, ProjectStatus
 from .provider_diagnostics import market_data_coverage
-from .project_actions import ProjectActionError, close_tracking_project, update_tracking_project_weights
+from .project_actions import ProjectActionError, add_project_logic_block, close_tracking_project, update_tracking_project_weights
 from .project_report import build_project_report, render_project_report_markdown
 from .project_summary import project_summaries, project_summary
 from .publisher import DemoPublisher, extract_published_address
@@ -148,6 +148,23 @@ def main(argv: list[str] | None = None) -> int:
     weights_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after updating weights.")
     weights_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     weights_parser.add_argument("--title", default="Signal Track 投资信号看板")
+
+    note_parser = subparsers.add_parser("add-project-note", help="Append manual observation logic to a project.")
+    note_parser.add_argument("project_id", type=int)
+    note_parser.add_argument("--text", help="Logic note. Reads stdin if omitted.")
+    note_parser.add_argument(
+        "--type",
+        choices=["source_update", "system_logic", "manual_note"],
+        default="source_update",
+        help="Logic block type to append.",
+    )
+    note_parser.add_argument("--confidence", type=float, default=1.0)
+    note_parser.add_argument("--evidence-json", help='Optional JSON array of evidence strings.')
+    note_parser.add_argument("--check", action="store_true", help="Run a daily check after adding the note.")
+    note_parser.add_argument("--provider", choices=["none", "auto", "fixture", "tushare", "yfinance"], default="none")
+    note_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after adding the note.")
+    note_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
+    note_parser.add_argument("--title", default="Signal Track 投资信号看板")
 
     ingest_parser = subparsers.add_parser("ingest", help="Create tracking projects from raw source text.")
     ingest_parser.add_argument("--source")
@@ -543,6 +560,73 @@ def main(argv: list[str] | None = None) -> int:
                     "ok": True,
                     "project": project_summaries(repo, [args.project_id])[0],
                     "legs": [dict(row) for row in repo.list_project_legs(args.project_id)],
+                    "published": publish_result.ok if publish_result else False,
+                    "status_code": publish_result.status_code if publish_result else None,
+                    "published_url": extract_published_address(publish_result.body) if publish_result else None,
+                    "publish_url": settings.demo_publish_url if publish_result else None,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0 if publish_result is None or publish_result.ok else 1
+
+    if args.command == "add-project-note":
+        db.init()
+        note_text = args.text if args.text is not None else sys.stdin.read()
+        evidence = None
+        if args.evidence_json:
+            try:
+                parsed = json.loads(args.evidence_json)
+                if not isinstance(parsed, list):
+                    raise ValueError("evidence-json must be a JSON array")
+                evidence = [str(item) for item in parsed]
+            except (json.JSONDecodeError, ValueError, TypeError) as exc:
+                print(json.dumps({"ok": False, "code": "invalid_evidence_json", "message": str(exc)}, ensure_ascii=False))
+                return 2
+        try:
+            project = add_project_logic_block(
+                repo,
+                args.project_id,
+                note_text,
+                logic_type=args.type,
+                confidence=args.confidence,
+                evidence=evidence,
+            )
+        except ProjectActionError as exc:
+            print(json.dumps({"ok": False, "code": exc.code, "message": exc.message}, ensure_ascii=False))
+            return 2
+        if not project:
+            print(json.dumps({"ok": False, "code": "project_not_found"}, ensure_ascii=False))
+            return 2
+        checked = None
+        if args.check:
+            try:
+                provider = build_market_data_provider(args.provider, settings)
+            except ValueError as exc:
+                print(json.dumps({"ok": False, "code": "provider_error", "message": str(exc)}, ensure_ascii=False))
+                return 2
+            checked = DailyChecker(
+                repo,
+                provider,
+                evaluator=build_daily_evaluator_from_settings(settings),
+            ).run()
+        publish_result = None
+        if should_publish_update(settings, forced=args.publish, disabled=args.no_publish):
+            publish_result = publish_dashboard(
+                repo,
+                settings,
+                title=args.title,
+                feature=f"Project {args.project_id} logic updated",
+                flow="add-project-note",
+            )
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "project": project_summaries(repo, [args.project_id])[0],
+                    "logic_blocks": [dict(row) for row in repo.list_logic_blocks(args.project_id)],
+                    "checked_projects": checked,
                     "published": publish_result.ok if publish_result else False,
                     "status_code": publish_result.status_code if publish_result else None,
                     "published_url": extract_published_address(publish_result.body) if publish_result else None,

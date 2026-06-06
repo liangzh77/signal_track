@@ -178,6 +178,7 @@ the weights after confirmation:
 /srv/signal-track/venv/bin/python -m signal_track.cli list-projects --status needs_review --direction long
 /srv/signal-track/venv/bin/python -m signal_track.cli export-project-report 1 --out /srv/signal-track/shared/project-1.md
 /srv/signal-track/venv/bin/python -m signal_track.cli update-project-weights 1 --weights-json '{"300750.SZ":60,"600519.SH":40}'
+/srv/signal-track/venv/bin/python -m signal_track.cli add-project-note 1 --text "manual observation: ads recovered" --type manual_note
 ```
 
 ## Manual Daily Run

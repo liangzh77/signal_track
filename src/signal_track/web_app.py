@@ -18,7 +18,7 @@ from .logic_supplement import build_logic_supplementer
 from .market_smoke import market_data_smoke
 from .models import Direction, Market
 from .provider_diagnostics import market_data_coverage
-from .project_actions import ProjectActionError, close_tracking_project, update_tracking_project_weights
+from .project_actions import ProjectActionError, add_project_logic_block, close_tracking_project, update_tracking_project_weights
 from .project_report import build_project_report, render_project_report_markdown
 from .project_summary import project_summaries, project_summary
 from .publisher import DemoPublisher, extract_published_address, publish_payload
@@ -82,6 +82,14 @@ def create_app():
     class ProjectWeightsPayload(BaseModel):
         weights: dict[str, float]
         note: str | None = None
+
+    class ProjectLogicPayload(BaseModel):
+        content: str
+        logic_type: str = "source_update"
+        confidence: float = 1.0
+        evidence: list[str] | None = None
+        run_check: bool = False
+        provider: str = "none"
 
     app = FastAPI(title="Signal Track", version="0.1.0")
 
@@ -341,6 +349,40 @@ def create_app():
         return {
             "project": project_summaries(repo, [project_id])[0],
             "legs": [dict(row) for row in repo.list_project_legs(project_id)],
+            "publish": publish_result,
+        }
+
+    @app.post("/api/projects/{project_id}/logic-blocks", dependencies=[Depends(require_write_auth)])
+    def add_project_logic(project_id: int, payload: ProjectLogicPayload):
+        try:
+            project = add_project_logic_block(
+                repo,
+                project_id,
+                payload.content,
+                logic_type=payload.logic_type,
+                confidence=payload.confidence,
+                evidence=payload.evidence,
+            )
+        except ProjectActionError as exc:
+            raise HTTPException(status_code=400, detail={"code": exc.code, "message": exc.message}) from exc
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        checked = None
+        if payload.run_check:
+            try:
+                provider = build_market_data_provider(payload.provider, settings)
+            except ValueError as exc:
+                raise provider_http_exception(exc) from exc
+            checked = DailyChecker(
+                repo,
+                provider,
+                evaluator=build_daily_evaluator_from_settings(settings),
+            ).run()
+        publish_result = maybe_publish(repo, settings, f"Project {project_id} logic updated")
+        return {
+            "project": project_summaries(repo, [project_id])[0],
+            "logic_blocks": [dict(row) for row in repo.list_logic_blocks(project_id)],
+            "checked_projects": checked,
             "publish": publish_result,
         }
 
