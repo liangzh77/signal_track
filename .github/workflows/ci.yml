@@ -42,6 +42,11 @@ jobs:
           python -m signal_track.cli --db data/ci.sqlite3 daily-run --date 2026-06-05 --provider fixture --out dist/ci-dashboard.html
           test -s dist/ci-dashboard.html
 
+      - name: Run built-in self check
+        run: |
+          python -m signal_track.cli self-check --provider fixture --out dist/self-check.html
+          test -s dist/self-check.html
+
       - name: Run API health smoke
         run: |
           python -m signal_track.cli --db data/ci-web.sqlite3 serve --host 127.0.0.1 --port 8765 &
