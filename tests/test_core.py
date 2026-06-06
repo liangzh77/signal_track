@@ -25,6 +25,7 @@ from signal_track.daily_evaluator import DailyEvaluation, DailyLogicEvaluator, O
 from signal_track.exit_signals import exit_signal_summaries
 from signal_track.extraction import ExtractedInput, ExtractedSignal
 from signal_track.instrument_master import InstrumentMasterService
+from signal_track.input_summary import project_input_history
 from signal_track.logic_supplement import LogicSupplement, LogicSupplementer, OpenAILogicSupplementer
 from signal_track.market_smoke import market_data_smoke
 from signal_track.market_data import MarketDataService
@@ -1093,6 +1094,25 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("Input Desk", html)
             self.assertIn("00700.HK", html)
             self.assertIn("projects 1", html)
+
+    def test_project_input_history_scans_beyond_recent_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+            opened = ingestor.ingest("History Desk", "00700.HK long, watch ads recovery.")
+
+            for index in range(120):
+                ingestor.ingest("Noise Desk", f"NVDA earnings released background note {index}.")
+
+            history = project_input_history(repo, opened.project_ids[0])
+
+            self.assertEqual([item["id"] for item in history], [opened.raw_input_id])
+            self.assertEqual(history[0]["input_action"], "track")
+            self.assertEqual(history[0]["source_name"], "History Desk")
 
     def test_structured_extraction_can_create_portfolio_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

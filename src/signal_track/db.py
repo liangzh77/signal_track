@@ -539,17 +539,19 @@ class Repository:
                 (json.dumps(merged_metadata, ensure_ascii=False), input_id),
             )
 
-    def list_raw_inputs(self, limit: int = 100) -> list[sqlite3.Row]:
+    def list_raw_inputs(self, limit: int | None = 100) -> list[sqlite3.Row]:
+        limit_clause = "" if limit is None else "LIMIT ?"
+        params = () if limit is None else (limit,)
         with self.db.session() as conn:
             return conn.execute(
-                """
+                f"""
                 SELECT r.*, s.name AS source_name
                 FROM raw_inputs r
                 JOIN sources s ON s.id = r.source_id
                 ORDER BY r.id DESC
-                LIMIT ?
+                {limit_clause}
                 """,
-                (limit,),
+                params,
             ).fetchall()
 
     def get_raw_input(self, input_id: int) -> sqlite3.Row | None:

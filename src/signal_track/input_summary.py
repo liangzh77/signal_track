@@ -20,7 +20,7 @@ def input_detail(repo: Repository, input_id: int) -> dict | None:
 
 def project_input_history(repo: Repository, project_id: int, limit: int = 50) -> list[dict]:
     history: list[dict] = []
-    for row in repo.list_raw_inputs(limit=max(limit * 10, 100)):
+    for row in repo.list_raw_inputs(limit=None):
         summary = input_summary(repo, row)
         if project_id not in summary["project_ids"]:
             continue
