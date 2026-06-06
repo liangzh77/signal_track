@@ -251,6 +251,32 @@ def render_inbox_page() -> str:
       </article>
 
       <article class="card panel">
+        <h2>Daily Operations</h2>
+        <div class="form">
+          <div class="row">
+            <label>Provider
+              <select id="check-provider">
+                <option value="">default</option>
+                <option value="none">none</option>
+                <option value="fixture">fixture</option>
+                <option value="auto">auto</option>
+                <option value="tushare">tushare</option>
+                <option value="yfinance">yfinance</option>
+              </select>
+            </label>
+            <label>Check Date
+              <input id="check-date" type="date">
+            </label>
+          </div>
+          <div class="actions">
+            <button class="button primary" type="button" id="run-checks">Run Check</button>
+            <button class="button secondary" type="button" id="publish-dashboard">Publish Dashboard</button>
+            <button class="button secondary" type="button" id="refresh-health">Refresh Health</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="card panel">
         <h2>Result</h2>
         <div id="status" class="status"></div>
         <pre id="result">{}</pre>
@@ -280,6 +306,8 @@ def render_inbox_page() -> str:
     const researchProviderInput = document.getElementById('research-provider');
     const researchSourceNoteInput = document.getElementById('research-source-note');
     const researchRunCheckInput = document.getElementById('research-run-check');
+    const checkProviderInput = document.getElementById('check-provider');
+    const checkDateInput = document.getElementById('check-date');
 
     apiKeyInput.value = localStorage.getItem('signalTrackApiKey') || '';
     apiKeyInput.addEventListener('input', () => localStorage.setItem('signalTrackApiKey', apiKeyInput.value));
@@ -474,6 +502,35 @@ def render_inbox_page() -> str:
           provider: researchProviderInput.value,
         }),
       });
+    });
+
+    document.getElementById('run-checks').addEventListener('click', async () => {
+      await runProjectAction('/api/checks/run', {
+        method: 'POST',
+        headers: headers({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          provider: checkProviderInput.value || null,
+          date: checkDateInput.value || null,
+        }),
+      });
+    });
+
+    document.getElementById('publish-dashboard').addEventListener('click', async () => {
+      await runProjectAction('/api/publish', {
+        method: 'POST',
+        headers: headers({ 'Content-Type': 'application/json' }),
+      });
+    });
+
+    document.getElementById('refresh-health').addEventListener('click', async () => {
+      try {
+        statusNode.className = 'status warn';
+        statusNode.textContent = 'Checking health...';
+        const response = await fetch('/health');
+        show(await parseResponse(response), response.ok);
+      } catch (error) {
+        show({ error: error.message }, false);
+      }
     });
 
     ['dragenter', 'dragover'].forEach((name) => dropZone.addEventListener(name, (event) => {
