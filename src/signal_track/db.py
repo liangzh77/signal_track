@@ -127,6 +127,19 @@ CREATE TABLE IF NOT EXISTS daily_checks (
   FOREIGN KEY(project_id) REFERENCES tracking_projects(id)
 );
 
+CREATE TABLE IF NOT EXISTS research_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL,
+  item_type TEXT NOT NULL,
+  content TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  source_note TEXT,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(project_id) REFERENCES tracking_projects(id)
+);
+
 CREATE TABLE IF NOT EXISTS publish_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   published_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -138,7 +151,22 @@ CREATE TABLE IF NOT EXISTS publish_events (
 );
 """
 
-CURRENT_SCHEMA_VERSION = 1
+RESEARCH_ITEMS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS research_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL,
+  item_type TEXT NOT NULL,
+  content TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  source_note TEXT,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(project_id) REFERENCES tracking_projects(id)
+);
+"""
+
+CURRENT_SCHEMA_VERSION = 2
 
 REQUIRED_COLUMNS: dict[str, dict[str, str]] = {
     "raw_inputs": {
@@ -161,6 +189,11 @@ REQUIRED_COLUMNS: dict[str, dict[str, str]] = {
     },
     "daily_checks": {
         "triggered_rules": "TEXT NOT NULL DEFAULT '[]'",
+    },
+    "research_items": {
+        "source_note": "TEXT",
+        "metadata": "TEXT NOT NULL DEFAULT '{}'",
+        "updated_at": "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
     },
     "publish_events": {
         "url": "TEXT",
@@ -216,6 +249,7 @@ class Database:
 
 
 def migrate_connection(conn: sqlite3.Connection) -> int:
+    conn.executescript(RESEARCH_ITEMS_SCHEMA)
     conn.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
     for table, columns in REQUIRED_COLUMNS.items():
         existing = table_columns(conn, table)
@@ -519,6 +553,31 @@ class Repository:
             )
             return int(cur.lastrowid)
 
+    def add_research_items(
+        self,
+        project_id: int,
+        items: list[dict[str, object]],
+    ) -> int:
+        if not items:
+            return 0
+        with self.db.session() as conn:
+            for item in items:
+                conn.execute(
+                    """
+                    INSERT INTO research_items(project_id, item_type, content, status, source_note, metadata)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        project_id,
+                        str(item.get("item_type") or "verification_note"),
+                        str(item.get("content") or ""),
+                        str(item.get("status") or "pending"),
+                        item.get("source_note"),
+                        json.dumps(item.get("metadata") or {}, ensure_ascii=False),
+                    ),
+                )
+        return len(items)
+
     def list_project_rows(self) -> list[sqlite3.Row]:
         with self.db.session() as conn:
             return conn.execute(
@@ -610,6 +669,30 @@ class Repository:
                 ORDER BY logic_type, id
                 """,
                 (project_id,),
+            ).fetchall()
+
+    def list_research_items(
+        self,
+        project_id: int | None = None,
+        limit: int = 100,
+    ) -> list[sqlite3.Row]:
+        where = ""
+        params: list[object] = []
+        if project_id is not None:
+            where = "WHERE r.project_id = ?"
+            params.append(project_id)
+        params.append(limit)
+        with self.db.session() as conn:
+            return conn.execute(
+                f"""
+                SELECT r.*, p.title
+                FROM research_items r
+                JOIN tracking_projects p ON p.id = r.project_id
+                {where}
+                ORDER BY r.status DESC, r.created_at DESC, r.id DESC
+                LIMIT ?
+                """,
+                params,
             ).fetchall()
 
     def list_price_bars(

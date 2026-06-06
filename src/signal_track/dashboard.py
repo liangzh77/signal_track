@@ -133,6 +133,12 @@ def render_dashboard(repo: Repository) -> str:
     .check-log-item {{ border: 1px solid rgba(231,238,232,.08); border-radius: 8px; padding: 10px; background: rgba(255,255,255,.018); }}
     .check-log-top {{ display: flex; justify-content: space-between; gap: 10px; margin-bottom: 5px; font-size: 12px; }}
     .check-log-summary {{ color: var(--muted); font-size: 12px; line-height: 18px; }}
+    .research-items {{ display: grid; gap: 8px; margin: 10px 0 14px; }}
+    .research-items h4 {{ margin: 0; font-size: 12px; line-height: 18px; color: var(--muted); }}
+    .research-item {{ display: grid; grid-template-columns: 120px 1fr 88px; gap: 8px; align-items: start; border: 1px solid rgba(231,238,232,.08); border-radius: 8px; padding: 9px 10px; background: rgba(255,255,255,.018); font-size: 12px; line-height: 18px; }}
+    .research-item strong {{ color: var(--cyan); font-weight: 600; }}
+    .research-item span {{ color: var(--muted); }}
+    .research-item em {{ color: var(--amber); font-style: normal; text-align: right; }}
     @media (max-width: 900px) {{
       .shell {{ padding: 16px; }}
       .metrics {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
@@ -253,6 +259,7 @@ def render_project_detail(repo: Repository, row, performance) -> str:
     logic_blocks = repo.list_logic_blocks(int(row["id"]))
     logic_html = "\n".join(render_logic_block(block) for block in logic_blocks)
     check_log = render_project_check_log(repo.list_daily_checks(project_id=int(row["id"]), limit=5))
+    research_items = render_research_items(repo.list_research_items(project_id=int(row["id"]), limit=8))
     legs = "\n".join(
         f"<span class='leg'>{escape(leg.symbol)} · {leg.weight:.0%} · {format_return(leg.return_pct)}</span>"
         for leg in performance.legs
@@ -267,10 +274,26 @@ def render_project_detail(repo: Repository, row, performance) -> str:
         f"{render_sparkline(performance.points)}"
         f"<div class='leg-list'>{legs}</div>"
         f"<div class='leg-curves'>{leg_curves}</div>"
+        f"{research_items}"
         f"{check_log}"
         f"<div class='logic-grid'>{logic_html}</div>"
         "</article>"
     )
+
+
+def render_research_items(items) -> str:
+    if not items:
+        return "<div class='research-items'><h4>研究验证项</h4><div class='check-log-item empty'>暂无研究验证项</div></div>"
+    rows = []
+    for item in items:
+        rows.append(
+            "<div class='research-item'>"
+            f"<strong>{escape(item['item_type'])}</strong>"
+            f"<span>{escape(item['content'])}</span>"
+            f"<em>{escape(item['status'])}</em>"
+            "</div>"
+        )
+    return "<div class='research-items'><h4>研究验证项</h4>" + "".join(rows) + "</div>"
 
 
 def render_logic_block(block) -> str:

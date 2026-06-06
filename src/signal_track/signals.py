@@ -316,7 +316,7 @@ class SignalIngestor:
         instruments: list,
         fallback_confidence: float,
     ) -> None:
-        content, confidence, evidence = self._system_logic_payload(
+        content, confidence, evidence, research_items = self._system_logic_payload(
             name,
             direction,
             source_logic,
@@ -324,6 +324,7 @@ class SignalIngestor:
             fallback_confidence,
         )
         self.repo.add_logic_block(project_id, "system_logic", content, confidence, evidence)
+        self.repo.add_research_items(project_id, research_items)
 
     def _system_logic_payload(
         self,
@@ -332,7 +333,7 @@ class SignalIngestor:
         source_logic: str,
         instruments: list,
         fallback_confidence: float,
-    ) -> tuple[str, float, list[str]]:
+    ) -> tuple[str, float, list[str], list[dict[str, object]]]:
         if self.logic_supplementer:
             try:
                 supplement = self.logic_supplementer.supplement(
@@ -342,10 +343,15 @@ class SignalIngestor:
                     instruments=instruments,
                 )
                 if supplement.thesis.strip():
-                    return supplement.to_block(), supplement.confidence, supplement_evidence(supplement)
+                    return (
+                        supplement.to_block(),
+                        supplement.confidence,
+                        supplement_evidence(supplement),
+                        supplement_research_items(supplement),
+                    )
             except Exception:
                 pass
-        return build_system_logic(name, direction), fallback_confidence, fallback_evidence(name)
+        return build_system_logic(name, direction), fallback_confidence, fallback_evidence(name), fallback_research_items(name)
 
 
 def supplement_evidence(supplement: LogicSupplement) -> list[str]:
@@ -362,6 +368,49 @@ def fallback_evidence(name: str) -> list[str]:
         "source: local 3C-5M-3D-3T fallback",
         f"verification_note: {name} requires external financial, industry, and news verification before high-conviction use.",
         "verification_status: unverified",
+    ]
+
+
+def supplement_research_items(supplement: LogicSupplement) -> list[dict[str, object]]:
+    items: list[dict[str, object]] = []
+    items.extend(
+        {
+            "item_type": "tracking_metric",
+            "content": item,
+            "status": "pending",
+            "source_note": "system_logic_supplement",
+        }
+        for item in supplement.tracking_metrics
+    )
+    items.extend(
+        {
+            "item_type": "exit_condition",
+            "content": item,
+            "status": "pending",
+            "source_note": "system_logic_supplement",
+        }
+        for item in supplement.exit_conditions
+    )
+    items.extend(
+        {
+            "item_type": "verification_note",
+            "content": item,
+            "status": "unverified",
+            "source_note": "system_logic_supplement",
+        }
+        for item in supplement.verification_notes
+    )
+    return items
+
+
+def fallback_research_items(name: str) -> list[dict[str, object]]:
+    return [
+        {
+            "item_type": "verification_note",
+            "content": f"{name} requires external financial, industry, and news verification before high-conviction use.",
+            "status": "unverified",
+            "source_note": "local 3C-5M-3D-3T fallback",
+        }
     ]
 
 

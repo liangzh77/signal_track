@@ -182,6 +182,7 @@ def create_app():
             "project": dict(project),
             "legs": [dict(row) for row in repo.list_project_legs(project_id)],
             "logic_blocks": [dict(row) for row in repo.list_logic_blocks(project_id)],
+            "research_items": [dict(row) for row in repo.list_research_items(project_id=project_id)],
             "daily_checks": [dict(row) for row in repo.list_daily_checks(project_id=project_id)],
             "performance": {
                 "return_pct": performance.return_pct,

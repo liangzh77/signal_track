@@ -200,11 +200,14 @@ class SignalTrackCoreTests(unittest.TestCase):
                 )
 
             version = db.migrate()
-            self.assertEqual(version, 1)
+            self.assertEqual(version, 2)
             with db.session() as conn:
                 columns = {row["name"] for row in conn.execute("PRAGMA table_info(tracking_projects)")}
+                research_columns = {row["name"] for row in conn.execute("PRAGMA table_info(research_items)")}
             self.assertIn("logic_score", columns)
             self.assertIn("weight_needs_review", columns)
+            self.assertIn("item_type", research_columns)
+            self.assertIn("status", research_columns)
 
     def test_database_backup_creates_readable_copy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -345,9 +348,17 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("exit_condition: 跌破 20 日线", evidence)
             self.assertIn("verification_note: 财务和行业数据需要外部来源交叉验证", evidence)
 
+            research_items = repo.list_research_items(project_id=result.project_ids[0])
+            research_by_type = {item["item_type"]: item["content"] for item in research_items}
+            self.assertIn("tracking_metric", research_by_type)
+            self.assertIn("exit_condition", research_by_type)
+            self.assertIn("verification_note", research_by_type)
+
             html = render_dashboard(repo)
             self.assertIn("Evidence / verification", html)
+            self.assertIn("研究验证项", html)
             self.assertIn("tracking_metric: 广告收入环比改善", html)
+            self.assertIn("广告收入环比改善", html)
 
     def test_logic_supplementer_failure_falls_back_to_local_system_logic(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -369,6 +380,9 @@ class SignalTrackCoreTests(unittest.TestCase):
             evidence = json.loads(system_block["evidence"])
             self.assertIn("3C-5M-3D-3T", system_logic)
             self.assertIn("verification_status: unverified", evidence)
+            research_items = repo.list_research_items(project_id=result.project_ids[0])
+            self.assertEqual(research_items[0]["item_type"], "verification_note")
+            self.assertEqual(research_items[0]["status"], "unverified")
 
     def test_dashboard_groups_projects_by_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -579,6 +593,8 @@ class SignalTrackCoreTests(unittest.TestCase):
 
             projects = client.get("/api/projects").json()
             self.assertEqual(projects[0]["source_name"], "Alpha Desk")
+            project_detail = client.get(f"/api/projects/{projects[0]['id']}").json()
+            self.assertEqual(project_detail["research_items"][0]["item_type"], "verification_note")
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_mutating_web_endpoints_require_api_key_when_configured(self) -> None:
