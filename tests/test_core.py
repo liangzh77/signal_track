@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
+import types
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
@@ -1323,6 +1325,37 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(code, 0)
             events = Repository(Database(db_path)).list_publish_events()
             self.assertEqual(events[0]["url"], "https://example.com/demo/signal")
+
+    def test_cli_serve_passes_global_db_path_to_app_factory_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "serve.sqlite3"
+            calls: list[dict[str, object]] = []
+            fake_uvicorn = types.SimpleNamespace(
+                run=lambda target, **kwargs: calls.append(
+                    {
+                        "target": target,
+                        "kwargs": kwargs,
+                        "db_path": os.environ.get("SIGNAL_TRACK_DB_PATH"),
+                    }
+                )
+            )
+
+            with patch.dict("sys.modules", {"uvicorn": fake_uvicorn}):
+                with patch.dict("os.environ", {"SIGNAL_TRACK_DB_PATH": ""}, clear=False):
+                    code = cli_main([
+                        "--db",
+                        str(db_path),
+                        "serve",
+                        "--host",
+                        "127.0.0.1",
+                        "--port",
+                        "8765",
+                    ])
+
+            self.assertEqual(code, 0)
+            self.assertEqual(calls[0]["target"], "signal_track.web_app:create_app")
+            self.assertEqual(calls[0]["kwargs"], {"factory": True, "host": "127.0.0.1", "port": 8765})
+            self.assertEqual(calls[0]["db_path"], str(db_path))
 
     def test_cli_no_publish_disables_auto_publish(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

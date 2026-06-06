@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import tempfile
 from datetime import date, timedelta
@@ -622,6 +623,7 @@ def main(argv: list[str] | None = None) -> int:
             import uvicorn
         except ImportError as exc:
             raise SystemExit("Install web extras first: pip install -e .[web]") from exc
+        os.environ["SIGNAL_TRACK_DB_PATH"] = str(db.path)
         uvicorn.run("signal_track.web_app:create_app", factory=True, host=args.host, port=args.port)
         return 0
 
