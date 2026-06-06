@@ -32,7 +32,7 @@ def render_dashboard(repo: Repository) -> str:
         render_project_row(row, performances[int(row["id"])], latest_checks[int(row["id"])])
         for row in projects
     ) or (
-        "<tr><td colspan='10' class='empty'>暂无跟踪项目</td></tr>"
+        "<tr><td colspan='11' class='empty'>暂无跟踪项目</td></tr>"
     )
     source_cards = render_source_summary(projects, performances)
     source_filter = render_source_filter(projects)
@@ -204,7 +204,7 @@ def render_dashboard(repo: Repository) -> str:
       .grid {{ grid-template-columns: 1fr; }}
       .details {{ grid-template-columns: 1fr; }}
       .topbar {{ align-items: start; flex-direction: column; }}
-      table {{ min-width: 880px; }}
+      table {{ min-width: 960px; }}
       .research-item {{ grid-template-columns: 1fr; gap: 6px; }}
       .research-item em {{ text-align: left; }}
       .detail-top {{ flex-direction: column; }}
@@ -249,7 +249,7 @@ def render_dashboard(repo: Repository) -> str:
         <div class="panel-header"><h2>跟踪项目</h2><span class="muted">按更新时间排序</span></div>
         <div class="table-wrap" tabindex="0" aria-label="跟踪项目表格">
           <table>
-            <thead><tr><th>状态</th><th>信息源</th><th>项目</th><th>标的</th><th>方向</th><th>逻辑分</th><th>收益</th><th>最新检查</th><th>动作</th><th>复核</th></tr></thead>
+            <thead><tr><th>状态</th><th>信息源</th><th>项目</th><th>标的</th><th>方向</th><th>入场</th><th>逻辑分</th><th>收益</th><th>最新检查</th><th>动作</th><th>复核</th></tr></thead>
             <tbody>{project_rows}</tbody>
           </table>
         </div>
@@ -393,18 +393,22 @@ def render_project_row(row, performance, latest_check=None) -> str:
     status = escape(row["status"])
     review = "是" if project_needs_review(row) else "否"
     return_class = return_css(performance.return_pct)
+    symbols = row["symbols"] or ""
+    instrument_names = row["instrument_names"] or ""
+    latest_return = format_return(performance.return_pct)
     return (
         f"<tr data-source='{escape(row['source_name'])}' "
         f"data-status='{escape(row['status'])}' data-direction='{escape(row['direction'])}'>"
-        f"<td><span class='pill {status}'>{status}</span></td>"
-        f"<td>{escape(row['source_name'])}</td>"
+        f"<td><span class='pill {status}' title='{status}'>{status}</span></td>"
+        f"<td title='{escape(row['source_name'])}'>{escape(row['source_name'])}</td>"
         f"<td>{escape(row['title'])}</td>"
-        f"<td><span class='symbol'>{escape(row['symbols'] or '')}</span><br><span class='muted'>{escape(row['instrument_names'] or '')}</span></td>"
-        f"<td>{escape(row['direction'])}</td>"
+        f"<td title='{escape(symbols)} / {escape(instrument_names)}'><span class='symbol'>{escape(symbols)}</span><br><span class='muted'>{escape(instrument_names)}</span></td>"
+        f"<td title='{escape(row['direction'])}'>{escape(row['direction'])}</td>"
+        f"<td class='num' title='{escape(row['entry_date'] or '--')}'>{escape(row['entry_date'] or '--')}</td>"
         f"<td class='num'>{float(row['logic_score']):.1f}</td>"
-        f"<td class='num {return_class}'>{format_return(performance.return_pct)}</td>"
+        f"<td class='num {return_class}' title='{latest_return}'>{latest_return}</td>"
         f"<td class='check-cell'>{format_latest_check(latest_check)}</td>"
-        f"<td class='action-cell'>{escape(next_action_label(row))}</td>"
+        f"<td class='action-cell' title='{escape(next_action_label(row))}'>{escape(next_action_label(row))}</td>"
         f"<td>{review}</td>"
         "</tr>"
     )
@@ -653,8 +657,9 @@ def return_css(value: float | None) -> str:
 def format_latest_check(row) -> str:
     if not row:
         return "<span class='muted'>--</span>"
+    title = f"{row['check_date']} / {row['conclusion']}"
     return (
-        f"<span>{escape(row['check_date'])}</span><br>"
+        f"<span title='{escape(title)}'>{escape(row['check_date'])}</span><br>"
         f"<span class='muted'>{escape(row['conclusion'])}</span>"
     )
 
