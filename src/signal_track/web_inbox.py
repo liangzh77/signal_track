@@ -182,7 +182,19 @@ def render_inbox_page() -> str:
                 <option value="system_logic">system_logic</option>
               </select>
             </label>
+            <label>Provider
+              <select id="project-note-provider">
+                <option value="none">none</option>
+                <option value="fixture">fixture</option>
+                <option value="auto">auto</option>
+                <option value="tushare">tushare</option>
+                <option value="yfinance">yfinance</option>
+              </select>
+            </label>
+          </div>
+          <div class="row">
             <label class="inline"><input id="auto-refresh-projects" type="checkbox" checked> Auto refresh</label>
+            <label class="inline"><input id="project-note-run-check" type="checkbox"> Run check after note</label>
           </div>
           <label>Observation
             <textarea id="project-note" class="compact" placeholder="manual observation: ads recovered"></textarea>
@@ -297,6 +309,8 @@ def render_inbox_page() -> str:
     const projectSelectInput = document.getElementById('project-select');
     const autoRefreshProjectsInput = document.getElementById('auto-refresh-projects');
     const noteTypeInput = document.getElementById('note-type');
+    const projectNoteProviderInput = document.getElementById('project-note-provider');
+    const projectNoteRunCheckInput = document.getElementById('project-note-run-check');
     const projectNoteInput = document.getElementById('project-note');
     const weightsJsonInput = document.getElementById('weights-json');
     const closeDateInput = document.getElementById('close-date');
@@ -453,6 +467,8 @@ def render_inbox_page() -> str:
           logic_type: noteTypeInput.value,
           content: projectNoteInput.value,
           confidence: 1.0,
+          run_check: projectNoteRunCheckInput.checked,
+          provider: projectNoteProviderInput.value,
         }),
       });
     });

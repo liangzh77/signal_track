@@ -2722,6 +2722,8 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIn("id=\"project-select\"", home.text)
         self.assertIn("id=\"refresh-projects\"", home.text)
         self.assertIn("id=\"auto-refresh-projects\"", home.text)
+        self.assertIn("id=\"project-note-provider\"", home.text)
+        self.assertIn("id=\"project-note-run-check\"", home.text)
         self.assertIn("id=\"submit-note\"", home.text)
         self.assertIn("id=\"submit-weights\"", home.text)
         self.assertIn("id=\"submit-close\"", home.text)
@@ -2747,6 +2749,8 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIn("loadResearchItems()", home.text)
         self.assertIn("loadProjects()", home.text)
         self.assertIn("logic-blocks", home.text)
+        self.assertIn("projectNoteRunCheckInput.checked", home.text)
+        self.assertIn("projectNoteProviderInput.value", home.text)
         self.assertIn("/weights", home.text)
         self.assertIn("/close", home.text)
         self.assertIn("Authorization: `Bearer ${key}`", home.text)
@@ -3110,6 +3114,8 @@ class SignalTrackCoreTests(unittest.TestCase):
                     "content": "manual observation: ads trend improved",
                     "confidence": 0.75,
                     "evidence": ["checked ad tracker"],
+                    "run_check": True,
+                    "provider": "fixture",
                 },
             )
             invalid = client.post(
@@ -3118,9 +3124,11 @@ class SignalTrackCoreTests(unittest.TestCase):
             )
 
             self.assertEqual(added.status_code, 200)
+            self.assertEqual(added.json()["checked_projects"], 1)
             self.assertFalse(added.json()["publish"]["attempted"])
             self.assertTrue(any(block["logic_type"] == "manual_note" for block in added.json()["logic_blocks"]))
             self.assertTrue(any("ads trend improved" in block["content"] for block in added.json()["logic_blocks"]))
+            self.assertTrue(added.json()["daily_checks"])
             self.assertEqual(invalid.status_code, 400)
             self.assertEqual(invalid.json()["detail"]["code"], "invalid_logic_type")
 

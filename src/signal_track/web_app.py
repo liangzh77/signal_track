@@ -382,6 +382,7 @@ def create_app():
         return {
             "project": project_summaries(repo, [project_id])[0],
             "logic_blocks": [dict(row) for row in repo.list_logic_blocks(project_id)],
+            "daily_checks": [dict(row) for row in repo.list_daily_checks(project_id=project_id, limit=5)],
             "checked_projects": checked,
             "publish": publish_result,
         }
