@@ -728,6 +728,25 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertFalse(by_market["HK_FUT"]["price_available"])
         self.assertFalse(by_market["US_FUT"]["price_available"])
 
+    def test_fixture_market_coverage_marks_seed_master_not_real(self) -> None:
+        settings = Settings(
+            db_path=Path(":memory:"),
+            tushare_token=None,
+            demo_publish_url=None,
+            demo_api_key=None,
+            enable_scheduler=False,
+            daily_provider="fixture",
+            openai_api_key=None,
+            openai_model="model",
+            signal_track_api_key=None,
+        )
+
+        coverage = market_data_coverage(settings, "fixture")
+
+        self.assertTrue(all(row["price_available"] for row in coverage["markets"]))
+        self.assertTrue(all(row["instrument_master_provider"] == "seed_fallback" for row in coverage["markets"]))
+        self.assertTrue(all(not row["real_instrument_master"] for row in coverage["markets"]))
+
     def test_market_smoke_fetches_sample_bars_across_markets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")

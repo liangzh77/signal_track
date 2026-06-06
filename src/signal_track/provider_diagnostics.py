@@ -16,7 +16,7 @@ def market_data_coverage(settings: Settings, provider_name: str = "auto") -> dic
         rows = auto_coverage(tushare_ready, yfinance_ready)
     elif provider_name == "fixture":
         rows = [
-            coverage_row(market, "fixture", "fixture", True, ["representative local seed data"])
+            coverage_row(market, "fixture", "seed_fallback", False, ["representative local seed data"])
             for market in all_markets()
         ]
     elif provider_name == "tushare":
