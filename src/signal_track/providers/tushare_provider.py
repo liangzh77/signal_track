@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import math
 from typing import Any
 
 from signal_track.models import AssetType, DailyBar, Instrument, Market
@@ -202,7 +203,8 @@ def continuous_mapping_contract(row: dict[str, Any]) -> str | None:
 def to_float(value: Any) -> float | None:
     if value is None or value == "":
         return None
-    return float(value)
+    parsed = float(value)
+    return parsed if math.isfinite(parsed) else None
 
 
 def compact_aliases(*values: Any) -> tuple[str, ...]:

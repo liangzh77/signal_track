@@ -40,6 +40,7 @@ from signal_track.providers.factory import build_auto_provider
 from signal_track.providers.factory import build_market_data_provider
 from signal_track.providers.fixture import FixtureMarketDataProvider
 from signal_track.providers.tushare_provider import TushareMarketDataProvider
+from signal_track.providers.tushare_provider import to_float as tushare_to_float
 from signal_track.providers.yfinance_provider import get_price_field, yfinance_symbol
 from signal_track.project_actions import ProjectActionError, add_project_logic_block, update_tracking_project_weights
 from signal_track.resolver import InstrumentResolver, SEED_INSTRUMENTS
@@ -748,6 +749,14 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(get_price_field(ticker_first_row, "AAPL", "Close"), 103.5)
         self.assertEqual(get_price_field(series_row, "AAPL", "Close"), 104.5)
         self.assertIsNone(get_price_field({}, "AAPL", "Close"))
+        self.assertIsNone(get_price_field({"Close": float("nan")}, "AAPL", "Close"))
+        self.assertIsNone(get_price_field({"Close": FakeSeries(float("inf"))}, "AAPL", "Close"))
+
+    def test_tushare_price_field_rejects_non_finite_values(self) -> None:
+        self.assertEqual(tushare_to_float("101.5"), 101.5)
+        self.assertIsNone(tushare_to_float(""))
+        self.assertIsNone(tushare_to_float(float("nan")))
+        self.assertIsNone(tushare_to_float(float("inf")))
 
     def test_yfinance_symbol_normalizes_hong_kong_stock_codes(self) -> None:
         tencent = next(instrument for instrument in SEED_INSTRUMENTS if instrument.symbol == "00700.HK")

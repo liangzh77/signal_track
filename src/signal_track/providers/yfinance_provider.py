@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+import math
 import re
 
 from signal_track.models import AssetType, DailyBar, Instrument, Market
@@ -104,6 +105,7 @@ def to_optional_float(value: object) -> float | None:
         except (IndexError, TypeError, ValueError):
             return None
     try:
-        return float(value)  # type: ignore[arg-type]
+        parsed = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
+    return parsed if math.isfinite(parsed) else None
