@@ -459,13 +459,20 @@ def main(argv: list[str] | None = None) -> int:
             content = args.text if args.text is not None else sys.stdin.read()
         resolver = InstrumentResolver(repo.list_instruments())
         extraction = None
-        if args.extractor in {"auto", "openai"} and settings.openai_api_key:
-            extraction = OpenAISignalExtractor(settings.openai_api_key, settings.openai_model).extract(
-                content,
-                source_hint=args.source,
-            )
-        elif args.extractor == "openai":
-            raise SystemExit("OPENAI_API_KEY is required for --extractor openai")
+        if args.extractor in {"auto", "openai"}:
+            if not settings.openai_api_key:
+                if args.extractor == "openai":
+                    raise SystemExit("OPENAI_API_KEY is required for --extractor openai")
+            else:
+                try:
+                    extraction = OpenAISignalExtractor(settings.openai_api_key, settings.openai_model).extract(
+                        content,
+                        source_hint=args.source,
+                    )
+                except Exception as exc:
+                    if args.extractor == "openai":
+                        raise SystemExit(f"OpenAI extractor failed: {exc}") from exc
+                    extraction = None
         source_name = resolve_source_name(args.source, content, extraction)
         if not source_name:
             print(

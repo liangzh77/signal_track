@@ -368,15 +368,22 @@ def ingest_content(
 ):
     resolver = InstrumentResolver(repo.list_instruments())
     extraction = None
-    if extractor in {"auto", "openai"} and settings.openai_api_key:
-        extraction = OpenAISignalExtractor(settings.openai_api_key, settings.openai_model).extract(
-            content,
-            source_hint=source,
-        )
-    elif extractor == "openai":
+    if extractor in {"auto", "openai"}:
         from fastapi import HTTPException
 
-        raise HTTPException(status_code=503, detail="OPENAI_API_KEY is required for extractor=openai")
+        if not settings.openai_api_key:
+            if extractor == "openai":
+                raise HTTPException(status_code=503, detail="OPENAI_API_KEY is required for extractor=openai")
+        else:
+            try:
+                extraction = OpenAISignalExtractor(settings.openai_api_key, settings.openai_model).extract(
+                    content,
+                    source_hint=source,
+                )
+            except Exception as exc:
+                if extractor == "openai":
+                    raise HTTPException(status_code=503, detail=f"OpenAI extractor failed: {exc}") from exc
+                extraction = None
     source_name = resolve_source_name(source, content, extraction)
     if not source_name:
         from fastapi import HTTPException

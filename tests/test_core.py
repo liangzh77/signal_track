@@ -187,6 +187,16 @@ class FakeOpenAIExtractor:
         )
 
 
+class BrokenOpenAIExtractor:
+    def __init__(self, api_key: str, model: str):
+        self.api_key = api_key
+        self.model = model
+
+    def extract(self, content: str, source_hint: str | None = None) -> ExtractedInput:
+        del content, source_hint
+        raise RuntimeError("openai package missing")
+
+
 class FakeDailyEvaluator(DailyLogicEvaluator):
     def __init__(self):
         self.research_item_count = 0
@@ -1521,6 +1531,55 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(projects[0]["symbols"], "NVDA")
             self.assertEqual(projects[0]["direction"], "short")
 
+    def test_cli_auto_extractor_falls_back_to_heuristic_when_openai_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "openai-key",
+                "SIGNAL_TRACK_OPENAI_MODEL": "test-model",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.cli.OpenAISignalExtractor", BrokenOpenAIExtractor):
+                    with redirect_stdout(StringIO()):
+                        code = cli_main([
+                            "ingest",
+                            "--source",
+                            "CLI Desk",
+                            "--text",
+                            "00700.HK long, watch ads recovery.",
+                        ])
+
+            projects = Repository(Database(db_path)).list_project_rows()
+            self.assertEqual(code, 0)
+            self.assertEqual(projects[0]["symbols"], "00700.HK")
+            self.assertEqual(projects[0]["direction"], "long")
+
+    def test_cli_forced_openai_extractor_reports_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "openai-key",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.cli.OpenAISignalExtractor", BrokenOpenAIExtractor):
+                    with self.assertRaisesRegex(SystemExit, "OpenAI extractor failed"):
+                        cli_main([
+                            "ingest",
+                            "--extractor",
+                            "openai",
+                            "--source",
+                            "CLI Desk",
+                            "--text",
+                            "00700.HK long, watch ads recovery.",
+                        ])
+
     def test_cli_update_project_weights(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"
@@ -1775,6 +1834,59 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(closed.json()["project_ids"], [projects[0]["id"]])
             self.assertEqual(closed.json()["projects"][0]["action"], "close")
             self.assertEqual(closed.json()["projects"][0]["status"], "closed")
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_auto_extractor_falls_back_when_openai_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "openai-key",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.web_app.OpenAISignalExtractor", BrokenOpenAIExtractor):
+                    client = TestClient(create_app())
+                    response = client.post(
+                        "/api/inputs",
+                        json={
+                            "source": "Web Desk",
+                            "content": "00700.HK long, watch ads recovery.",
+                            "extractor": "auto",
+                        },
+                    )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["resolved_symbols"], ["00700.HK"])
+            self.assertEqual(response.json()["projects"][0]["direction"], "long")
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_forced_openai_extractor_reports_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "openai-key",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.web_app.OpenAISignalExtractor", BrokenOpenAIExtractor):
+                    client = TestClient(create_app())
+                    response = client.post(
+                        "/api/inputs",
+                        json={
+                            "source": "Web Desk",
+                            "content": "00700.HK long, watch ads recovery.",
+                            "extractor": "openai",
+                        },
+                    )
+
+            self.assertEqual(response.status_code, 503)
+            self.assertIn("OpenAI extractor failed", response.json()["detail"])
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_exit_signals_endpoint(self) -> None:

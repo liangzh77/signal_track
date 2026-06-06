@@ -272,7 +272,9 @@ python -m signal_track.cli refresh-instruments --provider fixture --market all
 
 Default extraction is `auto`: it uses structured OpenAI extraction when
 `OPENAI_API_KEY` is configured, and falls back to local heuristic extraction
-without network access:
+without network access. If the OpenAI package or request fails in `auto` mode,
+the note is still processed by the heuristic extractor. Use `--extractor openai`
+only when you want ingestion to fail instead of falling back:
 
 ```powershell
 python -m signal_track.cli ingest --source 信息源A --text "腾讯 做多，先跟踪。"
