@@ -96,13 +96,30 @@ class SignalIngestor:
             else self._append_existing_project_updates(source_id, content, resolutions, direction, logic_score)
         )
         if updated_project_ids:
+            new_project_ids: list[int] = []
+            if not as_portfolio and has_tracking_intent(content, direction, as_portfolio):
+                updated_symbols = self._project_leg_symbols(updated_project_ids)
+                for resolution in resolutions:
+                    if resolution.instrument.symbol in updated_symbols:
+                        continue
+                    new_project_ids.append(
+                        self._create_single_project(
+                            source_id,
+                            raw_input_id,
+                            content,
+                            resolution,
+                            direction,
+                            logic_score,
+                            needs_review,
+                        )
+                    )
             return self._result(
                 raw_input_id=raw_input_id,
-                project_ids=updated_project_ids,
+                project_ids=sorted(set(updated_project_ids + new_project_ids)),
                 resolved_symbols=[resolution.instrument.symbol for resolution in resolutions],
                 logic_score=logic_score,
-                system_logic_added=False,
-                input_action="update",
+                system_logic_added=bool(new_project_ids and needs_review),
+                input_action="mixed" if new_project_ids else "update",
             )
 
         resolved_unresolved_ids = self._resolve_unresolved_project(
@@ -425,6 +442,12 @@ class SignalIngestor:
                 )
                 updated_ids.append(project_id)
         return sorted(set(updated_ids))
+
+    def _project_leg_symbols(self, project_ids: list[int]) -> set[str]:
+        symbols: set[str] = set()
+        for project_id in project_ids:
+            symbols.update(str(leg["symbol"]) for leg in self.repo.list_project_legs(project_id))
+        return symbols
 
     def _append_existing_portfolio_updates(
         self,

@@ -1535,6 +1535,36 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(len(result.project_ids), 2)
             self.assertEqual(result.resolved_symbols, ["300750.SZ", "600519.SH"])
 
+    def test_partial_overlap_multi_instrument_note_updates_and_creates_projects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+
+            existing = ingestor.ingest(
+                source_name="Overlap Desk",
+                content="300750.SZ long, watch battery margin.",
+            )
+            mixed = ingestor.ingest(
+                source_name="Overlap Desk",
+                content="300750.SZ long update, 600519.SH long, watch margin and demand.",
+            )
+
+            rows = repo.list_project_rows()
+            self.assertEqual(mixed.input_action, "mixed")
+            self.assertEqual(len(mixed.project_ids), 2)
+            self.assertIn(existing.project_ids[0], mixed.project_ids)
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(mixed.resolved_symbols, ["300750.SZ", "600519.SH"])
+            new_project_id = next(project_id for project_id in mixed.project_ids if project_id != existing.project_ids[0])
+            new_legs = repo.list_project_legs(new_project_id)
+            self.assertEqual([leg["symbol"] for leg in new_legs], ["600519.SH"])
+            existing_logic_types = [block["logic_type"] for block in repo.list_logic_blocks(existing.project_ids[0])]
+            self.assertIn("source_update", existing_logic_types)
+
     def test_auto_portfolio_does_not_update_overlapping_single_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
