@@ -34,6 +34,7 @@ from signal_track.providers.base import MarketDataProvider
 from signal_track.providers.factory import build_auto_provider
 from signal_track.providers.factory import build_market_data_provider
 from signal_track.providers.fixture import FixtureMarketDataProvider
+from signal_track.providers.tushare_provider import TushareMarketDataProvider
 from signal_track.providers.yfinance_provider import get_price_field
 from signal_track.project_actions import ProjectActionError, update_tracking_project_weights
 from signal_track.resolver import InstrumentResolver, SEED_INSTRUMENTS
@@ -124,6 +125,53 @@ class PartiallyFailingMarketDataProvider(RecordingMarketDataProvider):
 class FakeSeries:
     def __init__(self, value: float):
         self.iloc = [value]
+
+
+class FakeTushareFrame:
+    def __init__(self, records: list[dict]):
+        self.records = records
+
+    def to_dict(self, orient: str):
+        self.assert_orient(orient)
+        return self.records
+
+    @staticmethod
+    def assert_orient(orient: str) -> None:
+        if orient != "records":
+            raise AssertionError(f"unexpected orient: {orient}")
+
+
+class FakeTusharePro:
+    def __init__(self):
+        self.fut_daily_calls: list[dict[str, str]] = []
+
+    def fut_mapping(self, ts_code: str, start_date: str, end_date: str):
+        self.mapping_call = {"ts_code": ts_code, "start_date": start_date, "end_date": end_date}
+        return FakeTushareFrame(
+            [
+                {"trade_date": "20260602", "mapping_ts_code": "CU2607.SHF"},
+                {"trade_date": "20260601", "mapping_ts_code": "CU2606.SHF"},
+            ]
+        )
+
+    def fut_daily(self, ts_code: str, start_date: str, end_date: str):
+        self.fut_daily_calls.append({"ts_code": ts_code, "start_date": start_date, "end_date": end_date})
+        close = 81000 if ts_code == "CU2607.SHF" else 80000
+        return FakeTushareFrame(
+            [
+                {
+                    "ts_code": ts_code,
+                    "trade_date": start_date,
+                    "open": close - 100,
+                    "high": close + 200,
+                    "low": close - 300,
+                    "close": close,
+                    "settle": close + 10,
+                    "vol": 1000,
+                    "oi": 2000,
+                }
+            ]
+        )
 
 
 class FakeLogicSupplementer(LogicSupplementer):
@@ -469,6 +517,23 @@ class SignalTrackCoreTests(unittest.TestCase):
 
         self.assertEqual(tushare_provider.calls, ["00700.HK"])
         self.assertEqual(yfinance_provider.calls, ["HSI", "NQ"])
+
+    def test_tushare_continuous_future_uses_mapping_contracts(self) -> None:
+        provider = TushareMarketDataProvider.__new__(TushareMarketDataProvider)
+        provider.pro = FakeTusharePro()
+        instrument = next(item for item in SEED_INSTRUMENTS if item.symbol == "CU.SHF")
+
+        bars = provider.get_daily_bars(instrument, date(2026, 6, 1), date(2026, 6, 2))
+
+        self.assertEqual(
+            provider.pro.fut_daily_calls,
+            [
+                {"ts_code": "CU2607.SHF", "start_date": "20260602", "end_date": "20260602"},
+                {"ts_code": "CU2606.SHF", "start_date": "20260601", "end_date": "20260601"},
+            ],
+        )
+        self.assertEqual([bar.provider_symbol for bar in bars], ["CU2606.SHF", "CU2607.SHF"])
+        self.assertEqual([bar.close for bar in bars], [80000.0, 81000.0])
 
     def test_auto_provider_falls_back_when_tushare_dependency_missing(self) -> None:
         yfinance_provider = RecordingMarketDataProvider("yfinance")

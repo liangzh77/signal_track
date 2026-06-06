@@ -80,7 +80,7 @@ class TushareMarketDataProvider(MarketDataProvider):
         mapping = self.pro.fut_mapping(ts_code=instrument.provider_symbol, start_date=start, end_date=end)
         bars: list[DailyBar] = []
         for row in mapping.to_dict("records"):
-            contract = row.get("mapping_ts_code") or row.get("mapping_ts_code")
+            contract = continuous_mapping_contract(row)
             trade_date = row.get("trade_date")
             if not contract or not trade_date:
                 continue
@@ -192,6 +192,11 @@ class TushareMarketDataProvider(MarketDataProvider):
 
 def parse_tushare_date(value: str) -> date:
     return date(int(value[0:4]), int(value[4:6]), int(value[6:8]))
+
+
+def continuous_mapping_contract(row: dict[str, Any]) -> str | None:
+    value = row.get("mapping_ts_code")
+    return str(value) if value else None
 
 
 def to_float(value: Any) -> float | None:
