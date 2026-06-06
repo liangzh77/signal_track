@@ -2815,6 +2815,44 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(project["status"], "needs_review")
             self.assertTrue(bool(project["needs_review"]))
 
+    def test_daily_check_keeps_unresolved_instrument_project_in_review(self) -> None:
+        class HoldEvaluator(DailyLogicEvaluator):
+            def evaluate(self, *, project, logic_blocks, research_items, performance, previous_checks, check_date):
+                del project, logic_blocks, research_items, performance, previous_checks, check_date
+                return DailyEvaluation(
+                    conclusion="hold",
+                    summary="model would hold if the instrument were known",
+                    triggered_rules=[],
+                    confidence=0.5,
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            source_id = repo.get_or_create_source("Unresolved Desk")
+            project_id = repo.create_tracking_project(
+                title="Unresolved target",
+                source_id=source_id,
+                raw_input_id=None,
+                status="needs_review",
+                direction="long",
+                entry_date="2026-06-01",
+                logic_score=8,
+                needs_review=True,
+                metadata={"raw_extract_status": "no_instrument_resolved"},
+            )
+
+            checked = DailyChecker(repo, evaluator=HoldEvaluator()).run(date(2026, 6, 5))
+
+            project = repo.get_project_row(project_id)
+            check = repo.list_daily_checks(project_id=project_id)[0]
+            self.assertEqual(checked, 1)
+            self.assertEqual(project["status"], "needs_review")
+            self.assertTrue(bool(project["needs_review"]))
+            self.assertEqual(check["conclusion"], "needs_review")
+            self.assertIn("No resolved instrument", json.loads(check["triggered_rules"])[0])
+
     def test_exit_signal_summaries_include_latest_check(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")

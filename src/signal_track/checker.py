@@ -39,7 +39,11 @@ class DailyChecker:
                 conclusion = "needs_review"
                 self.repo.update_project_status(project_id, "needs_review", needs_review=True)
 
-            if performance.missing_price_symbols:
+            if not performance.legs:
+                conclusion = "needs_review"
+                triggered_rules.append("No resolved instrument; cannot refresh prices or calculate returns.")
+                self.repo.update_project_status(project_id, "needs_review", needs_review=True)
+            elif performance.missing_price_symbols:
                 conclusion = "needs_review"
                 triggered_rules.append("缺少行情数据：" + ", ".join(performance.missing_price_symbols))
                 self.repo.update_project_status(project_id, "needs_review", needs_review=True)
@@ -71,7 +75,7 @@ class DailyChecker:
             if evaluation:
                 summary = merge_summary(summary, evaluation.summary)
                 triggered_rules.extend(evaluation.triggered_rules)
-                if conclusion != "exit_signal":
+                if conclusion not in {"exit_signal", "needs_review"}:
                     conclusion = evaluation.conclusion
                     if evaluation.conclusion == "exit_signal":
                         self.repo.update_project_status(project_id, "exit_signal", needs_review=True)
@@ -156,6 +160,8 @@ def evaluate_research_item_statuses(items) -> tuple[str | None, list[str]]:
 
 
 def build_summary(performance) -> str:
+    if not performance.legs:
+        return "检查完成，但项目尚未解析出标的，无法刷新行情或计算收益。"
     if performance.return_pct is None:
         if performance.missing_price_symbols:
             return "检查完成，但缺少行情数据，无法计算收益：" + ", ".join(performance.missing_price_symbols)
