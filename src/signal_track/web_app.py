@@ -508,6 +508,14 @@ def refresh_markets(value: str) -> list[Market]:
 
 
 def maybe_publish(repo: Repository, settings: Settings, feature: str) -> dict:
+    if not settings.auto_publish_on_update:
+        return {
+            "attempted": False,
+            "ok": False,
+            "url": None,
+            "publish_url": settings.demo_publish_url,
+            "reason": "auto publish disabled",
+        }
     if not settings.demo_publish_url or not settings.demo_api_key:
         return {
             "attempted": False,

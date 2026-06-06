@@ -98,8 +98,10 @@ Useful endpoints:
 
 When publish credentials are configured, `POST /api/inputs`, `POST /api/projects/{project_id}/close`,
 research item updates, and `POST /api/checks/run` automatically publish the refreshed dashboard.
-CLI update commands do the same by default when `SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE=true`;
-use `--no-publish` for a one-off local update.
+This automatic publish behavior is controlled by `SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE`
+and is enabled by default. CLI update commands also accept `--no-publish` for a
+one-off local update; manual `POST /api/publish` is still available when automatic
+publishing is disabled.
 Publish responses include `url` when the publish API returns a public dashboard
 address, plus `publish_url` for the API endpoint that was called. Failed publish
 attempts keep the data update, record a publish event, and return `ok: false`

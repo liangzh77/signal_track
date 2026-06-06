@@ -2914,6 +2914,39 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(project_detail["project"]["status"], "needs_review")
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_auto_publish_can_be_disabled_for_updates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_API_KEY": "",
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
+                "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
+                "GO_SITES_DEMO_API_KEY": "demo-key",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.web_app.DemoPublisher", side_effect=AssertionError("unexpected auto publish")):
+                    client = TestClient(create_app())
+                    created = client.post(
+                        "/api/inputs",
+                        json={"source": "Web Desk", "content": "00700.HK long, watch ads recovery."},
+                    )
+                    events_after_update = client.get("/api/publish/events").json()
+                with patch("signal_track.web_app.DemoPublisher", FakeDemoPublisher):
+                    manual_publish = client.post("/api/publish")
+                    events_after_manual = client.get("/api/publish/events").json()
+
+        self.assertEqual(created.status_code, 200)
+        self.assertFalse(created.json()["publish"]["attempted"])
+        self.assertEqual(created.json()["publish"]["reason"], "auto publish disabled")
+        self.assertEqual(events_after_update, [])
+        self.assertEqual(manual_publish.status_code, 200)
+        self.assertEqual(manual_publish.json()["url"], "https://example.com/demo/signal")
+        self.assertEqual(events_after_manual[0]["url"], "https://example.com/demo/signal")
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_web_auto_publish_failure_is_returned_and_recorded(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"
