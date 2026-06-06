@@ -44,7 +44,7 @@ except Exception:
     TestClient = None
     create_app = None
 
-from signal_track.scheduler import execute_daily_check
+from signal_track.scheduler import build_scheduler, execute_daily_check
 
 
 def next_fixture_trading_day(current: date) -> date:
@@ -1281,6 +1281,22 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(checked, 0)
             self.assertEqual(events[0]["url"], "https://example.com/demo/signal")
             self.assertEqual(events[0]["status_code"], 200)
+
+    def test_scheduler_registers_asia_evening_and_us_morning_jobs(self) -> None:
+        try:
+            import apscheduler  # noqa: F401
+        except ImportError:
+            self.skipTest("APScheduler unavailable")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+
+            scheduled = build_scheduler(repo)
+
+        job_ids = {job.id for job in scheduled.scheduler.get_jobs()}
+        self.assertEqual(job_ids, {"asia_evening_daily_check", "us_morning_daily_check"})
 
     def test_cli_ingest_auto_publishes_when_configured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

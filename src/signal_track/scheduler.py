@@ -33,7 +33,8 @@ def build_scheduler(
     def run_daily_check() -> None:
         execute_daily_check(repo, provider, evaluator, publish_url, api_key)
 
-    scheduler.add_job(run_daily_check, "cron", hour=19, minute=0, id="cn_hk_daily_check")
+    scheduler.add_job(run_daily_check, "cron", hour=19, minute=0, id="asia_evening_daily_check")
+    scheduler.add_job(run_daily_check, "cron", hour=7, minute=0, id="us_morning_daily_check")
     return ScheduledJobs(scheduler=scheduler)
 
 

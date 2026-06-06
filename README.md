@@ -61,10 +61,12 @@ pip install -e .[web]
 python -m signal_track.cli serve --host 127.0.0.1 --port 8000
 ```
 
-Set `SIGNAL_TRACK_ENABLE_SCHEDULER=true` to run the daily 19:00 Asia/Shanghai
-job inside the backend process. `SIGNAL_TRACK_DAILY_PROVIDER` controls the provider
-used by that job and defaults to `auto`; set it to `none` only when you want checks
-to evaluate already-stored prices without refreshing market data.
+Set `SIGNAL_TRACK_ENABLE_SCHEDULER=true` to run scheduled checks inside the
+backend process. The built-in scheduler runs at 19:00 Asia/Shanghai for A shares,
+Hong Kong, and China futures, plus 07:00 Asia/Shanghai as a US-market catch-up
+pass. `SIGNAL_TRACK_DAILY_PROVIDER` controls the provider used by those jobs and
+defaults to `auto`; set it to `none` only when you want checks to evaluate
+already-stored prices without refreshing market data.
 
 Useful endpoints:
 

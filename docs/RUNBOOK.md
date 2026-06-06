@@ -32,6 +32,11 @@ sudo systemctl start signal-track-daily.timer
 Set `SIGNAL_TRACK_API_KEY` in `signal-track.env` before exposing the backend outside
 localhost. Mutating endpoints reject requests without that key.
 
+The production template uses the systemd timer for scheduled checks and keeps
+`SIGNAL_TRACK_ENABLE_SCHEDULER=false` to avoid running the same job twice. If you
+prefer the FastAPI process to own scheduling, do not start
+`signal-track-daily.timer` and set `SIGNAL_TRACK_ENABLE_SCHEDULER=true`.
+
 ## Service Commands
 
 ```bash
@@ -40,7 +45,7 @@ sudo journalctl -u signal-track.service -f
 sudo systemctl restart signal-track.service
 ```
 
-Daily job:
+Daily jobs:
 
 ```bash
 sudo systemctl status signal-track-daily.timer
@@ -48,6 +53,10 @@ sudo systemctl list-timers signal-track-daily.timer
 sudo systemctl start signal-track-daily.service
 sudo journalctl -u signal-track-daily.service -n 100
 ```
+
+The timer runs at 19:00 Asia/Shanghai for the China/Hong Kong trading day and at
+07:00 Asia/Shanghai as a US-market catch-up pass. The CLI job is idempotent for a
+given project/date; the later run updates the same daily check row when needed.
 
 ## Health Check
 
