@@ -928,6 +928,10 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(resolve_source_name(None, content), "Alpha Desk")
         self.assertEqual(remove_source_marker_lines(content), "00700.HK 做多，观察广告")
 
+        comma_content = "信息源：Alpha Desk，00700.HK 做多，观察广告"
+        self.assertEqual(resolve_source_name(None, comma_content), "Alpha Desk")
+        self.assertEqual(remove_source_marker_lines(comma_content), "00700.HK 做多，观察广告")
+
     def test_ingest_low_logic_signal_creates_tracking_project_with_system_logic(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
@@ -3200,21 +3204,29 @@ class SignalTrackCoreTests(unittest.TestCase):
 
             projects = client.get("/api/projects").json()
             self.assertEqual(projects[0]["source_name"], "Alpha Desk")
+
+            comma_inferred = client.post(
+                "/api/inputs",
+                json={"content": "信息源：Comma Desk，NVDA 做多，观察订单"},
+            )
+            self.assertEqual(comma_inferred.status_code, 200)
+            self.assertEqual(comma_inferred.json()["resolved_symbols"], ["NVDA"])
+            self.assertEqual(comma_inferred.json()["projects"][0]["source_name"], "Comma Desk")
             inputs = client.get("/api/inputs").json()
-            self.assertEqual(inputs[0]["source_name"], "Alpha Desk")
-            self.assertIn("00700.HK", inputs[0]["content_preview"])
-            self.assertGreater(inputs[0]["content_length"], 0)
-            self.assertEqual(inputs[0]["project_ids"], [projects[0]["id"]])
-            self.assertEqual(inputs[0]["projects"][0]["symbols"], ["00700.HK"])
-            self.assertEqual(inputs[0]["projects"][0]["action"], "track")
-            self.assertNotIn("content", inputs[0])
-            input_detail = client.get(f"/api/inputs/{inputs[0]['id']}").json()
+            alpha_input = next(item for item in inputs if item["source_name"] == "Alpha Desk")
+            self.assertIn("00700.HK", alpha_input["content_preview"])
+            self.assertGreater(alpha_input["content_length"], 0)
+            self.assertEqual(alpha_input["project_ids"], [projects[0]["id"]])
+            self.assertEqual(alpha_input["projects"][0]["symbols"], ["00700.HK"])
+            self.assertEqual(alpha_input["projects"][0]["action"], "track")
+            self.assertNotIn("content", alpha_input)
+            input_detail = client.get(f"/api/inputs/{alpha_input['id']}").json()
             self.assertIn("00700.HK 做多", input_detail["content"])
             self.assertEqual(input_detail["project_ids"], [projects[0]["id"]])
             self.assertEqual(input_detail["projects"][0]["title"], projects[0]["title"])
             self.assertEqual(client.get("/api/inputs/999999").status_code, 404)
             project_detail = client.get(f"/api/projects/{projects[0]['id']}").json()
-            self.assertEqual(project_detail["source_input"]["id"], inputs[0]["id"])
+            self.assertEqual(project_detail["source_input"]["id"], alpha_input["id"])
             self.assertIn("00700.HK 做多", project_detail["source_input"]["content"])
             self.assertEqual(project_detail["source_input"]["project_ids"], [projects[0]["id"]])
             self.assertEqual(len(project_detail["input_history"]), 1)

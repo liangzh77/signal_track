@@ -164,7 +164,8 @@ curl -X POST http://127.0.0.1:8765/api/inputs \
 Source is required for ingestion. If the caller omits `source`, the note must
 include a first-line marker such as `source: Alpha Desk`, `来源：Alpha Desk`, or
 `信息源：Alpha Desk`; otherwise the service returns `source_required` and does
-not create a tracking project.
+not create a tracking project. Inline source markers can put the note body on
+the same line when separated by `;`, `；`, `|`, `,`, or `，`.
 
 Portfolio notes can either pass `--portfolio` / `"portfolio": true`, or include
 an explicit marker in the note such as `组合`, `portfolio`, `权重`, or `占比`.
