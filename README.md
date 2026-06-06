@@ -203,7 +203,10 @@ python -m signal_track.cli daily-run
 ```
 
 `daily-run` and `check` default to `SIGNAL_TRACK_DAILY_PROVIDER` (`auto` by
-default). Pass `--provider none` only for an offline rules-only check.
+default). Pass `--provider none` only for an offline rules-only check. When
+publish credentials are configured and `SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE=true`,
+both commands publish the refreshed dashboard; pass `--no-publish` for a local
+check only. Use `daily-run` when you also want to write a local HTML file.
 
 Run a non-destructive smoke check with a temporary database:
 

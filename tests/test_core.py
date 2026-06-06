@@ -2352,6 +2352,41 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(metadata["flow"], "daily-run")
             self.assertEqual(metadata["exception_type"], "RuntimeError")
 
+    def test_cli_check_auto_publishes_when_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            db = Database(db_path)
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                "CLI Check Desk",
+                "00700.HK long, watch ads recovery.",
+            )
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "true",
+                "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
+                "GO_SITES_DEMO_API_KEY": "demo-key",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            output = StringIO()
+            with patch.dict("os.environ", env, clear=False):
+                with patch("signal_track.cli.DemoPublisher", FakeDemoPublisher):
+                    with redirect_stdout(output):
+                        code = cli_main(["check", "--provider", "fixture"])
+
+            payload = json.loads(output.getvalue())
+            events = Repository(Database(db_path)).list_publish_events()
+            metadata = json.loads(events[0]["metadata"])
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["checked_projects"], 1)
+            self.assertTrue(payload["published"])
+            self.assertEqual(payload["published_url"], "https://example.com/demo/signal")
+            self.assertEqual(metadata["flow"], "check")
+
     def test_cli_serve_passes_global_db_path_to_app_factory_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "serve.sqlite3"

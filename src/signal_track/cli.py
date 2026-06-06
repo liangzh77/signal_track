@@ -187,6 +187,9 @@ def main(argv: list[str] | None = None) -> int:
         choices=["none", "auto", "fixture", "tushare", "yfinance"],
         help="Optional provider used to refresh prices before checking. Defaults to SIGNAL_TRACK_DAILY_PROVIDER.",
     )
+    check_parser.add_argument("--publish", action="store_true")
+    check_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
+    check_parser.add_argument("--title", default="Signal Track 投资信号看板")
 
     render_parser = subparsers.add_parser("render-dashboard", help="Render dashboard HTML.")
     render_parser.add_argument("--out", default="dist/dashboard.html")
@@ -729,13 +732,37 @@ def main(argv: list[str] | None = None) -> int:
         check_date = parse_date(args.date) if args.date else None
         provider_name = args.provider or settings.daily_provider
         provider = None if provider_name == "none" else build_provider(provider_name, settings)
-        count = DailyChecker(
+        checked = DailyChecker(
             repo,
             provider,
             evaluator=build_daily_evaluator_from_settings(settings),
         ).run(check_date)
-        print(json.dumps({"checked_projects": count}, ensure_ascii=False))
-        return 0
+        publish_result = None
+        if should_publish_update(settings, forced=args.publish, disabled=args.no_publish):
+            publish_result = publish_dashboard(
+                repo,
+                settings,
+                title=args.title,
+                feature=f"每日检查完成，更新 {checked} 个项目",
+                flow="check",
+            )
+        publish_status = publish_payload(publish_result, settings.demo_publish_url) if publish_result else None
+        print(
+            json.dumps(
+                {
+                    "checked_projects": checked,
+                    "published": publish_result.ok if publish_result else False,
+                    "status_code": publish_status["status_code"] if publish_status else None,
+                    "published_url": publish_status["url"] if publish_status else None,
+                    "publish_url": publish_status["publish_url"] if publish_status else None,
+                    "error": publish_status["error"] if publish_status else None,
+                    "response_body": publish_status["response_body"] if publish_status else None,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0 if publish_result is None or publish_result.ok else 1
 
     if args.command == "render-dashboard":
         db.init()
