@@ -1627,6 +1627,86 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(repo.list_project_rows(), [])
             self.assertEqual(len(repo.list_raw_inputs()), 1)
 
+    def test_heuristic_later_symbol_resolves_unresolved_project_without_duplicate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+
+            unresolved = ingestor.ingest(
+                "Alpha Desk",
+                "MysteryCo long, track margin inflection and close if orders weaken.",
+            )
+            resolved = ingestor.ingest(
+                "Alpha Desk",
+                "00700.HK is the target name for the previous note.",
+            )
+
+            self.assertEqual(resolved.project_ids, unresolved.project_ids)
+            self.assertEqual(resolved.input_action, "update")
+            self.assertEqual(resolved.resolved_symbols, ["00700.HK"])
+            rows = repo.list_project_rows()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["symbols"], "00700.HK")
+            self.assertEqual(rows[0]["direction"], "long")
+            self.assertEqual(rows[0]["raw_input_id"], unresolved.raw_input_id)
+            metadata = json.loads(rows[0]["metadata"])
+            self.assertEqual(metadata["raw_extract_status"], "resolved_later")
+            self.assertEqual(metadata["resolved_by_raw_input_id"], resolved.raw_input_id)
+            logic_types = [block["logic_type"] for block in repo.list_logic_blocks(unresolved.project_ids[0])]
+            self.assertIn("source_update", logic_types)
+
+    def test_structured_later_symbol_resolves_unresolved_project_without_duplicate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            ingestor = SignalIngestor(repo, InstrumentResolver(repo.list_instruments()))
+
+            unresolved = ingestor.ingest(
+                "Structured Desk",
+                "raw note one",
+                extraction=ExtractedInput(
+                    signals=[
+                        ExtractedSignal(
+                            instruments=["MysteryCo"],
+                            direction="long",
+                            source_logic="Track operating leverage and order recovery.",
+                            observation_logic="Exit if order recovery fails.",
+                            logic_score=5,
+                        )
+                    ],
+                ),
+            )
+            resolved = ingestor.ingest(
+                "Structured Desk",
+                "raw note two",
+                extraction=ExtractedInput(
+                    signals=[
+                        ExtractedSignal(
+                            instruments=["NVDA"],
+                            direction="long",
+                            source_logic="NVDA is the MysteryCo target; track data-center growth.",
+                            observation_logic="Exit if data-center growth decelerates.",
+                            logic_score=7,
+                        )
+                    ],
+                ),
+            )
+
+            self.assertEqual(resolved.project_ids, unresolved.project_ids)
+            self.assertEqual(resolved.input_action, "update")
+            self.assertEqual(resolved.resolved_symbols, ["NVDA"])
+            rows = repo.list_project_rows()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["symbols"], "NVDA")
+            self.assertEqual(rows[0]["status"], "active")
+
     def test_heuristic_open_note_with_exit_condition_creates_tracking_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")

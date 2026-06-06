@@ -105,6 +105,30 @@ class SignalIngestor:
                 input_action="update",
             )
 
+        resolved_unresolved_ids = self._resolve_unresolved_project(
+            source_id,
+            raw_input_id,
+            content,
+            resolutions,
+            direction,
+            logic_score,
+            needs_review,
+            as_portfolio,
+            weights,
+        )
+        if resolved_unresolved_ids:
+            resolved_unresolved_needs_system_logic = needs_review or (
+                as_portfolio and not has_complete_weights(weights or {}, resolutions)
+            )
+            return self._result(
+                raw_input_id=raw_input_id,
+                project_ids=resolved_unresolved_ids,
+                resolved_symbols=[resolution.instrument.symbol for resolution in resolutions],
+                logic_score=logic_score,
+                system_logic_added=resolved_unresolved_needs_system_logic,
+                input_action="update",
+            )
+
         if not has_tracking_intent(content, direction, as_portfolio):
             return self._result(
                 raw_input_id=raw_input_id,
@@ -248,6 +272,27 @@ class SignalIngestor:
                     resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
                     input_actions.append("update")
                     continue
+
+            resolved_unresolved_ids = self._resolve_unresolved_project(
+                source_id,
+                raw_input_id,
+                source_logic,
+                resolutions,
+                direction,
+                logic_score,
+                needs_review,
+                signal.is_portfolio,
+                signal.weights,
+            )
+            if resolved_unresolved_ids:
+                project_ids.extend(resolved_unresolved_ids)
+                resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
+                resolved_unresolved_needs_system_logic = needs_review or (
+                    signal.is_portfolio and not has_complete_weights(signal.weights or {}, resolutions)
+                )
+                system_logic_added = system_logic_added or resolved_unresolved_needs_system_logic
+                input_actions.append("update")
+                continue
 
             system_logic_added = system_logic_added or needs_review
 
@@ -405,6 +450,95 @@ class SignalIngestor:
                 [content[:240]],
             )
         return updated_ids
+
+    def _resolve_unresolved_project(
+        self,
+        source_id: int,
+        raw_input_id: int,
+        content: str,
+        resolutions,
+        direction: Direction,
+        logic_score: float,
+        needs_review: bool,
+        as_portfolio: bool,
+        weights: dict[str, float] | None,
+    ) -> list[int]:
+        if not resolutions:
+            return []
+        if len(resolutions) > 1 and not as_portfolio:
+            return []
+
+        direction_filter = None if direction == Direction.NEUTRAL else direction.value
+        candidate_ids = self.repo.find_unresolved_project_ids_by_source(source_id, direction=direction_filter)
+        if not candidate_ids:
+            return []
+
+        project_id = candidate_ids[0]
+        if self.repo.list_project_legs(project_id):
+            return []
+        project = self.repo.get_project_row(project_id)
+        effective_direction = direction
+        if direction == Direction.NEUTRAL and project and project["direction"] in {Direction.LONG.value, Direction.SHORT.value}:
+            effective_direction = Direction(project["direction"])
+
+        weights = weights or {}
+        default_weight = round(1 / len(resolutions), 6)
+        weights_complete = True
+        effective_weights: dict[str, float] = {}
+        weight_needs_review = False
+        if as_portfolio:
+            weights_complete = has_complete_weights(weights, resolutions)
+            effective_weights = normalize_weights(weights) if weights_complete else {}
+            weight_needs_review = not weights_complete
+
+        for resolution in resolutions:
+            instrument_id = self.repo.upsert_instrument(resolution.instrument)
+            weight = (
+                resolve_weight_for_instrument(effective_weights, resolution.instrument, default_weight)
+                if as_portfolio
+                else 1.0
+            )
+            self.repo.add_project_leg(project_id, instrument_id, effective_direction.value, weight)
+
+        if as_portfolio:
+            title = "Portfolio tracking: " + " / ".join(resolution.instrument.name for resolution in resolutions)
+            project_metadata = {"portfolio": True}
+        else:
+            title = f"{resolutions[0].instrument.name} {direction_label(effective_direction)}璺熻釜"
+            project_metadata = {
+                "resolution_confidence": resolutions[0].confidence,
+                "resolution_reason": resolutions[0].reason,
+            }
+        project_metadata.update(
+            {
+                "raw_extract_status": "resolved_later",
+                "resolved_by_raw_input_id": raw_input_id,
+                "resolved_symbols": [resolution.instrument.symbol for resolution in resolutions],
+            }
+        )
+
+        review_required = needs_review or weight_needs_review
+        self.repo.update_tracking_project_details(
+            project_id,
+            title=title,
+            status=(ProjectStatus.NEEDS_REVIEW if review_required else ProjectStatus.ACTIVE).value,
+            direction=effective_direction.value,
+            logic_score=logic_score,
+            needs_review=needs_review,
+            weight_needs_review=weight_needs_review,
+            metadata=project_metadata,
+        )
+        self.repo.add_logic_block(project_id, "source_update", summarize_source_logic(content), logic_score / 10, [content[:240]])
+        if review_required:
+            self._add_system_logic_block(
+                project_id,
+                title,
+                effective_direction,
+                content,
+                [resolution.instrument for resolution in resolutions],
+                0.62,
+            )
+        return [project_id]
 
     def _find_instruments(self, content: str):
         found = []

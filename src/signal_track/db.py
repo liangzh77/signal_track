@@ -679,6 +679,60 @@ class Repository:
                 params,
             )
 
+    def update_tracking_project_details(
+        self,
+        project_id: int,
+        *,
+        title: str | None = None,
+        status: str | None = None,
+        direction: str | None = None,
+        logic_score: float | None = None,
+        needs_review: bool | None = None,
+        weight_needs_review: bool | None = None,
+        metadata: dict | None = None,
+    ) -> sqlite3.Row | None:
+        existing = self.get_project_row(project_id)
+        if existing is None:
+            return None
+
+        assignments = ["updated_at = CURRENT_TIMESTAMP"]
+        params: list[object] = []
+        if title is not None:
+            assignments.append("title = ?")
+            params.append(title)
+        if status is not None:
+            assignments.append("status = ?")
+            params.append(status)
+        if direction is not None:
+            assignments.append("direction = ?")
+            params.append(direction)
+        if logic_score is not None:
+            assignments.append("logic_score = ?")
+            params.append(logic_score)
+        if needs_review is not None:
+            assignments.append("needs_review = ?")
+            params.append(int(needs_review))
+        if weight_needs_review is not None:
+            assignments.append("weight_needs_review = ?")
+            params.append(int(weight_needs_review))
+        if metadata is not None:
+            try:
+                current_metadata = json.loads(existing["metadata"] or "{}")
+            except json.JSONDecodeError:
+                current_metadata = {}
+            if not isinstance(current_metadata, dict):
+                current_metadata = {}
+            merged_metadata = {**current_metadata, **metadata}
+            assignments.append("metadata = ?")
+            params.append(json.dumps(merged_metadata, ensure_ascii=False))
+        params.append(project_id)
+        with self.db.session() as conn:
+            conn.execute(
+                f"UPDATE tracking_projects SET {', '.join(assignments)} WHERE id = ?",
+                params,
+            )
+        return self.get_project_row(project_id)
+
     def close_project(self, project_id: int, closed_date: str, metadata: dict | None = None) -> None:
         existing = self.get_project_row(project_id)
         merged_metadata = metadata
@@ -899,6 +953,41 @@ class Repository:
                 (symbol,),
             ).fetchall()
         return [int(row["id"]) for row in rows]
+
+    def find_unresolved_project_ids_by_source(
+        self,
+        source_id: int,
+        direction: str | None = None,
+    ) -> list[int]:
+        filters = [
+            "p.source_id = ?",
+            "p.status IN ('active', 'needs_review', 'exit_signal')",
+            "l.id IS NULL",
+        ]
+        params: list[object] = [source_id]
+        if direction:
+            filters.append("(p.direction = ? OR p.direction = 'neutral')")
+            params.append(direction)
+        with self.db.session() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT p.id, p.metadata
+                FROM tracking_projects p
+                LEFT JOIN project_legs l ON l.project_id = p.id
+                WHERE {' AND '.join(filters)}
+                ORDER BY p.id
+                """,
+                params,
+            ).fetchall()
+        project_ids: list[int] = []
+        for row in rows:
+            try:
+                metadata = json.loads(row["metadata"] or "{}")
+            except json.JSONDecodeError:
+                metadata = {}
+            if isinstance(metadata, dict) and metadata.get("raw_extract_status") == "no_instrument_resolved":
+                project_ids.append(int(row["id"]))
+        return project_ids
 
     def find_active_project_ids_by_source_symbol(
         self,
