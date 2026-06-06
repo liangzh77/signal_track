@@ -11,6 +11,7 @@ from signal_track.config import Settings
 from signal_track.db import Database, Repository
 from signal_track.checker import DailyChecker
 from signal_track.cli import refresh_markets as cli_refresh_markets
+from signal_track.cli import run_self_check
 from signal_track.dashboard import render_dashboard
 from signal_track.analytics import project_performance
 from signal_track.daily_evaluator import DailyEvaluation, DailyLogicEvaluator
@@ -290,6 +291,29 @@ class SignalTrackCoreTests(unittest.TestCase):
 
         self.assertEqual(tushare_provider.calls, ["00700.HK"])
         self.assertEqual(yfinance_provider.calls, ["NQ"])
+
+    def test_cli_self_check_runs_non_destructive_smoke_flow(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                db_path=Path(tmp) / "main.sqlite3",
+                tushare_token=None,
+                demo_publish_url=None,
+                demo_api_key=None,
+                enable_scheduler=False,
+                daily_provider="fixture",
+                openai_api_key=None,
+                openai_model="model",
+                signal_track_api_key=None,
+            )
+            html_path = Path(tmp) / "self-check.html"
+
+            result = run_self_check(settings, provider_name="fixture", out=str(html_path))
+
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["temporary_db"])
+            self.assertEqual(result["resolved_symbols"], ["00700.HK"])
+            self.assertEqual(result["checked_projects"], 1)
+            self.assertTrue(html_path.exists())
 
     def test_source_name_can_be_inferred_from_content_marker(self) -> None:
         self.assertEqual(resolve_source_name(None, "信息源：Alpha Desk\n00700.HK 做多"), "Alpha Desk")

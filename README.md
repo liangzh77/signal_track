@@ -28,6 +28,7 @@ python -m signal_track.cli refresh-instruments --provider fixture --market CN_A
 python -m signal_track.cli fetch-bars 300750.SZ --provider fixture
 python -m signal_track.cli ingest --source 测试源 --text "腾讯 做多，先跟踪。"
 python -m signal_track.cli daily-run --provider fixture --out dist/dashboard.html
+python -m signal_track.cli self-check --out dist/self-check.html
 ```
 
 By default the local database is `data/signal_track.sqlite3`.
@@ -131,6 +132,12 @@ Run the full daily flow locally:
 
 ```powershell
 python -m signal_track.cli daily-run --provider auto --publish
+```
+
+Run a non-destructive smoke check with a temporary database:
+
+```powershell
+python -m signal_track.cli self-check --provider fixture --out dist/self-check.html
 ```
 
 For development without provider credentials:

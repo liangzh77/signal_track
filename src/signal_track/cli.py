@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -99,6 +100,10 @@ def main(argv: list[str] | None = None) -> int:
 
     render_parser = subparsers.add_parser("render-dashboard", help="Render dashboard HTML.")
     render_parser.add_argument("--out", default="dist/dashboard.html")
+
+    self_check_parser = subparsers.add_parser("self-check", help="Run a non-destructive end-to-end smoke check.")
+    self_check_parser.add_argument("--provider", choices=["none", "fixture"], default="fixture")
+    self_check_parser.add_argument("--out", help="Optional HTML output path.")
 
     publish_parser = subparsers.add_parser("publish-dashboard", help="Render and publish dashboard HTML.")
     publish_parser.add_argument("--title", default="Signal Track 投资信号看板")
@@ -394,6 +399,11 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"html": str(out_path)}, ensure_ascii=False))
         return 0
 
+    if args.command == "self-check":
+        result = run_self_check(settings, provider_name=args.provider, out=args.out)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result["ok"] else 1
+
     if args.command == "publish-dashboard":
         db.init()
         if not settings.demo_publish_url or not settings.demo_api_key:
@@ -518,6 +528,47 @@ def publish_dashboard(repo: Repository, settings: Settings, title: str, feature:
         metadata={"ok": result.ok, "flow": flow},
     )
     return result
+
+
+def run_self_check(settings: Settings, provider_name: str = "fixture", out: str | None = None) -> dict:
+    with tempfile.TemporaryDirectory() as tmp:
+        db = Database(Path(tmp) / "self-check.sqlite3")
+        db.init()
+        repo = Repository(db)
+        for instrument in SEED_INSTRUMENTS:
+            repo.upsert_instrument(instrument)
+        resolver = InstrumentResolver(repo.list_instruments())
+        ingest_result = SignalIngestor(repo, resolver).ingest(
+            source_name="self-check",
+            content="00700.HK long, observe ads and games.",
+        )
+        provider = None if provider_name == "none" else build_provider(provider_name, settings)
+        checked = DailyChecker(repo, provider).run()
+        html = render_dashboard(repo)
+        html_path = None
+        if out:
+            output = Path(out)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(html, encoding="utf-8")
+            html_path = str(output)
+        projects = repo.list_project_rows()
+        checks = repo.list_daily_checks()
+        ok = bool(
+            ingest_result.project_ids
+            and ingest_result.resolved_symbols
+            and checked == len(projects)
+            and checks
+            and "Signal Track" in html
+        )
+        return {
+            "ok": ok,
+            "temporary_db": True,
+            "project_ids": ingest_result.project_ids,
+            "resolved_symbols": ingest_result.resolved_symbols,
+            "checked_projects": checked,
+            "daily_checks": len(checks),
+            "html": html_path,
+        }
 
 
 def default_backup_path(db_path: Path) -> Path:

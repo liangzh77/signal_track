@@ -61,6 +61,12 @@ Expected:
 {"ok": true, "status": 200, "body": {"ok": true}}
 ```
 
+Local smoke check without touching the production database:
+
+```bash
+/srv/signal-track/venv/bin/python -m signal_track.cli self-check --provider fixture --out /tmp/signal-track-self-check.html
+```
+
 ## Initial Data Setup
 
 With provider credentials configured:
