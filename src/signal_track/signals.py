@@ -173,11 +173,12 @@ class SignalIngestor:
                 resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
                 continue
 
-            if is_extracted_close_action(signal, source_logic, original_content) and resolutions:
-                closed_project_ids = self._close_existing_projects(source_id, source_logic, resolutions, logic_score)
+            if is_extracted_close_action(signal, source_logic, original_content):
                 resolved_symbols.extend(resolution.instrument.symbol for resolution in resolutions)
-                if closed_project_ids:
-                    project_ids.extend(closed_project_ids)
+                if resolutions:
+                    closed_project_ids = self._close_existing_projects(source_id, source_logic, resolutions, logic_score)
+                    if closed_project_ids:
+                        project_ids.extend(closed_project_ids)
                 continue
 
             if signal.is_portfolio:
