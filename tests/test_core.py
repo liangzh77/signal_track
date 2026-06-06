@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -310,10 +311,19 @@ class SignalTrackCoreTests(unittest.TestCase):
             ).ingest(source_name="测试源", content="腾讯 做多，先跟踪。")
 
             logic = repo.list_logic_blocks(result.project_ids[0])
-            system_logic = [block["content"] for block in logic if block["logic_type"] == "system_logic"][0]
+            system_block = [block for block in logic if block["logic_type"] == "system_logic"][0]
+            system_logic = system_block["content"]
+            evidence = json.loads(system_block["evidence"])
             self.assertIn("AI补充", system_logic)
             self.assertIn("关键跟踪指标", system_logic)
             self.assertIn("跌破 20 日线", system_logic)
+            self.assertIn("tracking_metric: 广告收入环比改善", evidence)
+            self.assertIn("exit_condition: 跌破 20 日线", evidence)
+            self.assertIn("verification_note: 财务和行业数据需要外部来源交叉验证", evidence)
+
+            html = render_dashboard(repo)
+            self.assertIn("Evidence / verification", html)
+            self.assertIn("tracking_metric: 广告收入环比改善", html)
 
     def test_logic_supplementer_failure_falls_back_to_local_system_logic(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -330,8 +340,11 @@ class SignalTrackCoreTests(unittest.TestCase):
             ).ingest(source_name="测试源", content="腾讯 做多，先跟踪。")
 
             logic = repo.list_logic_blocks(result.project_ids[0])
-            system_logic = [block["content"] for block in logic if block["logic_type"] == "system_logic"][0]
+            system_block = [block for block in logic if block["logic_type"] == "system_logic"][0]
+            system_logic = system_block["content"]
+            evidence = json.loads(system_block["evidence"])
             self.assertIn("3C-5M-3D-3T", system_logic)
+            self.assertIn("verification_status: unverified", evidence)
 
     def test_dashboard_groups_projects_by_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

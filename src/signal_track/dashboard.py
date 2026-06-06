@@ -118,6 +118,9 @@ def render_dashboard(repo: Repository) -> str:
     .logic-grid {{ display: grid; gap: 10px; }}
     .logic-block {{ border-left: 2px solid rgba(68,215,200,.45); padding-left: 10px; color: var(--muted); font-size: 13px; line-height: 20px; }}
     .logic-block.system_logic {{ border-left-color: rgba(216,179,93,.65); }}
+    .logic-evidence {{ display: grid; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(231,238,232,.08); }}
+    .logic-evidence span {{ color: var(--faint); font-size: 11px; line-height: 16px; text-transform: uppercase; }}
+    .logic-evidence-item {{ color: var(--amber); font-size: 12px; line-height: 18px; }}
     .leg-list {{ display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }}
     .leg {{ border: 1px solid var(--border); border-radius: 999px; padding: 4px 8px; color: var(--muted); font-size: 12px; }}
     .leg-curves {{ display: grid; gap: 10px; margin: 10px 0 14px; }}
@@ -248,10 +251,7 @@ def render_check_item(row) -> str:
 
 def render_project_detail(repo: Repository, row, performance) -> str:
     logic_blocks = repo.list_logic_blocks(int(row["id"]))
-    logic_html = "\n".join(
-        f"<div class='logic-block {escape(block['logic_type'])}'><strong>{logic_label(block['logic_type'])}</strong><br>{escape(block['content'])}</div>"
-        for block in logic_blocks
-    )
+    logic_html = "\n".join(render_logic_block(block) for block in logic_blocks)
     check_log = render_project_check_log(repo.list_daily_checks(project_id=int(row["id"]), limit=5))
     legs = "\n".join(
         f"<span class='leg'>{escape(leg.symbol)} · {leg.weight:.0%} · {format_return(leg.return_pct)}</span>"
@@ -271,6 +271,39 @@ def render_project_detail(repo: Repository, row, performance) -> str:
         f"<div class='logic-grid'>{logic_html}</div>"
         "</article>"
     )
+
+
+def render_logic_block(block) -> str:
+    evidence_html = render_logic_evidence(block["evidence"])
+    return (
+        f"<div class='logic-block {escape(block['logic_type'])}'>"
+        f"<strong>{logic_label(block['logic_type'])}</strong><br>"
+        f"{escape(block['content'])}"
+        f"{evidence_html}"
+        "</div>"
+    )
+
+
+def render_logic_evidence(raw_evidence: str | None) -> str:
+    evidence = parse_logic_evidence(raw_evidence)
+    if not evidence:
+        return ""
+    items = "".join(f"<div class='logic-evidence-item'>{escape(item)}</div>" for item in evidence)
+    return f"<div class='logic-evidence'><span>Evidence / verification</span>{items}</div>"
+
+
+def parse_logic_evidence(raw_evidence: str | None) -> list[str]:
+    if not raw_evidence:
+        return []
+    try:
+        parsed = json.loads(raw_evidence)
+    except json.JSONDecodeError:
+        return [raw_evidence]
+    if isinstance(parsed, list):
+        return [str(item) for item in parsed if str(item).strip()]
+    if isinstance(parsed, dict):
+        return [f"{key}: {value}" for key, value in parsed.items()]
+    return [str(parsed)]
 
 
 def render_project_check_log(checks) -> str:
