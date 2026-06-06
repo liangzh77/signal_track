@@ -212,6 +212,45 @@ def render_inbox_page() -> str:
       </article>
 
       <article class="card panel">
+        <h2>Research Verification</h2>
+        <div class="form">
+          <label>Item
+            <select id="research-item-select">
+              <option value="">Load research items</option>
+            </select>
+          </label>
+          <div class="row">
+            <label>Status
+              <select id="research-status">
+                <option value="verified">verified</option>
+                <option value="contradicted">contradicted</option>
+                <option value="pending">pending</option>
+                <option value="unverified">unverified</option>
+                <option value="ignored">ignored</option>
+              </select>
+            </label>
+            <label>Provider
+              <select id="research-provider">
+                <option value="none">none</option>
+                <option value="fixture">fixture</option>
+                <option value="auto">auto</option>
+                <option value="tushare">tushare</option>
+                <option value="yfinance">yfinance</option>
+              </select>
+            </label>
+          </div>
+          <label>Source Note
+            <textarea id="research-source-note" class="compact" placeholder="checked filing / source URL / manual verification"></textarea>
+          </label>
+          <label class="inline"><input id="research-run-check" type="checkbox"> Run check after update</label>
+          <div class="actions">
+            <button class="button primary" type="button" id="submit-research">Update Research Item</button>
+            <button class="button secondary" type="button" id="refresh-research">Refresh Items</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="card panel">
         <h2>Result</h2>
         <div id="status" class="status"></div>
         <pre id="result">{}</pre>
@@ -236,6 +275,11 @@ def render_inbox_page() -> str:
     const weightsJsonInput = document.getElementById('weights-json');
     const closeDateInput = document.getElementById('close-date');
     const closeReasonInput = document.getElementById('close-reason');
+    const researchItemSelectInput = document.getElementById('research-item-select');
+    const researchStatusInput = document.getElementById('research-status');
+    const researchProviderInput = document.getElementById('research-provider');
+    const researchSourceNoteInput = document.getElementById('research-source-note');
+    const researchRunCheckInput = document.getElementById('research-run-check');
 
     apiKeyInput.value = localStorage.getItem('signalTrackApiKey') || '';
     apiKeyInput.addEventListener('input', () => localStorage.setItem('signalTrackApiKey', apiKeyInput.value));
@@ -249,7 +293,10 @@ def render_inbox_page() -> str:
       statusNode.className = ok ? 'status ok' : 'status error';
       statusNode.textContent = ok ? 'Saved' : 'Failed';
       resultNode.textContent = JSON.stringify(payload, null, 2);
-      if (ok && autoRefreshProjectsInput.checked) loadProjects();
+      if (ok && autoRefreshProjectsInput.checked) {
+        loadProjects();
+        loadResearchItems();
+      }
     }
 
     async function parseResponse(response) {
@@ -318,11 +365,35 @@ def render_inbox_page() -> str:
       }
     }
 
+    async function loadResearchItems() {
+      try {
+        const id = projectIdInput.value.trim();
+        const path = id ? `/api/research-items?project_id=${encodeURIComponent(id)}` : '/api/research-items';
+        const response = await fetch(path);
+        const items = await parseResponse(response);
+        if (!response.ok || !Array.isArray(items)) return;
+        const current = researchItemSelectInput.value;
+        researchItemSelectInput.innerHTML = '<option value="">Select item</option>';
+        items.forEach((item) => {
+          const option = document.createElement('option');
+          option.value = item.id;
+          option.textContent = `#${item.id} [${item.status}] ${item.item_type} · ${item.content}`;
+          researchItemSelectInput.appendChild(option);
+        });
+        if (current) researchItemSelectInput.value = current;
+      } catch (error) {
+        statusNode.className = 'status warn';
+        statusNode.textContent = 'Research items unavailable';
+      }
+    }
+
     projectSelectInput.addEventListener('change', () => {
       projectIdInput.value = projectSelectInput.value;
+      loadResearchItems();
     });
 
     document.getElementById('refresh-projects').addEventListener('click', loadProjects);
+    document.getElementById('refresh-research').addEventListener('click', loadResearchItems);
 
     function projectId() {
       const id = projectIdInput.value.trim();
@@ -387,6 +458,24 @@ def render_inbox_page() -> str:
       });
     });
 
+    document.getElementById('submit-research').addEventListener('click', async () => {
+      const itemId = researchItemSelectInput.value;
+      if (!itemId) {
+        show({ error: 'Research item is required' }, false);
+        return;
+      }
+      await runProjectAction(`/api/research-items/${itemId}`, {
+        method: 'PATCH',
+        headers: headers({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          status: researchStatusInput.value,
+          source_note: researchSourceNoteInput.value || null,
+          run_check: researchRunCheckInput.checked,
+          provider: researchProviderInput.value,
+        }),
+      });
+    });
+
     ['dragenter', 'dragover'].forEach((name) => dropZone.addEventListener(name, (event) => {
       event.preventDefault();
       dropZone.classList.add('active');
@@ -399,6 +488,7 @@ def render_inbox_page() -> str:
       if (event.dataTransfer.files.length) fileInput.files = event.dataTransfer.files;
     });
     loadProjects();
+    loadResearchItems();
   </script>
 </body>
 </html>"""
