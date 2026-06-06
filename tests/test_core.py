@@ -462,6 +462,52 @@ class SignalTrackCoreTests(unittest.TestCase):
             backup_repo = Repository(Database(backup_path))
             self.assertIsNotNone(backup_repo.get_instrument("300750.SZ"))
 
+    def test_database_verify_and_restore_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            db = Database(db_path)
+            db.init()
+            Repository(db).upsert_instrument(SEED_INSTRUMENTS[0])
+            backup_path = db.backup(Path(tmp) / "backup.sqlite3")
+
+            Repository(db).upsert_instrument(SEED_INSTRUMENTS[1])
+            verify_report = db.verify()
+            with self.assertRaises(FileExistsError):
+                db.restore(backup_path)
+
+            restored_path = db.restore(backup_path, force=True)
+            restored_repo = Repository(Database(restored_path))
+
+            self.assertTrue(verify_report["ok"])
+            self.assertEqual(verify_report["schema_version"], 2)
+            self.assertEqual(verify_report["table_counts"]["instruments"], 2)
+            self.assertIsNotNone(restored_repo.get_instrument("300750.SZ"))
+            self.assertIsNone(restored_repo.get_instrument("600519.SH"))
+
+    def test_cli_verify_and_restore_db_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            backup_path = Path(tmp) / "backup.sqlite3"
+            env = {"SIGNAL_TRACK_DB_PATH": str(db_path)}
+            with patch.dict("os.environ", env, clear=False):
+                with redirect_stdout(StringIO()):
+                    self.assertEqual(cli_main(["init-db"]), 0)
+                    self.assertEqual(cli_main(["seed-instruments"]), 0)
+                    self.assertEqual(cli_main(["backup-db", "--out", str(backup_path)]), 0)
+                with redirect_stdout(StringIO()):
+                    self.assertEqual(cli_main(["--db", str(db_path), "restore-db", "--from", str(backup_path)]), 1)
+                verify_output = StringIO()
+                with redirect_stdout(verify_output):
+                    verify_code = cli_main(["verify-db"])
+                with redirect_stdout(StringIO()):
+                    restore_code = cli_main(["restore-db", "--from", str(backup_path), "--force"])
+
+        verify_payload = json.loads(verify_output.getvalue())
+        self.assertEqual(verify_code, 0)
+        self.assertEqual(restore_code, 0)
+        self.assertTrue(verify_payload["ok"])
+        self.assertGreaterEqual(verify_payload["table_counts"]["instruments"], len(SEED_INSTRUMENTS))
+
     def test_fixture_instrument_master_refresh(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")

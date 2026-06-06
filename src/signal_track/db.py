@@ -247,6 +247,108 @@ class Database:
             source.close()
         return dest_path
 
+    def restore(self, source_backup: str | Path, force: bool = False) -> Path:
+        source_path = Path(source_backup)
+        if not source_path.exists():
+            raise FileNotFoundError(f"Backup does not exist: {source_path}")
+        if source_path.resolve() == self.path.resolve():
+            raise ValueError("Backup source and destination database are the same file")
+        if self.path.exists() and not force:
+            raise FileExistsError("Destination database already exists; pass force=True to overwrite")
+        verification = verify_sqlite_database(source_path)
+        if not verification["ok"]:
+            raise ValueError(f"Backup failed verification: {verification}")
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        source = sqlite3.connect(source_path)
+        try:
+            target = sqlite3.connect(self.path)
+            try:
+                source.backup(target)
+            finally:
+                target.close()
+        finally:
+            source.close()
+        return self.path
+
+    def verify(self, require_exists: bool = True) -> dict[str, object]:
+        if require_exists and not self.path.exists():
+            return {
+                "ok": False,
+                "path": str(self.path),
+                "exists": False,
+                "integrity_check": [],
+                "foreign_key_violations": [],
+                "schema_version": None,
+                "table_counts": {},
+                "error": "database file does not exist",
+            }
+        return verify_sqlite_database(self.path)
+
+
+def verify_sqlite_database(path: str | Path) -> dict[str, object]:
+    db_path = Path(path)
+    result: dict[str, object] = {
+        "ok": False,
+        "path": str(db_path),
+        "exists": db_path.exists(),
+        "integrity_check": [],
+        "foreign_key_violations": [],
+        "schema_version": None,
+        "table_counts": {},
+    }
+    if not db_path.exists():
+        result["error"] = "database file does not exist"
+        return result
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        try:
+            integrity_rows = [row[0] for row in conn.execute("PRAGMA integrity_check").fetchall()]
+            foreign_key_rows = [tuple(row) for row in conn.execute("PRAGMA foreign_key_check").fetchall()]
+            schema_version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+            counts = {
+                table: count_table_rows(conn, table)
+                for table in [
+                    "instruments",
+                    "sources",
+                    "raw_inputs",
+                    "tracking_projects",
+                    "project_legs",
+                    "logic_blocks",
+                    "research_items",
+                    "daily_checks",
+                    "price_bars",
+                    "publish_events",
+                ]
+                if table_exists(conn, table)
+            }
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError as exc:
+        result["error"] = str(exc)
+        return result
+    result["integrity_check"] = integrity_rows
+    result["foreign_key_violations"] = foreign_key_rows
+    result["schema_version"] = schema_version
+    result["table_counts"] = counts
+    result["ok"] = integrity_rows == ["ok"] and not foreign_key_rows and schema_version <= CURRENT_SCHEMA_VERSION
+    if schema_version > CURRENT_SCHEMA_VERSION:
+        result["error"] = f"database schema version {schema_version} is newer than supported {CURRENT_SCHEMA_VERSION}"
+    return result
+
+
+def table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
+def count_table_rows(conn: sqlite3.Connection, table: str) -> int:
+    row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+    return int(row[0])
+
 
 def migrate_connection(conn: sqlite3.Connection) -> int:
     conn.executescript(RESEARCH_ITEMS_SCHEMA)

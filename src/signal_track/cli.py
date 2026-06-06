@@ -45,6 +45,13 @@ def main(argv: list[str] | None = None) -> int:
     backup_parser = subparsers.add_parser("backup-db", help="Create a safe SQLite backup.")
     backup_parser.add_argument("--out", help="Backup destination path.")
 
+    verify_parser = subparsers.add_parser("verify-db", help="Verify SQLite integrity, foreign keys, schema version, and row counts.")
+    verify_parser.add_argument("--allow-missing", action="store_true", help="Return a structured report instead of failing when the DB file is missing.")
+
+    restore_parser = subparsers.add_parser("restore-db", help="Restore the configured SQLite DB from a verified backup.")
+    restore_parser.add_argument("--from", dest="backup_path", required=True, help="Backup SQLite file to restore from.")
+    restore_parser.add_argument("--force", action="store_true", help="Overwrite the destination DB if it already exists.")
+
     seed_parser = subparsers.add_parser("seed-instruments", help="Insert built-in seed instruments.")
     seed_parser.add_argument("--print", action="store_true", help="Print inserted instruments as JSON.")
 
@@ -212,6 +219,20 @@ def main(argv: list[str] | None = None) -> int:
         destination = args.out or default_backup_path(db.path)
         backup_path = db.backup(destination)
         print(json.dumps({"ok": True, "backup": str(backup_path)}, ensure_ascii=False))
+        return 0
+
+    if args.command == "verify-db":
+        report = db.verify(require_exists=not args.allow_missing)
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if report["ok"] or (args.allow_missing and not report["exists"]) else 1
+
+    if args.command == "restore-db":
+        try:
+            restored_path = db.restore(args.backup_path, force=args.force)
+        except (FileExistsError, FileNotFoundError, ValueError) as exc:
+            print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+            return 1
+        print(json.dumps({"ok": True, "restored": str(restored_path), "backup": args.backup_path}, ensure_ascii=False))
         return 0
 
     if args.command == "seed-instruments":

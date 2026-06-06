@@ -209,6 +209,23 @@ SQLite backup:
 /srv/signal-track/venv/bin/python -m signal_track.cli backup-db --out "/srv/signal-track/shared/backup-$(date +%F).sqlite3"
 ```
 
+Verify the live DB and any backup before relying on it:
+
+```bash
+/srv/signal-track/venv/bin/python -m signal_track.cli verify-db
+/srv/signal-track/venv/bin/python -m signal_track.cli --db "/srv/signal-track/shared/backup-2026-06-06.sqlite3" verify-db
+```
+
+Restore only after stopping writers. The command verifies the backup first and
+refuses to overwrite the live DB unless `--force` is explicit:
+
+```bash
+sudo systemctl stop signal-track.service signal-track-daily.timer
+/srv/signal-track/venv/bin/python -m signal_track.cli restore-db --from "/srv/signal-track/shared/backup-2026-06-06.sqlite3" --force
+/srv/signal-track/venv/bin/python -m signal_track.cli verify-db
+sudo systemctl start signal-track.service signal-track-daily.timer
+```
+
 Keep `signal-track.env` outside git and back it up with your normal secret store.
 
 ## Upgrade

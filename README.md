@@ -264,10 +264,23 @@ Apply schema migrations:
 python -m signal_track.cli migrate-db
 ```
 
+Verify database integrity, foreign keys, schema version, and row counts:
+
+```powershell
+python -m signal_track.cli verify-db
+```
+
 Create a SQLite-safe backup, including WAL state:
 
 ```powershell
 python -m signal_track.cli backup-db --out data\backup.sqlite3
+```
+
+Restore from a verified backup. Restore refuses to overwrite an existing
+database unless `--force` is explicit:
+
+```powershell
+python -m signal_track.cli restore-db --from data\backup.sqlite3 --force
 ```
 
 ## Market Data Providers
