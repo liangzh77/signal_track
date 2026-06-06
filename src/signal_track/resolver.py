@@ -143,11 +143,14 @@ class InstrumentResolver:
             if query in {normalize(key) for key in keys}:
                 return Resolution(instrument, 1.0, "exact symbol/name/alias match")
 
-        inferred = infer_symbol(raw)
+        inferred = infer_symbol(raw, market_hint)
         if inferred:
             for instrument in candidates:
                 if normalize(instrument.symbol) == normalize(inferred):
                     return Resolution(instrument, 0.92, "normalized market symbol match")
+            synthetic = synthesize_instrument(raw, inferred, market_hint)
+            if synthetic:
+                return Resolution(synthetic, 0.86, "synthetic symbol pattern match")
 
         best: tuple[float, Instrument] | None = None
         for instrument in candidates:
@@ -165,17 +168,143 @@ def normalize(value: str) -> str:
     return re.sub(r"[\s_\-。．.]+", "", value.strip().upper())
 
 
-def infer_symbol(value: str) -> str | None:
+def infer_symbol(value: str, market_hint: Market | None = None) -> str | None:
     raw = value.strip().upper()
     if re.fullmatch(r"\d{6}", raw):
         if raw.startswith(("0", "3")):
             return f"{raw}.SZ"
         if raw.startswith(("6", "9")):
             return f"{raw}.SH"
+    if market_hint == Market.HK and re.fullmatch(r"\d{1,5}", raw):
+        return raw.zfill(5) + ".HK"
     if re.fullmatch(r"\d{1,5}\.HK", raw):
         number = raw.split(".", 1)[0].zfill(5)
         return f"{number}.HK"
+    if re.fullmatch(r"[A-Z]{1,4}\d{3,4}\.(SHF|DCE|CZC|CFX|INE|GFE)", raw):
+        return raw
+    if re.fullmatch(r"[A-Z]{1,4}\.(SHF|DCE|CZC|CFX|INE|GFE)", raw):
+        return raw
+    if re.fullmatch(r"[A-Z]{1,3}=F", raw):
+        return raw.removesuffix("=F")
     if re.fullmatch(r"[A-Z]{1,5}(\.US)?", raw):
         return raw.removesuffix(".US")
     return None
 
+
+def synthesize_instrument(raw_value: str, symbol: str, market_hint: Market | None = None) -> Instrument | None:
+    raw = raw_value.strip()
+    upper = raw.upper()
+    if re.fullmatch(r"\d{6}\.(SZ|SH)", symbol):
+        market = Market.CN_A
+        if market_hint and market_hint != market:
+            return None
+        exchange = "SZSE" if symbol.endswith(".SZ") else "SSE"
+        return Instrument(
+            symbol=symbol,
+            provider_symbol=symbol,
+            name=symbol,
+            aliases=(symbol.split(".", 1)[0], symbol),
+            market=market,
+            asset_type=AssetType.STOCK,
+            exchange=exchange,
+            currency="CNY",
+            timezone="Asia/Shanghai",
+            metadata={"synthetic": True},
+        )
+    if re.fullmatch(r"\d{5}\.HK", symbol):
+        market = Market.HK
+        if market_hint and market_hint != market:
+            return None
+        return Instrument(
+            symbol=symbol,
+            provider_symbol=symbol,
+            name=symbol,
+            aliases=(symbol.lstrip("0"), symbol),
+            market=market,
+            asset_type=AssetType.STOCK,
+            exchange="HKEX",
+            currency="HKD",
+            timezone="Asia/Hong_Kong",
+            metadata={"synthetic": True},
+        )
+    if re.fullmatch(r"[A-Z]{1,4}\d{3,4}\.(SHF|DCE|CZC|CFX|INE|GFE)", symbol):
+        if market_hint and market_hint != Market.CN_FUT:
+            return None
+        exchange = cn_future_exchange(symbol.rsplit(".", 1)[1])
+        return Instrument(
+            symbol=symbol,
+            provider_symbol=symbol,
+            name=symbol,
+            aliases=(symbol,),
+            market=Market.CN_FUT,
+            asset_type=AssetType.FUTURE,
+            exchange=exchange,
+            currency="CNY",
+            timezone="Asia/Shanghai",
+            metadata={"synthetic": True},
+        )
+    if re.fullmatch(r"[A-Z]{1,4}\.(SHF|DCE|CZC|CFX|INE|GFE)", symbol):
+        if market_hint and market_hint != Market.CN_FUT:
+            return None
+        suffix = symbol.rsplit(".", 1)[1]
+        root = symbol.split(".", 1)[0]
+        return Instrument(
+            symbol=symbol,
+            provider_symbol=symbol,
+            name=f"{root} continuous future",
+            aliases=(root, symbol),
+            market=Market.CN_FUT,
+            asset_type=AssetType.CONTINUOUS_FUTURE,
+            exchange=cn_future_exchange(suffix),
+            currency="CNY",
+            timezone="Asia/Shanghai",
+            metadata={"synthetic": True, "continuous": True, "root": root},
+        )
+    if re.fullmatch(r"[A-Z]{1,3}=F", upper) or market_hint == Market.US_FUT:
+        root = symbol.removesuffix("=F")
+        if not re.fullmatch(r"[A-Z]{1,3}", root):
+            return None
+        return Instrument(
+            symbol=root,
+            provider_symbol=f"{root}=F",
+            name=f"{root} continuous future",
+            aliases=(root, f"{root}=F"),
+            market=Market.US_FUT,
+            asset_type=AssetType.CONTINUOUS_FUTURE,
+            exchange="CME",
+            currency="USD",
+            timezone="America/Chicago",
+            metadata={"synthetic": True, "continuous": True, "root": root},
+        )
+    if market_hint not in {None, Market.US}:
+        return None
+    if not re.fullmatch(r"[A-Z]{1,5}(\.US)?", upper):
+        return None
+    if not (raw == upper or upper.endswith(".US") or market_hint == Market.US):
+        return None
+    symbol = upper.removesuffix(".US")
+    if symbol in {"LONG", "SHORT", "BUY", "SELL", "HOLD", "WATCH", "EXIT", "CLOSE", "HK", "US", "SZ", "SH"}:
+        return None
+    return Instrument(
+        symbol=symbol,
+        provider_symbol=symbol,
+        name=symbol,
+        aliases=(symbol, f"{symbol}.US"),
+        market=Market.US,
+        asset_type=AssetType.STOCK,
+        exchange="US",
+        currency="USD",
+        timezone="America/New_York",
+        metadata={"synthetic": True},
+    )
+
+
+def cn_future_exchange(suffix: str) -> str:
+    return {
+        "SHF": "SHFE",
+        "DCE": "DCE",
+        "CZC": "CZCE",
+        "CFX": "CFFEX",
+        "INE": "INE",
+        "GFE": "GFEX",
+    }[suffix]

@@ -137,6 +137,30 @@ class SignalTrackCoreTests(unittest.TestCase):
                 self.assertEqual(resolution.instrument.symbol, expected)
                 self.assertGreaterEqual(resolution.confidence, 0.6)
 
+    def test_resolver_synthesizes_explicit_unknown_symbols(self) -> None:
+        resolver = InstrumentResolver([SEED_INSTRUMENTS[0]])
+
+        cases = [
+            ("002594", None, "002594.SZ", Market.CN_A),
+            ("9868", Market.HK, "09868.HK", Market.HK),
+            ("TSLA.US", None, "TSLA", Market.US),
+            ("TSLA", None, "TSLA", Market.US),
+            ("ES=F", None, "ES", Market.US_FUT),
+            ("CU2601.SHF", None, "CU2601.SHF", Market.CN_FUT),
+        ]
+
+        for query, market_hint, symbol, market in cases:
+            with self.subTest(query=query):
+                resolution = resolver.resolve(query, market_hint)
+                self.assertIsNotNone(resolution)
+                self.assertEqual(resolution.instrument.symbol, symbol)
+                self.assertEqual(resolution.instrument.market, market)
+                self.assertTrue(resolution.instrument.metadata["synthetic"])
+
+        self.assertIsNone(resolver.resolve("60"))
+        self.assertIsNone(resolver.resolve("long"))
+        self.assertIsNone(resolver.resolve("HK"))
+
     def test_database_initialization_and_fixture_bar_storage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
