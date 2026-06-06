@@ -104,6 +104,9 @@ see whether the input created a tracking item or closed one, plus each project's
 status, direction, symbols, source, logic score, and review flags.
 `extractor` accepts `auto`, `heuristic`, or `openai`; unknown values return `400`
 instead of silently changing extraction behavior.
+Provider fields accept `none`, `auto`, `fixture`, `tushare`, or `yfinance`.
+Unknown provider names return `400`; missing credentials or dependencies return
+`503`.
 
 Inputs require a real source name. Pass `source`, or put a marker in the first
 few lines of the note, for example `source: Alpha Desk` or `信息源：Alpha Desk`.

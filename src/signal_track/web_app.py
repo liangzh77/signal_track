@@ -200,7 +200,7 @@ def create_app():
         try:
             provider = build_market_data_provider(payload.provider, settings)
         except ValueError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+            raise provider_http_exception(exc) from exc
         if provider is None:
             raise HTTPException(status_code=400, detail="A concrete provider is required")
         markets = refresh_markets(payload.market)
@@ -299,7 +299,7 @@ def create_app():
             try:
                 provider = build_market_data_provider(payload.provider, settings)
             except ValueError as exc:
-                raise HTTPException(status_code=503, detail=str(exc)) from exc
+                raise provider_http_exception(exc) from exc
             checked = DailyChecker(
                 repo,
                 provider,
@@ -314,7 +314,7 @@ def create_app():
         try:
             provider = build_market_data_provider(provider_name, settings)
         except ValueError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+            raise provider_http_exception(exc) from exc
         checked = DailyChecker(
             repo,
             provider,
@@ -417,6 +417,14 @@ def normalize_extractor(value: str) -> str:
     from fastapi import HTTPException
 
     raise HTTPException(status_code=400, detail=f"Unknown extractor: {value}")
+
+
+def provider_http_exception(exc: ValueError):
+    from fastapi import HTTPException
+
+    message = str(exc)
+    status_code = 400 if message.startswith("Unknown market data provider") else 503
+    return HTTPException(status_code=status_code, detail=message)
 
 
 def result_response(repo: Repository, result, publish_result: dict) -> dict:

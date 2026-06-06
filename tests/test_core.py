@@ -2150,6 +2150,30 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertTrue(detail["daily_checks"])
 
     @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
+    def test_web_unknown_provider_returns_bad_request(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_API_KEY": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+                "OPENAI_API_KEY": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                client = TestClient(create_app())
+                check = client.post("/api/checks/run", json={"provider": "typo"})
+                refresh = client.post("/api/instruments/refresh", json={"provider": "typo", "market": "CN_A"})
+
+            repo = Repository(Database(db_path))
+            self.assertEqual(check.status_code, 400)
+            self.assertIn("Unknown market data provider", check.json()["detail"])
+            self.assertEqual(refresh.status_code, 400)
+            self.assertIn("Unknown market data provider", refresh.json()["detail"])
+            self.assertEqual(repo.list_daily_checks(), [])
+
+    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
     def test_research_item_update_publishes_when_configured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             env = {
