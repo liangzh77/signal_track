@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import tempfile
@@ -114,6 +115,10 @@ def main(argv: list[str] | None = None) -> int:
     report_parser.add_argument("project_id", type=int)
     report_parser.add_argument("--format", choices=["markdown", "json"], default="markdown")
     report_parser.add_argument("--out", help="Output path. Prints to stdout if omitted.")
+
+    list_reports_parser = subparsers.add_parser("list-project-reports", help="List generated project report artifacts.")
+    list_reports_parser.add_argument("--project-id", type=int)
+    list_reports_parser.add_argument("--limit", type=int, default=50)
 
     update_research_parser = subparsers.add_parser("update-research-item", help="Update a research verification item.")
     update_research_parser.add_argument("item_id", type=int)
@@ -425,9 +430,36 @@ def main(argv: list[str] | None = None) -> int:
             out_path = Path(args.out)
             out_path.parent.mkdir(parents=True, exist_ok=True)
             out_path.write_text(content, encoding="utf-8")
-            print(json.dumps({"ok": True, "path": str(out_path)}, ensure_ascii=False))
+            content_bytes = content.encode("utf-8")
+            artifact_id = repo.record_project_report(
+                args.project_id,
+                report["title"],
+                str(out_path),
+                args.format,
+                hashlib.sha256(content_bytes).hexdigest(),
+                len(content_bytes),
+                metadata={"source": "export-project-report"},
+            )
+            artifact = dict(repo.get_latest_project_report(args.project_id, args.format) or {})
+            print(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "path": str(out_path),
+                        "report_artifact_id": artifact_id,
+                        "report_artifact": artifact,
+                    },
+                    ensure_ascii=False,
+                )
+            )
         else:
             print(content)
+        return 0
+
+    if args.command == "list-project-reports":
+        db.init()
+        reports = [dict(row) for row in repo.list_project_reports(project_id=args.project_id, limit=args.limit)]
+        print(json.dumps({"reports": reports}, ensure_ascii=False, indent=2))
         return 0
 
     if args.command == "update-research-item":

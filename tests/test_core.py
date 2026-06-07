@@ -417,14 +417,17 @@ class SignalTrackCoreTests(unittest.TestCase):
                 )
 
             version = db.migrate()
-            self.assertEqual(version, 2)
+            self.assertEqual(version, 3)
             with db.session() as conn:
                 columns = {row["name"] for row in conn.execute("PRAGMA table_info(tracking_projects)")}
                 research_columns = {row["name"] for row in conn.execute("PRAGMA table_info(research_items)")}
+                report_columns = {row["name"] for row in conn.execute("PRAGMA table_info(project_reports)")}
             self.assertIn("logic_score", columns)
             self.assertIn("weight_needs_review", columns)
             self.assertIn("item_type", research_columns)
             self.assertIn("status", research_columns)
+            self.assertIn("content_hash", report_columns)
+            self.assertIn("generated_at", report_columns)
 
     def test_database_backup_creates_readable_copy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -455,8 +458,9 @@ class SignalTrackCoreTests(unittest.TestCase):
             restored_repo = Repository(Database(restored_path))
 
             self.assertTrue(verify_report["ok"])
-            self.assertEqual(verify_report["schema_version"], 2)
+            self.assertEqual(verify_report["schema_version"], 3)
             self.assertEqual(verify_report["table_counts"]["instruments"], 2)
+            self.assertEqual(verify_report["table_counts"]["project_reports"], 0)
             self.assertIsNotNone(restored_repo.get_instrument("300750.SZ"))
             self.assertIsNone(restored_repo.get_instrument("600519.SH"))
 
@@ -2690,15 +2694,30 @@ class SignalTrackCoreTests(unittest.TestCase):
                 json_output = StringIO()
                 with redirect_stdout(json_output):
                     json_code = cli_main(["export-project-report", str(project_id), "--format", "json"])
+                reports_output = StringIO()
+                with redirect_stdout(reports_output):
+                    reports_code = cli_main(["list-project-reports", "--project-id", str(project_id)])
+                dashboard_html = render_dashboard(Repository(Database(db_path)))
                 report_exists = report_path.exists()
                 report_content = report_path.read_text(encoding="utf-8") if report_exists else ""
 
         payload = json.loads(json_output.getvalue())
+        markdown_payload = json.loads(markdown_output.getvalue())
+        reports_payload = json.loads(reports_output.getvalue())
         self.assertEqual(markdown_code, 0)
         self.assertEqual(json_code, 0)
+        self.assertEqual(reports_code, 0)
         self.assertTrue(report_exists)
         self.assertIn("3C-5M-3D-3T", report_content)
-        self.assertIn("path", json.loads(markdown_output.getvalue()))
+        self.assertEqual(markdown_payload["path"], str(report_path))
+        self.assertEqual(markdown_payload["report_artifact"]["format"], "markdown")
+        self.assertEqual(markdown_payload["report_artifact"]["path"], str(report_path))
+        self.assertEqual(markdown_payload["report_artifact"]["size_bytes"], len(report_content.encode("utf-8")))
+        self.assertEqual(len(markdown_payload["report_artifact"]["content_hash"]), 64)
+        self.assertEqual(len(reports_payload["reports"]), 1)
+        self.assertEqual(reports_payload["reports"][0]["id"], markdown_payload["report_artifact_id"])
+        self.assertIn("Indexed artifact:", dashboard_html)
+        self.assertIn("project-report.md", dashboard_html)
         self.assertEqual(payload["project"]["source_name"], "CLI Report Desk")
         self.assertEqual(payload["instruments"][0]["symbol"], "00700.HK")
 

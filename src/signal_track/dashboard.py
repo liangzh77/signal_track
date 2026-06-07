@@ -192,6 +192,7 @@ def render_dashboard(repo: Repository) -> str:
     .report-card h4 {{ margin: 0; font-size: 13px; line-height: 19px; }}
     .report-link {{ color: var(--cyan); text-decoration: none; border: 1px solid rgba(68,215,200,.45); border-radius: 999px; padding: 4px 9px; font-size: 12px; white-space: nowrap; }}
     .report-link:hover {{ background: rgba(68,215,200,.1); }}
+    .report-artifact {{ color: var(--faint); font-size: 11px; line-height: 16px; word-break: break-word; }}
     .report-stats {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }}
     .report-stat {{ border: 1px solid rgba(231,238,232,.08); border-radius: 8px; padding: 8px; background: rgba(255,255,255,.018); }}
     .report-stat span {{ display: block; color: var(--faint); font-size: 11px; line-height: 15px; }}
@@ -519,6 +520,8 @@ def render_report_snapshot(repo: Repository, project_id: int) -> str:
         return ""
     verification = report["data_verification"]
     markdown = render_project_report_markdown(report)
+    artifact = repo.get_latest_project_report(project_id, "markdown") or repo.get_latest_project_report(project_id)
+    artifact_line = render_report_artifact_line(artifact)
     covered = {section["name"] for section in report["framework"] if section["items"]}
     tags = "".join(
         f"<span class='framework-tag{' covered' if name in covered else ''}'>{escape(name)}</span>"
@@ -532,6 +535,7 @@ def render_report_snapshot(repo: Repository, project_id: int) -> str:
         "aria-label='下载项目投研报告 Markdown' title='下载项目投研报告 Markdown' "
         f"download='signal-track-project-{project_id}-report.md'>Markdown</a>"
         "</div>"
+        f"{artifact_line}"
         "<div class='report-stats'>"
         f"<div class='report-stat'><span>verified</span><strong>{verification['verified_count']}</strong></div>"
         f"<div class='report-stat'><span>pending</span><strong>{verification['pending_count']}</strong></div>"
@@ -543,6 +547,19 @@ def render_report_snapshot(repo: Repository, project_id: int) -> str:
         f"<pre>{escape(markdown)}</pre>"
         "</details>"
         "</section>"
+    )
+
+
+def render_report_artifact_line(artifact) -> str:
+    if not artifact:
+        return "<div class='report-artifact'>No indexed Markdown artifact yet. Export once to archive a report file.</div>"
+    digest = str(artifact["content_hash"] or "")
+    digest_label = digest[:12] if digest else "--"
+    return (
+        "<div class='report-artifact'>"
+        f"Indexed artifact: {escape(str(artifact['path']))} - {escape(str(artifact['format']))} - "
+        f"sha256 {escape(digest_label)} - {escape(str(artifact['generated_at']))}"
+        "</div>"
     )
 
 

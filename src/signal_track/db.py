@@ -141,6 +141,20 @@ CREATE TABLE IF NOT EXISTS research_items (
   FOREIGN KEY(project_id) REFERENCES tracking_projects(id)
 );
 
+CREATE TABLE IF NOT EXISTS project_reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  path TEXT NOT NULL,
+  format TEXT NOT NULL DEFAULT 'markdown',
+  content_hash TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  generated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(project_id, path, format),
+  FOREIGN KEY(project_id) REFERENCES tracking_projects(id)
+);
+
 CREATE TABLE IF NOT EXISTS publish_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   published_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -149,6 +163,22 @@ CREATE TABLE IF NOT EXISTS publish_events (
   status_code INTEGER,
   response_body TEXT,
   metadata TEXT NOT NULL DEFAULT '{}'
+);
+"""
+
+PROJECT_REPORTS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS project_reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  path TEXT NOT NULL,
+  format TEXT NOT NULL DEFAULT 'markdown',
+  content_hash TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  generated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(project_id, path, format),
+  FOREIGN KEY(project_id) REFERENCES tracking_projects(id)
 );
 """
 
@@ -167,7 +197,7 @@ CREATE TABLE IF NOT EXISTS research_items (
 );
 """
 
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 REQUIRED_COLUMNS: dict[str, dict[str, str]] = {
     "raw_inputs": {
@@ -201,6 +231,13 @@ REQUIRED_COLUMNS: dict[str, dict[str, str]] = {
         "status_code": "INTEGER",
         "response_body": "TEXT",
         "metadata": "TEXT NOT NULL DEFAULT '{}'",
+    },
+    "project_reports": {
+        "format": "TEXT NOT NULL DEFAULT 'markdown'",
+        "content_hash": "TEXT NOT NULL DEFAULT ''",
+        "size_bytes": "INTEGER NOT NULL DEFAULT 0",
+        "metadata": "TEXT NOT NULL DEFAULT '{}'",
+        "generated_at": "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
     },
 }
 
@@ -317,6 +354,7 @@ def verify_sqlite_database(path: str | Path) -> dict[str, object]:
                     "project_legs",
                     "logic_blocks",
                     "research_items",
+                    "project_reports",
                     "daily_checks",
                     "price_bars",
                     "publish_events",
@@ -363,6 +401,7 @@ def finite_float_or_none(value: object) -> float | None:
 
 def migrate_connection(conn: sqlite3.Connection) -> int:
     conn.executescript(RESEARCH_ITEMS_SCHEMA)
+    conn.executescript(PROJECT_REPORTS_SCHEMA)
     conn.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
     for table, columns in REQUIRED_COLUMNS.items():
         existing = table_columns(conn, table)
@@ -1288,6 +1327,92 @@ class Repository:
                 JOIN tracking_projects p ON p.id = c.project_id
                 {where}
                 ORDER BY c.check_date DESC, c.id DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+
+    def record_project_report(
+        self,
+        project_id: int,
+        title: str,
+        path: str,
+        artifact_format: str,
+        content_hash: str,
+        size_bytes: int,
+        metadata: dict | None = None,
+    ) -> int:
+        with self.db.session() as conn:
+            conn.execute(
+                """
+                INSERT INTO project_reports(project_id, title, path, format, content_hash, size_bytes, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(project_id, path, format) DO UPDATE SET
+                  title=excluded.title,
+                  content_hash=excluded.content_hash,
+                  size_bytes=excluded.size_bytes,
+                  metadata=excluded.metadata,
+                  generated_at=CURRENT_TIMESTAMP
+                """,
+                (
+                    project_id,
+                    title,
+                    path,
+                    artifact_format,
+                    content_hash,
+                    size_bytes,
+                    json.dumps(metadata or {}, ensure_ascii=False),
+                ),
+            )
+            row = conn.execute(
+                """
+                SELECT id FROM project_reports
+                WHERE project_id = ? AND path = ? AND format = ?
+                """,
+                (project_id, path, artifact_format),
+            ).fetchone()
+            return int(row["id"])
+
+    def get_latest_project_report(
+        self,
+        project_id: int,
+        artifact_format: str | None = None,
+    ) -> sqlite3.Row | None:
+        filters = ["project_id = ?"]
+        params: list[object] = [project_id]
+        if artifact_format:
+            filters.append("format = ?")
+            params.append(artifact_format)
+        with self.db.session() as conn:
+            return conn.execute(
+                f"""
+                SELECT * FROM project_reports
+                WHERE {' AND '.join(filters)}
+                ORDER BY generated_at DESC, id DESC
+                LIMIT 1
+                """,
+                params,
+            ).fetchone()
+
+    def list_project_reports(
+        self,
+        project_id: int | None = None,
+        limit: int = 50,
+    ) -> list[sqlite3.Row]:
+        where = ""
+        params: list[object] = []
+        if project_id is not None:
+            where = "WHERE r.project_id = ?"
+            params.append(project_id)
+        params.append(limit)
+        with self.db.session() as conn:
+            return conn.execute(
+                f"""
+                SELECT r.*, p.title AS project_title
+                FROM project_reports r
+                JOIN tracking_projects p ON p.id = r.project_id
+                {where}
+                ORDER BY r.generated_at DESC, r.id DESC
                 LIMIT ?
                 """,
                 params,

@@ -41,7 +41,7 @@ Signal Track intentionally uses a hybrid SQLite + Markdown design:
 
 - SQLite stores machine-readable state: inputs, instruments, tracking projects,
   portfolio legs and weights, logic blocks, daily checks, exit signals, price
-  bars, report indexes, and publish events.
+  bars, `project_reports` artifact indexes, and publish events.
 - Markdown stores long-form analysis: project research reports, 3C-5M-3D-3T
   supplements, source archives, and post-trade reviews.
 - The dashboard renders from SQLite state plus Markdown summaries or links. It
