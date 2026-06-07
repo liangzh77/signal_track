@@ -128,6 +128,7 @@ python -m signal_track.cli doctor
 python -m signal_track.cli refresh-instruments --provider auto --market all
 python -m signal_track.cli market-coverage --provider auto
 python -m signal_track.cli market-smoke --provider auto --market all --days 30
+python -m signal_track.cli import-bars 铜主连 --market CN_FUT --file data/cu-bars.csv --provider licensed-csv
 python -m signal_track.cli ingest --source 信息源A --text "腾讯 做多，观察广告恢复。" --archive-reports
 python -m signal_track.cli check --provider auto --archive-reports --publish
 python -m signal_track.cli daily-run --provider auto --out dist/dashboard.html --archive-reports --publish
@@ -154,6 +155,8 @@ Provider fields accept `none`, `auto`, `fixture`, `tushare`, or `yfinance`.
 China futures require Tushare or a licensed provider. Hong Kong and US futures
 are provider-abstracted through yfinance fallback; for production-grade
 historical futures data, wire the same provider interface to a licensed source.
+If you already have licensed or exported daily-bar CSV files, use `import-bars`
+to load them into SQLite for charting and daily checks.
 
 ## Dashboard
 

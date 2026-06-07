@@ -42,6 +42,12 @@ python -m signal_track.cli daily-run --provider none --archive-reports --publish
 
 After each run, summarize checked projects, exit signals, publish status, and manual follow-ups.
 
+If a futures project needs historical prices and the configured provider cannot fetch them, ask for or use a licensed/exported daily-bar CSV and import it with:
+
+```powershell
+python -m signal_track.cli import-bars "<symbol or name>" --market CN_FUT --file "<csv path>" --provider licensed-csv
+```
+
 ## Project Boundaries
 
 - Use `.env` for local secrets and keep it ignored by git.

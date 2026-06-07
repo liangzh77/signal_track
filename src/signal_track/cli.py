@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import sys
@@ -20,7 +21,7 @@ from .input_summary import input_detail, input_summaries
 from .input_files import UnsupportedInputFileError, read_input_file
 from .market_data import MarketDataService
 from .market_smoke import market_data_smoke
-from .models import Direction, Market, ProjectStatus
+from .models import DailyBar, Direction, Market, ProjectStatus
 from .provider_diagnostics import market_data_coverage
 from .project_actions import ProjectActionError, add_project_logic_block, close_tracking_project, update_tracking_project_weights
 from .project_report import build_project_report, render_project_report_markdown
@@ -63,6 +64,13 @@ def main(argv: list[str] | None = None) -> int:
     bars_parser.add_argument("--start")
     bars_parser.add_argument("--end")
     bars_parser.add_argument("--market", choices=[market.value for market in Market])
+
+    import_bars_parser = subparsers.add_parser("import-bars", help="Import daily bars from a local CSV file.")
+    import_bars_parser.add_argument("query", help="Instrument name, alias, or symbol.")
+    import_bars_parser.add_argument("--file", required=True, help="CSV file with date/open/high/low/close columns.")
+    import_bars_parser.add_argument("--market", choices=[market.value for market in Market])
+    import_bars_parser.add_argument("--provider", default="csv", help="Provider label to store with imported bars.")
+    import_bars_parser.add_argument("--provider-symbol", help="Provider symbol to store with imported bars.")
 
     refresh_parser = subparsers.add_parser("refresh-instruments", help="Refresh instrument master records.")
     refresh_parser.add_argument("--provider", choices=["auto", "fixture", "tushare"], default="auto")
@@ -335,6 +343,47 @@ def main(argv: list[str] | None = None) -> int:
                     "end": end.isoformat(),
                     "bar_count": len(bars),
                     "stored_bar_count": repo.count_price_bars(resolution.instrument.symbol),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "import-bars":
+        db.init()
+        seed_if_empty(repo)
+        resolver = InstrumentResolver(repo.list_instruments())
+        market_hint = Market(args.market) if args.market else None
+        resolution = resolver.resolve(args.query, market_hint)
+        if not resolution:
+            print(json.dumps({"ok": False, "code": "instrument_not_resolved", "query": args.query}, ensure_ascii=False))
+            return 2
+        try:
+            bars = read_daily_bars_csv(
+                Path(args.file),
+                symbol=resolution.instrument.symbol,
+                provider=args.provider,
+                provider_symbol=args.provider_symbol or resolution.instrument.provider_symbol,
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            print(json.dumps({"ok": False, "code": "invalid_bar_csv", "message": str(exc)}, ensure_ascii=False))
+            return 2
+        instrument_id = repo.upsert_instrument(resolution.instrument)
+        stored = repo.upsert_bars(instrument_id, bars)
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "symbol": resolution.instrument.symbol,
+                    "market": resolution.instrument.market.value,
+                    "provider": args.provider,
+                    "provider_symbol": args.provider_symbol or resolution.instrument.provider_symbol,
+                    "imported_rows": len(bars),
+                    "stored_bar_count": stored,
+                    "total_bar_count": repo.count_price_bars(resolution.instrument.symbol),
+                    "start": bars[0].date.isoformat() if bars else None,
+                    "end": bars[-1].date.isoformat() if bars else None,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -907,6 +956,85 @@ def build_provider(name: str, settings: Settings):
 
 def parse_date(value: str) -> date:
     return date.fromisoformat(value)
+
+
+def read_daily_bars_csv(path: Path, symbol: str, provider: str = "csv", provider_symbol: str | None = None) -> list[DailyBar]:
+    if not path.exists():
+        raise FileNotFoundError(f"CSV file does not exist: {path}")
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if not reader.fieldnames:
+            raise ValueError("CSV header row is required")
+        bars = [
+            daily_bar_from_csv_row(
+                row,
+                symbol=symbol,
+                provider=provider,
+                provider_symbol=provider_symbol or symbol,
+                row_number=index + 2,
+            )
+            for index, row in enumerate(reader)
+            if any((value or "").strip() for value in row.values())
+        ]
+    if not bars:
+        raise ValueError("CSV contains no bar rows")
+    return sorted(bars, key=lambda bar: bar.date)
+
+
+def daily_bar_from_csv_row(row: dict[str, str | None], symbol: str, provider: str, provider_symbol: str, row_number: int) -> DailyBar:
+    bar_date = parse_csv_date(first_csv_value(row, "date", "bar_date", "trade_date"), row_number)
+    close = parse_optional_csv_float(first_csv_value(row, "close", "收盘", "收盘价"), row_number, "close")
+    if close is None:
+        raise ValueError(f"row {row_number}: close is required")
+    return DailyBar(
+        symbol=symbol,
+        provider_symbol=provider_symbol,
+        date=bar_date,
+        open=parse_optional_csv_float(first_csv_value(row, "open", "开盘", "开盘价"), row_number, "open"),
+        high=parse_optional_csv_float(first_csv_value(row, "high", "最高", "最高价"), row_number, "high"),
+        low=parse_optional_csv_float(first_csv_value(row, "low", "最低", "最低价"), row_number, "low"),
+        close=close,
+        adj_close=parse_optional_csv_float(first_csv_value(row, "adj_close", "adjclose", "复权收盘"), row_number, "adj_close") or close,
+        volume=parse_optional_csv_float(first_csv_value(row, "volume", "vol", "成交量"), row_number, "volume"),
+        amount=parse_optional_csv_float(first_csv_value(row, "amount", "成交额"), row_number, "amount"),
+        settle=parse_optional_csv_float(first_csv_value(row, "settle", "结算价"), row_number, "settle"),
+        open_interest=parse_optional_csv_float(first_csv_value(row, "open_interest", "oi", "持仓量"), row_number, "open_interest"),
+        provider=provider,
+    )
+
+
+def first_csv_value(row: dict[str, str | None], *names: str) -> str | None:
+    normalized = {str(key).strip().lower(): value for key, value in row.items()}
+    for name in names:
+        value = normalized.get(name.lower())
+        if value is not None:
+            return value
+    return None
+
+
+def parse_csv_date(value: str | None, row_number: int) -> date:
+    if value is None or not value.strip():
+        raise ValueError(f"row {row_number}: date is required")
+    text = value.strip()
+    if len(text) == 8 and text.isdigit():
+        return date(int(text[0:4]), int(text[4:6]), int(text[6:8]))
+    try:
+        return date.fromisoformat(text)
+    except ValueError as exc:
+        raise ValueError(f"row {row_number}: invalid date {text!r}") from exc
+
+
+def parse_optional_csv_float(value: str | None, row_number: int, field: str) -> float | None:
+    if value is None:
+        return None
+    text = value.strip().replace(",", "")
+    if not text:
+        return None
+    try:
+        parsed = float(text)
+    except ValueError as exc:
+        raise ValueError(f"row {row_number}: invalid {field} {text!r}") from exc
+    return parsed
 
 
 def refresh_markets(value: str) -> list[Market]:

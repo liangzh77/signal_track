@@ -896,6 +896,48 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(payload["markets"][0]["symbol"], "ES")
         self.assertGreater(payload["markets"][0]["bar_count"], 0)
 
+    def test_cli_import_bars_loads_cn_future_csv(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            csv_path = Path(tmp) / "cu.csv"
+            csv_path.write_text(
+                "trade_date,open,high,low,close,vol,amount,settle,oi\n"
+                "20260601,80000,80500,79800,80300,1000,1200000,80200,50000\n"
+                "20260602,80300,81000,80100,80900,1100,1300000,80800,50500\n",
+                encoding="utf-8",
+            )
+            output = StringIO()
+
+            with redirect_stdout(output):
+                code = cli_main([
+                    "--db",
+                    str(db_path),
+                    "import-bars",
+                    "铜主连",
+                    "--market",
+                    "CN_FUT",
+                    "--file",
+                    str(csv_path),
+                    "--provider",
+                    "licensed-csv",
+                    "--provider-symbol",
+                    "CU.SHF",
+                ])
+
+            payload = json.loads(output.getvalue())
+            repo = Repository(Database(db_path))
+            latest = repo.get_latest_price_bar("CU.SHF")
+            self.assertEqual(code, 0)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["symbol"], "CU.SHF")
+            self.assertEqual(payload["stored_bar_count"], 2)
+            self.assertEqual(payload["total_bar_count"], 2)
+            self.assertEqual(payload["start"], "2026-06-01")
+            self.assertEqual(payload["end"], "2026-06-02")
+            self.assertIsNotNone(latest)
+            self.assertEqual(latest["provider"], "licensed-csv")
+            self.assertEqual(latest["close"], 80900.0)
+
     def test_cli_self_check_runs_non_destructive_smoke_flow(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(
