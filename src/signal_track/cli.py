@@ -133,6 +133,8 @@ def main(argv: list[str] | None = None) -> int:
     update_research_parser.add_argument("--provider", choices=["none", "auto", "fixture", "tushare", "yfinance"], default="none")
     update_research_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after updating.")
     update_research_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
+    update_research_parser.add_argument("--archive-reports", action="store_true", help="Archive affected project Markdown reports before rendering/publishing.")
+    update_research_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
     update_research_parser.add_argument("--title", default="Signal Track 投资信号看板")
 
     close_project_parser = subparsers.add_parser("close-project", help="Manually close a tracking project.")
@@ -141,6 +143,8 @@ def main(argv: list[str] | None = None) -> int:
     close_project_parser.add_argument("--reason", help="Close reason recorded as close logic.")
     close_project_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after closing.")
     close_project_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
+    close_project_parser.add_argument("--archive-reports", action="store_true", help="Archive affected project Markdown reports before rendering/publishing.")
+    close_project_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
     close_project_parser.add_argument("--title", default="Signal Track 投资信号看板")
 
     weights_parser = subparsers.add_parser("update-project-weights", help="Update all leg weights for a portfolio project.")
@@ -149,6 +153,8 @@ def main(argv: list[str] | None = None) -> int:
     weights_parser.add_argument("--note", help="Reason recorded as a weight_update logic block.")
     weights_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after updating weights.")
     weights_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
+    weights_parser.add_argument("--archive-reports", action="store_true", help="Archive affected project Markdown reports before rendering/publishing.")
+    weights_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
     weights_parser.add_argument("--title", default="Signal Track 投资信号看板")
 
     note_parser = subparsers.add_parser("add-project-note", help="Append manual observation logic to a project.")
@@ -166,6 +172,8 @@ def main(argv: list[str] | None = None) -> int:
     note_parser.add_argument("--provider", choices=["none", "auto", "fixture", "tushare", "yfinance"], default="none")
     note_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after adding the note.")
     note_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
+    note_parser.add_argument("--archive-reports", action="store_true", help="Archive affected project Markdown reports before rendering/publishing.")
+    note_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
     note_parser.add_argument("--title", default="Signal Track 投资信号看板")
 
     ingest_parser = subparsers.add_parser("ingest", help="Create tracking projects from raw source text.")
@@ -175,6 +183,8 @@ def main(argv: list[str] | None = None) -> int:
     ingest_parser.add_argument("--portfolio", action="store_true", help="Treat all resolved instruments as one project.")
     ingest_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after ingest.")
     ingest_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
+    ingest_parser.add_argument("--archive-reports", action="store_true", help="Archive created/updated project Markdown reports before rendering/publishing.")
+    ingest_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
     ingest_parser.add_argument(
         "--extraction-json",
         help="Read a Codex-produced structured extraction JSON object from this file; otherwise use local heuristics.",
@@ -189,6 +199,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     check_parser.add_argument("--publish", action="store_true")
     check_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
+    check_parser.add_argument("--archive-reports", action="store_true", help="Archive active project Markdown reports before rendering/publishing.")
+    check_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
     check_parser.add_argument("--title", default="Signal Track 投资信号看板")
 
     render_parser = subparsers.add_parser("render-dashboard", help="Render dashboard HTML.")
@@ -212,6 +224,8 @@ def main(argv: list[str] | None = None) -> int:
     daily_parser.add_argument("--out", default="dist/dashboard.html")
     daily_parser.add_argument("--publish", action="store_true")
     daily_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
+    daily_parser.add_argument("--archive-reports", action="store_true", help="Archive active project Markdown reports before rendering/publishing.")
+    daily_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
     daily_parser.add_argument("--title", default="Signal Track 投资信号看板")
 
     args = parser.parse_args(argv)
@@ -428,25 +442,21 @@ def main(argv: list[str] | None = None) -> int:
         )
         if args.out:
             out_path = Path(args.out)
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_text(content, encoding="utf-8")
-            content_bytes = content.encode("utf-8")
-            artifact_id = repo.record_project_report(
+            artifact = write_project_report_artifact(
+                repo,
                 args.project_id,
-                report["title"],
-                str(out_path),
-                args.format,
-                hashlib.sha256(content_bytes).hexdigest(),
-                len(content_bytes),
-                metadata={"source": "export-project-report"},
+                out_path,
+                artifact_format=args.format,
+                source="export-project-report",
+                report=report,
+                content=content,
             )
-            artifact = dict(repo.get_latest_project_report(args.project_id, args.format) or {})
             print(
                 json.dumps(
                     {
                         "ok": True,
                         "path": str(out_path),
-                        "report_artifact_id": artifact_id,
+                        "report_artifact_id": artifact["id"],
                         "report_artifact": artifact,
                     },
                     ensure_ascii=False,
@@ -490,6 +500,11 @@ def main(argv: list[str] | None = None) -> int:
                 repo,
                 provider,
             ).run()
+        report_artifacts = (
+            archive_project_reports(repo, [int(item["project_id"])], args.reports_dir, "research-item-update")
+            if args.archive_reports
+            else []
+        )
         publish_result = None
         if should_publish_update(settings, forced=args.publish, disabled=args.no_publish):
             publish_result = publish_dashboard(
@@ -505,6 +520,7 @@ def main(argv: list[str] | None = None) -> int:
                     "ok": True,
                     "item": dict(item),
                     "checked_projects": checked,
+                    "report_artifacts": report_artifacts,
                     **cli_publish_fields(publish_result, settings),
                 },
                 ensure_ascii=False,
@@ -524,6 +540,11 @@ def main(argv: list[str] | None = None) -> int:
         if not project:
             print(json.dumps({"ok": False, "code": "project_not_found"}, ensure_ascii=False))
             return 2
+        report_artifacts = (
+            archive_project_reports(repo, [args.project_id], args.reports_dir, "close-project")
+            if args.archive_reports
+            else []
+        )
         publish_result = None
         if should_publish_update(settings, forced=args.publish, disabled=args.no_publish):
             publish_result = publish_dashboard(
@@ -538,6 +559,7 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "ok": True,
                     "project": project_summaries(repo, [args.project_id])[0],
+                    "report_artifacts": report_artifacts,
                     **cli_publish_fields(publish_result, settings),
                 },
                 ensure_ascii=False,
@@ -564,6 +586,11 @@ def main(argv: list[str] | None = None) -> int:
         if not project:
             print(json.dumps({"ok": False, "code": "project_not_found"}, ensure_ascii=False))
             return 2
+        report_artifacts = (
+            archive_project_reports(repo, [args.project_id], args.reports_dir, "update-project-weights")
+            if args.archive_reports
+            else []
+        )
         publish_result = None
         if should_publish_update(settings, forced=args.publish, disabled=args.no_publish):
             publish_result = publish_dashboard(
@@ -579,6 +606,7 @@ def main(argv: list[str] | None = None) -> int:
                     "ok": True,
                     "project": project_summaries(repo, [args.project_id])[0],
                     "legs": [dict(row) for row in repo.list_project_legs(args.project_id)],
+                    "report_artifacts": report_artifacts,
                     **cli_publish_fields(publish_result, settings),
                 },
                 ensure_ascii=False,
@@ -626,6 +654,11 @@ def main(argv: list[str] | None = None) -> int:
                 repo,
                 provider,
             ).run()
+        report_artifacts = (
+            archive_project_reports(repo, [args.project_id], args.reports_dir, "add-project-note")
+            if args.archive_reports
+            else []
+        )
         publish_result = None
         if should_publish_update(settings, forced=args.publish, disabled=args.no_publish):
             publish_result = publish_dashboard(
@@ -642,6 +675,7 @@ def main(argv: list[str] | None = None) -> int:
                     "project": project_summaries(repo, [args.project_id])[0],
                     "logic_blocks": [dict(row) for row in repo.list_logic_blocks(args.project_id)],
                     "checked_projects": checked,
+                    "report_artifacts": report_artifacts,
                     **cli_publish_fields(publish_result, settings),
                 },
                 ensure_ascii=False,
@@ -693,6 +727,11 @@ def main(argv: list[str] | None = None) -> int:
             extraction=extraction,
             attachment_path=attachment_path,
         )
+        report_artifacts = (
+            archive_project_reports(repo, result.project_ids, args.reports_dir, "ingest")
+            if args.archive_reports
+            else []
+        )
         publish_result = None
         if should_publish_update(settings, forced=args.publish, disabled=args.no_publish):
             publish_result = publish_dashboard(
@@ -712,6 +751,7 @@ def main(argv: list[str] | None = None) -> int:
                     "projects": project_summaries(repo, result.project_ids),
                     "logic_score": result.logic_score,
                     "system_logic_added": result.system_logic_added,
+                    "report_artifacts": report_artifacts,
                     **cli_publish_fields(publish_result, settings),
                 },
                 ensure_ascii=False,
@@ -729,6 +769,12 @@ def main(argv: list[str] | None = None) -> int:
             repo,
             provider,
         ).run(check_date)
+        report_project_ids = repo.list_active_project_ids()
+        report_artifacts = (
+            archive_project_reports(repo, report_project_ids, args.reports_dir, "check")
+            if args.archive_reports
+            else []
+        )
         publish_result = None
         if should_publish_update(settings, forced=args.publish, disabled=args.no_publish):
             publish_result = publish_dashboard(
@@ -742,6 +788,7 @@ def main(argv: list[str] | None = None) -> int:
             json.dumps(
                 {
                     "checked_projects": checked,
+                    "report_artifacts": report_artifacts,
                     **cli_publish_fields(publish_result, settings),
                 },
                 ensure_ascii=False,
@@ -792,6 +839,12 @@ def main(argv: list[str] | None = None) -> int:
             repo,
             provider,
         ).run(check_date)
+        report_project_ids = repo.list_active_project_ids()
+        report_artifacts = (
+            archive_project_reports(repo, report_project_ids, args.reports_dir, "daily-run")
+            if args.archive_reports
+            else []
+        )
         out_path = Path(args.out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         html = render_dashboard(repo)
@@ -810,6 +863,7 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "checked_projects": checked,
                     "html": str(out_path),
+                    "report_artifacts": report_artifacts,
                     **cli_publish_fields(publish_result, settings),
                 },
                 ensure_ascii=False,
@@ -876,6 +930,55 @@ def cli_publish_fields(result: PublishResult | None, settings: Settings) -> dict
         "error": payload["error"],
         "response_body": payload["response_body"],
     }
+
+
+def write_project_report_artifact(
+    repo: Repository,
+    project_id: int,
+    out_path: Path,
+    artifact_format: str = "markdown",
+    source: str = "manual",
+    report: dict | None = None,
+    content: str | None = None,
+) -> dict:
+    report = report or build_project_report(repo, project_id)
+    if not report:
+        raise ValueError(f"project not found: {project_id}")
+    if content is None:
+        content = (
+            json.dumps(report, ensure_ascii=False, indent=2)
+            if artifact_format == "json"
+            else render_project_report_markdown(report)
+        )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(content, encoding="utf-8")
+    content_bytes = content.encode("utf-8")
+    repo.record_project_report(
+        project_id,
+        report["title"],
+        str(out_path),
+        artifact_format,
+        hashlib.sha256(content_bytes).hexdigest(),
+        len(content_bytes),
+        metadata={"source": source},
+    )
+    return dict(repo.get_latest_project_report(project_id, artifact_format) or {})
+
+
+def archive_project_reports(repo: Repository, project_ids: list[int], reports_dir: str, source: str) -> list[dict]:
+    artifacts = []
+    for project_id in sorted(set(project_ids)):
+        try:
+            artifact = write_project_report_artifact(
+                repo,
+                project_id,
+                Path(reports_dir) / f"project-{project_id}-report.md",
+                source=source,
+            )
+        except ValueError:
+            continue
+        artifacts.append(artifact)
+    return artifacts
 
 
 def publish_dashboard(repo: Repository, settings: Settings, title: str, feature: str, flow: str):

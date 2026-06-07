@@ -107,9 +107,9 @@ Use the Windows Codex App Automation UI for recurring checks. A typical prompt:
 
 ```text
 In this workspace, run Signal Track daily check and publish:
-python -m signal_track.cli daily-run --provider auto --publish
+python -m signal_track.cli daily-run --provider auto --archive-reports --publish
 If provider auto is unavailable, run:
-python -m signal_track.cli daily-run --provider none --publish
+python -m signal_track.cli daily-run --provider none --archive-reports --publish
 Summarize checked projects, exit signals, publish result, and required manual actions.
 ```
 
@@ -125,14 +125,15 @@ python -m signal_track.cli resolve 腾讯
 python -m signal_track.cli refresh-instruments --provider auto --market all
 python -m signal_track.cli market-coverage --provider auto
 python -m signal_track.cli market-smoke --provider auto --market all --days 30
-python -m signal_track.cli ingest --source 信息源A --text "腾讯 做多，观察广告恢复。"
-python -m signal_track.cli check --provider auto --publish
-python -m signal_track.cli daily-run --provider auto --out dist/dashboard.html --publish
+python -m signal_track.cli ingest --source 信息源A --text "腾讯 做多，观察广告恢复。" --archive-reports
+python -m signal_track.cli check --provider auto --archive-reports --publish
+python -m signal_track.cli daily-run --provider auto --out dist/dashboard.html --archive-reports --publish
 python -m signal_track.cli render-dashboard --out dist/dashboard.html
 python -m signal_track.cli publish-dashboard
 python -m signal_track.cli list-projects
 python -m signal_track.cli list-exit-signals
 python -m signal_track.cli export-project-report 1 --out dist/project-1-report.md
+python -m signal_track.cli list-project-reports --project-id 1
 ```
 
 ## Market Data

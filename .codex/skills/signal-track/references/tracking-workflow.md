@@ -5,7 +5,7 @@
 When Codex has analyzed a user note, write a temporary JSON file and pass it to:
 
 ```powershell
-python -m signal_track.cli ingest --source "<source>" --text "<raw note>" --extraction-json "<path>" --publish
+python -m signal_track.cli ingest --source "<source>" --text "<raw note>" --extraction-json "<path>" --archive-reports --publish
 ```
 
 Shape:
@@ -54,5 +54,6 @@ Ask only when:
 After every ingest, close, note, weight update, or daily check:
 
 1. Render the dashboard.
-2. Publish when configured or explicitly requested.
-3. Summarize created/updated projects, exit signals, and publish status.
+2. Archive affected project Markdown reports with `--archive-reports` when using a CLI update command.
+3. Publish when configured or explicitly requested.
+4. Summarize created/updated projects, report artifacts, exit signals, and publish status.

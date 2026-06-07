@@ -2473,6 +2473,50 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(metadata["flow"], "daily-run")
             self.assertEqual(metadata["exception_type"], "RuntimeError")
 
+    def test_cli_daily_run_archives_reports_before_rendering_dashboard(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            html_path = Path(tmp) / "dashboard.html"
+            reports_dir = Path(tmp) / "reports"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with redirect_stdout(StringIO()):
+                    cli_main(["ingest", "--source", "Daily Report Desk", "--text", "00700.HK long, watch ads recovery."])
+                output = StringIO()
+                with redirect_stdout(output):
+                    code = cli_main([
+                        "daily-run",
+                        "--provider",
+                        "fixture",
+                        "--out",
+                        str(html_path),
+                        "--archive-reports",
+                        "--reports-dir",
+                        str(reports_dir),
+                    ])
+
+            payload = json.loads(output.getvalue())
+            repo = Repository(Database(db_path))
+            projects = repo.list_project_rows()
+            project_id = int(projects[0]["id"])
+            report_path = reports_dir / f"project-{project_id}-report.md"
+            reports = repo.list_project_reports(project_id=project_id)
+            html = html_path.read_text(encoding="utf-8")
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["checked_projects"], 1)
+            self.assertEqual(len(payload["report_artifacts"]), 1)
+            self.assertEqual(payload["report_artifacts"][0]["path"], str(report_path))
+            self.assertTrue(report_path.exists())
+            self.assertEqual(len(reports), 1)
+            self.assertIn("Indexed artifact:", html)
+            self.assertIn(f"project-{project_id}-report.md", html)
+
     def test_cli_check_auto_publishes_when_configured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"
@@ -2573,6 +2617,7 @@ class SignalTrackCoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"
             extraction_path = Path(tmp) / "codex-extraction.json"
+            reports_dir = Path(tmp) / "reports"
             extraction_path.write_text(
                 json.dumps(
                     {
@@ -2614,16 +2659,25 @@ class SignalTrackCoreTests(unittest.TestCase):
                         "raw source note",
                         "--extraction-json",
                         str(extraction_path),
+                        "--archive-reports",
+                        "--reports-dir",
+                        str(reports_dir),
                     ])
 
             payload = json.loads(output.getvalue())
             repo = Repository(Database(db_path))
             projects = repo.list_project_rows()
             logic_blocks = repo.list_logic_blocks(int(projects[0]["id"]))
+            reports = repo.list_project_reports(project_id=int(projects[0]["id"]))
+            report_path = reports_dir / f"project-{int(projects[0]['id'])}-report.md"
             self.assertEqual(code, 0)
             self.assertEqual(payload["resolved_symbols"], ["00700.HK"])
             self.assertEqual(payload["input_action"], "track")
             self.assertEqual(payload["logic_score"], 8)
+            self.assertEqual(len(payload["report_artifacts"]), 1)
+            self.assertEqual(payload["report_artifacts"][0]["path"], str(report_path))
+            self.assertTrue(report_path.exists())
+            self.assertEqual(len(reports), 1)
             self.assertEqual(projects[0]["direction"], "long")
             self.assertTrue(any("Tencent ad recovery" in block["content"] for block in logic_blocks))
             self.assertTrue(any("MA20" in block["content"] for block in logic_blocks))

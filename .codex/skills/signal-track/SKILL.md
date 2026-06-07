@@ -21,7 +21,7 @@ Use SQLite as the runtime source of truth. Use Markdown for human-readable long-
 4. If multiple instruments are present, create separate projects unless the user explicitly says they are a portfolio.
 5. If portfolio weights are missing, ask for weights before saving.
 6. If logic is weak, still track it and supplement with the user's 3C-5M-3D-3T framework.
-7. Write structured extraction JSON and run local CLI ingest.
+7. Write structured extraction JSON and run local CLI ingest, usually with `--archive-reports`.
 8. Render and publish the dashboard when configured or requested.
 
 Read `references/tracking-workflow.md` when you need the exact structured JSON shape.
@@ -31,13 +31,13 @@ Read `references/tracking-workflow.md` when you need the exact structured JSON s
 Use Codex App Automations for recurring runs. The standard command is:
 
 ```powershell
-python -m signal_track.cli daily-run --provider auto --publish
+python -m signal_track.cli daily-run --provider auto --archive-reports --publish
 ```
 
 If market data is unavailable, degrade to:
 
 ```powershell
-python -m signal_track.cli daily-run --provider none --publish
+python -m signal_track.cli daily-run --provider none --archive-reports --publish
 ```
 
 After each run, summarize checked projects, exit signals, publish status, and manual follow-ups.
