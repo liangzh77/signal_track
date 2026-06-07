@@ -24,13 +24,13 @@ jobs:
       - name: Install package
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[web]"
+          python -m pip install -e ".[market,files]"
 
       - name: Run unit tests
         run: python -m unittest discover -s tests
 
       - name: Compile sources
-        run: python -m compileall -q src tests scripts
+        run: python -m compileall -q src tests
 
       - name: Run CLI smoke flow
         run: |
@@ -46,16 +46,3 @@ jobs:
         run: |
           python -m signal_track.cli self-check --provider fixture --out dist/self-check.html
           test -s dist/self-check.html
-
-      - name: Run API health smoke
-        run: |
-          python -m signal_track.cli --db data/ci-web.sqlite3 serve --host 127.0.0.1 --port 8765 &
-          pid=$!
-          trap "kill $pid" EXIT
-          for i in $(seq 1 20); do
-            if python scripts/healthcheck.py http://127.0.0.1:8765/health; then
-              exit 0
-            fi
-            sleep 1
-          done
-          exit 1
