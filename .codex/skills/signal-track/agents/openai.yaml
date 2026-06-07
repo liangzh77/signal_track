@@ -1,4 +1,4 @@
 interface:
   display_name: "Signal Track"
   short_description: "Project-local investment signal tracking workflow."
-  default_prompt: "Process a Signal Track investment note in this repo: extract signals, supplement weak logic when needed, update local state, render, and publish the static dashboard."
+  default_prompt: "Use $signal-track to process a Signal Track investment note in this repo: extract signals, supplement weak logic when needed, update local state, render, and publish the static dashboard."
