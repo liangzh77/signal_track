@@ -293,6 +293,37 @@ class SignalTrackCoreTests(unittest.TestCase):
 
         self.assertEqual(settings.daily_provider, "auto")
 
+    def test_cli_doctor_reports_readiness_without_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_DAILY_PROVIDER": "auto",
+                "TUSHARE_TOKEN": "",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+            }
+            output = StringIO()
+            with patch.dict("os.environ", env, clear=True):
+                with patch("signal_track.provider_diagnostics.dependency_available", return_value=False):
+                    with redirect_stdout(output):
+                        code = cli_main(["doctor", "--provider", "auto"])
+
+            payload = json.loads(output.getvalue())
+            self.assertEqual(code, 0)
+            self.assertFalse(payload["ok"])
+            self.assertTrue(payload["codex_first"])
+            self.assertFalse(payload["backend_service_required"])
+            self.assertFalse(payload["database"]["exists"])
+            self.assertFalse(payload["configuration"]["demo_api_key_configured"])
+            self.assertEqual(payload["market_data"]["price_ready_markets"], [])
+            self.assertEqual(
+                payload["market_data"]["missing_price_markets"],
+                ["CN_A", "HK", "CN_FUT", "HK_FUT", "US", "US_FUT"],
+            )
+            self.assertIn("database file does not exist", payload["warnings"])
+            self.assertFalse(db_path.exists())
+
     def test_resolves_seed_instruments_across_markets(self) -> None:
         resolver = InstrumentResolver()
 

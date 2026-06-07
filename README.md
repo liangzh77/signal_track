@@ -58,6 +58,7 @@ python -m venv .venv
 pip install -e .[market,files]
 python -m signal_track.cli init-db
 python -m signal_track.cli migrate-db
+python -m signal_track.cli doctor
 python -m signal_track.cli self-check --out dist/self-check.html
 ```
 
@@ -123,6 +124,7 @@ Suggested schedules:
 
 ```powershell
 python -m signal_track.cli resolve 腾讯
+python -m signal_track.cli doctor
 python -m signal_track.cli refresh-instruments --provider auto --market all
 python -m signal_track.cli market-coverage --provider auto
 python -m signal_track.cli market-smoke --provider auto --market all --days 30

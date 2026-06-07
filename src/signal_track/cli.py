@@ -81,6 +81,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Provider configuration to inspect without calling remote market APIs.",
     )
 
+    doctor_parser = subparsers.add_parser("doctor", help="Run a read-only readiness check for local Codex App operation.")
+    doctor_parser.add_argument(
+        "--provider",
+        choices=["none", "auto", "fixture", "tushare", "yfinance"],
+        default="auto",
+        help="Provider configuration to inspect without calling remote market APIs.",
+    )
+
     smoke_parser = subparsers.add_parser("market-smoke", help="Fetch sample daily bars for configured markets.")
     smoke_parser.add_argument("--provider", choices=["auto", "fixture", "tushare", "yfinance"], default="auto")
     smoke_parser.add_argument(
@@ -362,6 +370,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "market-coverage":
         print(json.dumps(market_data_coverage(settings, args.provider), ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "doctor":
+        print(json.dumps(run_doctor(settings, db, args.provider), ensure_ascii=False, indent=2))
         return 0
 
     if args.command == "market-smoke":
@@ -1144,6 +1156,99 @@ def run_self_check(settings: Settings, provider_name: str = "fixture", out: str 
             "scenario_results": scenario_results,
             "html": html_path,
         }
+
+
+def run_doctor(settings: Settings, db: Database, provider_name: str = "auto") -> dict:
+    db_report = db.verify(require_exists=True)
+    coverage = market_data_coverage(settings, provider_name)
+    price_ready_markets = [
+        row["market"]
+        for row in coverage["markets"]
+        if row["price_available"]
+    ]
+    missing_price_markets = [
+        row["market"]
+        for row in coverage["markets"]
+        if not row["price_available"]
+    ]
+    publish_ready = bool(settings.demo_publish_url and settings.demo_api_key)
+    skill_path = Path(".codex/skills/signal-track/SKILL.md")
+    env_path = Path(".env")
+    warnings: list[str] = []
+    actions: list[str] = []
+
+    if not db_report["exists"]:
+        warnings.append("database file does not exist")
+        actions.append("run python -m signal_track.cli init-db && python -m signal_track.cli migrate-db")
+    elif not db_report["ok"]:
+        warnings.append(str(db_report.get("error") or "database verification failed"))
+        actions.append("run python -m signal_track.cli verify-db and inspect the report")
+
+    if not publish_ready:
+        warnings.append("demo publish API is not fully configured")
+        actions.append("set GO_SITES_DEMO_PUBLISH_URL and GO_SITES_DEMO_API_KEY in .env")
+
+    if missing_price_markets and provider_name != "none":
+        warnings.append("market data is not ready for: " + ", ".join(missing_price_markets))
+        dependencies = coverage["dependencies"]
+        if not dependencies["tushare_installed"] or not dependencies["yfinance_installed"]:
+            actions.append("install market extras with python -m pip install -e .[market,files]")
+        if any(market in missing_price_markets for market in ("CN_A", "CN_FUT")) and not settings.tushare_token:
+            actions.append("set TUSHARE_TOKEN in .env for A shares and China futures")
+
+    if not skill_path.exists():
+        warnings.append("project-local Signal Track skill is missing")
+        actions.append("restore .codex/skills/signal-track/SKILL.md")
+
+    return {
+        "ok": not warnings,
+        "codex_first": True,
+        "backend_service_required": False,
+        "database": {
+            "path": str(settings.db_path),
+            "exists": db_report["exists"],
+            "ok": db_report["ok"],
+            "schema_version": db_report["schema_version"],
+            "table_counts": db_report["table_counts"],
+            "error": db_report.get("error"),
+        },
+        "configuration": {
+            "env_file_exists": env_path.exists(),
+            "daily_provider": settings.daily_provider,
+            "auto_publish_on_update": settings.auto_publish_on_update,
+            "demo_publish_url_configured": bool(settings.demo_publish_url),
+            "demo_api_key_configured": bool(settings.demo_api_key),
+            "tushare_token_configured": bool(settings.tushare_token),
+        },
+        "market_data": {
+            "provider": provider_name,
+            "price_ready_markets": price_ready_markets,
+            "missing_price_markets": missing_price_markets,
+            "coverage": coverage,
+        },
+        "skill": {
+            "path": str(skill_path),
+            "exists": skill_path.exists(),
+        },
+        "automation": {
+            "recommended_main_schedule": "19:00 Asia/Shanghai daily",
+            "recommended_main_command": "python -m signal_track.cli daily-run --provider auto --archive-reports --publish",
+            "fallback_command": "python -m signal_track.cli daily-run --provider none --archive-reports --publish",
+        },
+        "warnings": warnings,
+        "actions": dedupe_preserve_order(actions),
+    }
+
+
+def dedupe_preserve_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return unique
 
 
 def next_business_day(value: date) -> date:
