@@ -1193,8 +1193,8 @@ def run_doctor(settings: Settings, db: Database, provider_name: str = "auto") ->
         dependencies = coverage["dependencies"]
         if not dependencies["tushare_installed"] or not dependencies["yfinance_installed"]:
             actions.append("install market extras with python -m pip install -e .[market,files]")
-        if any(market in missing_price_markets for market in ("CN_A", "CN_FUT")) and not settings.tushare_token:
-            actions.append("set TUSHARE_TOKEN in .env for A shares and China futures")
+        if "CN_FUT" in missing_price_markets and not settings.tushare_token:
+            actions.append("set TUSHARE_TOKEN in .env for China futures")
 
     if not skill_path.exists():
         warnings.append("project-local Signal Track skill is missing")

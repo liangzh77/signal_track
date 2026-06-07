@@ -25,7 +25,7 @@ class YFinanceMarketDataProvider(MarketDataProvider):
         end_date: date,
         adjustment: str = "none",
     ) -> list[DailyBar]:
-        if instrument.market not in {Market.US, Market.US_FUT, Market.HK, Market.HK_FUT}:
+        if instrument.market not in {Market.CN_A, Market.US, Market.US_FUT, Market.HK, Market.HK_FUT}:
             raise ValueError(f"yfinance provider does not support {instrument.market}")
 
         auto_adjust = adjustment in {"adj", "auto"}
@@ -61,6 +61,12 @@ class YFinanceMarketDataProvider(MarketDataProvider):
 
 def yfinance_symbol(instrument: Instrument) -> str:
     symbol = instrument.provider_symbol
+    if instrument.market == Market.CN_A and instrument.asset_type in {AssetType.STOCK, AssetType.ETF, AssetType.INDEX}:
+        upper_symbol = symbol.upper()
+        if upper_symbol.endswith(".SH"):
+            return upper_symbol[:-3] + ".SS"
+        if upper_symbol.endswith(".SZ"):
+            return upper_symbol
     if instrument.market == Market.HK and instrument.asset_type in {AssetType.STOCK, AssetType.ETF, AssetType.INDEX}:
         match = re.fullmatch(r"(\d{1,5})\.HK", symbol.upper())
         if match:

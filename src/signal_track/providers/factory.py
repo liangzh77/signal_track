@@ -49,7 +49,7 @@ def build_auto_provider(settings: Settings) -> AutoMarketDataProvider:
     except RuntimeError as exc:
         errors.append(str(exc))
     else:
-        for market in (Market.HK, Market.HK_FUT, Market.US, Market.US_FUT):
+        for market in (Market.CN_A, Market.HK, Market.HK_FUT, Market.US, Market.US_FUT):
             routes.setdefault(market, []).append(yfinance)
 
     if not routes:

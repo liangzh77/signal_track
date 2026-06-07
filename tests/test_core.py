@@ -613,11 +613,12 @@ class SignalTrackCoreTests(unittest.TestCase):
             with patch("signal_track.providers.factory.YFinanceMarketDataProvider", return_value=yfinance_provider):
                 provider = build_auto_provider(settings)
 
+        provider.get_daily_bars(SEED_INSTRUMENTS[0], date(2026, 6, 1), date(2026, 6, 5))
         provider.get_daily_bars(SEED_INSTRUMENTS[2], date(2026, 6, 1), date(2026, 6, 5))
         provider.get_daily_bars(next(item for item in SEED_INSTRUMENTS if item.symbol == "HSI"), date(2026, 6, 1), date(2026, 6, 5))
         provider.get_daily_bars(SEED_INSTRUMENTS[-1], date(2026, 6, 1), date(2026, 6, 5))
 
-        self.assertEqual(tushare_provider.calls, ["00700.HK"])
+        self.assertEqual(tushare_provider.calls, ["300750.SZ", "00700.HK"])
         self.assertEqual(yfinance_provider.calls, ["HSI", "NQ"])
 
     def test_auto_provider_falls_back_to_yfinance_when_tushare_market_call_fails(self) -> None:
@@ -694,11 +695,10 @@ class SignalTrackCoreTests(unittest.TestCase):
             with patch("signal_track.providers.factory.YFinanceMarketDataProvider", return_value=yfinance_provider):
                 provider = build_auto_provider(settings)
 
+        provider.get_daily_bars(SEED_INSTRUMENTS[0], date(2026, 6, 1), date(2026, 6, 5))
         provider.get_daily_bars(SEED_INSTRUMENTS[2], date(2026, 6, 1), date(2026, 6, 5))
         provider.get_daily_bars(next(item for item in SEED_INSTRUMENTS if item.symbol == "NQ"), date(2026, 6, 1), date(2026, 6, 5))
-        self.assertEqual(yfinance_provider.calls, ["00700.HK", "NQ"])
-        with self.assertRaisesRegex(ValueError, "CN_A"):
-            provider.get_daily_bars(SEED_INSTRUMENTS[0], date(2026, 6, 1), date(2026, 6, 5))
+        self.assertEqual(yfinance_provider.calls, ["300750.SZ", "00700.HK", "NQ"])
 
     def test_provider_factory_wraps_dependency_errors_as_value_errors(self) -> None:
         settings = Settings(
@@ -736,11 +736,15 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIsNone(tushare_to_float(float("nan")))
         self.assertIsNone(tushare_to_float(float("inf")))
 
-    def test_yfinance_symbol_normalizes_hong_kong_stock_codes(self) -> None:
+    def test_yfinance_symbol_normalizes_china_and_hong_kong_stock_codes(self) -> None:
+        catl = next(instrument for instrument in SEED_INSTRUMENTS if instrument.symbol == "300750.SZ")
+        maotai = next(instrument for instrument in SEED_INSTRUMENTS if instrument.symbol == "600519.SH")
         tencent = next(instrument for instrument in SEED_INSTRUMENTS if instrument.symbol == "00700.HK")
         alibaba = next(instrument for instrument in SEED_INSTRUMENTS if instrument.symbol == "09988.HK")
         hsi = next(instrument for instrument in SEED_INSTRUMENTS if instrument.symbol == "HSI")
 
+        self.assertEqual(yfinance_symbol(catl), "300750.SZ")
+        self.assertEqual(yfinance_symbol(maotai), "600519.SS")
         self.assertEqual(yfinance_symbol(tencent), "0700.HK")
         self.assertEqual(yfinance_symbol(alibaba), "9988.HK")
         self.assertEqual(yfinance_symbol(hsi), "HSI=F")
@@ -759,6 +763,7 @@ class SignalTrackCoreTests(unittest.TestCase):
 
         by_market = {row["market"]: row for row in coverage["markets"]}
         self.assertEqual(by_market["CN_A"]["price_provider"], "tushare")
+        self.assertEqual(by_market["CN_A"]["fallback_price_providers"], ["yfinance"])
         self.assertEqual(by_market["HK"]["price_provider"], "tushare")
         self.assertEqual(by_market["HK"]["fallback_price_providers"], ["yfinance"])
         self.assertEqual(by_market["CN_FUT"]["instrument_master_provider"], "tushare")
@@ -787,6 +792,24 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIn("TUSHARE_TOKEN", by_market["CN_A"]["notes"][1])
         self.assertFalse(by_market["HK_FUT"]["price_available"])
         self.assertFalse(by_market["US_FUT"]["price_available"])
+
+    def test_market_coverage_uses_yfinance_for_a_shares_without_tushare_token(self) -> None:
+        settings = Settings(
+            db_path=Path(":memory:"),
+            tushare_token=None,
+            demo_publish_url=None,
+            demo_api_key=None,
+            daily_provider="auto",
+        )
+
+        with patch("signal_track.provider_diagnostics.find_spec", return_value=object()):
+            coverage = market_data_coverage(settings, "auto")
+
+        by_market = {row["market"]: row for row in coverage["markets"]}
+        self.assertEqual(by_market["CN_A"]["price_provider"], "yfinance")
+        self.assertEqual(by_market["CN_A"]["instrument_master_provider"], "seed_fallback")
+        self.assertFalse(by_market["CN_A"]["real_instrument_master"])
+        self.assertFalse(by_market["CN_FUT"]["price_available"])
 
     def test_fixture_market_coverage_marks_seed_master_not_real(self) -> None:
         settings = Settings(

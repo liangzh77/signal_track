@@ -146,12 +146,14 @@ Provider fields accept `none`, `auto`, `fixture`, `tushare`, or `yfinance`.
 - `auto`: routes by market.
 - `tushare`: A shares, Hong Kong stocks, China futures, and US stocks when
   `TUSHARE_TOKEN` is configured.
-- `yfinance`: fallback for US stocks, Hong Kong stocks, Hong Kong futures, and
-  US futures.
+- `yfinance`: fallback for A-share prices, US stocks, Hong Kong stocks, Hong
+  Kong futures, and US futures. It does not refresh a full A-share instrument
+  master.
 - `fixture`: deterministic local test data.
 
-Hong Kong and US futures are provider-abstracted. For production-grade historical
-futures data, wire the same provider interface to a licensed source.
+China futures require Tushare or a licensed provider. Hong Kong and US futures
+are provider-abstracted through yfinance fallback; for production-grade
+historical futures data, wire the same provider interface to a licensed source.
 
 ## Dashboard
 
