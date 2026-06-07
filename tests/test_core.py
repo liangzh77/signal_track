@@ -3323,6 +3323,50 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(payload["code"], "unsupported_input_file")
         self.assertEqual(raw_inputs, [])
 
+    def test_cli_file_ingest_accepts_utf8_chinese_note_and_archives_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            note_path = Path(tmp) / "source-note.md"
+            reports_dir = Path(tmp) / "reports"
+            note_path.write_text(
+                "00700.HK 做多，观察广告和游戏恢复。如果跌破5日线则平仓复核。",
+                encoding="utf-8",
+            )
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+            }
+            output = StringIO()
+            with patch.dict("os.environ", env, clear=False):
+                with redirect_stdout(output):
+                    code = cli_main([
+                        "ingest",
+                        "--source",
+                        "中文文件源",
+                        "--file",
+                        str(note_path),
+                        "--archive-reports",
+                        "--reports-dir",
+                        str(reports_dir),
+                    ])
+
+            payload = json.loads(output.getvalue())
+            repo = Repository(Database(db_path))
+            projects = repo.list_project_rows()
+            project_id = int(projects[0]["id"])
+            report_path = reports_dir / f"project-{project_id}-report.md"
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["input_action"], "track")
+            self.assertEqual(payload["resolved_symbols"], ["00700.HK"])
+            self.assertEqual(payload["projects"][0]["direction"], "long")
+            self.assertEqual(projects[0]["source_name"], "中文文件源")
+            self.assertIn("腾讯控股", projects[0]["title"])
+            self.assertTrue(report_path.exists())
+            self.assertEqual(payload["report_artifacts"][0]["path"], str(report_path))
+
 
 if __name__ == "__main__":
     unittest.main()
