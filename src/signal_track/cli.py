@@ -845,10 +845,13 @@ def main(argv: list[str] | None = None) -> int:
                 feature=f"每日检查完成，更新 {checked} 个项目",
                 flow="check",
             )
+        exit_signals = exit_signal_summaries(repo)
         print(
             json.dumps(
                 {
                     "checked_projects": checked,
+                    "exit_signal_count": len(exit_signals),
+                    "exit_signals": exit_signals,
                     "report_artifacts": report_artifacts,
                     **cli_publish_fields(publish_result, settings),
                 },
@@ -919,11 +922,14 @@ def main(argv: list[str] | None = None) -> int:
                 feature=f"每日检查完成，更新 {checked} 个项目",
                 flow="daily-run",
             )
+        exit_signals = exit_signal_summaries(repo)
         print(
             json.dumps(
                 {
                     "checked_projects": checked,
                     "html": str(out_path),
+                    "exit_signal_count": len(exit_signals),
+                    "exit_signals": exit_signals,
                     "report_artifacts": report_artifacts,
                     **cli_publish_fields(publish_result, settings),
                 },

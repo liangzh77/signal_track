@@ -115,6 +115,9 @@ python -m signal_track.cli daily-run --provider none --archive-reports --publish
 Summarize checked projects, exit signals, publish result, and required manual actions.
 ```
 
+`daily-run` prints `exit_signal_count` and `exit_signals` in its JSON output, so
+the automation can summarize exit signals from the command result directly.
+
 Suggested schedules:
 
 - 19:00 Asia/Shanghai for A shares, Hong Kong, China futures, and general checks.

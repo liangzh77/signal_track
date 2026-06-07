@@ -2587,6 +2587,9 @@ class SignalTrackCoreTests(unittest.TestCase):
             with patch.dict("os.environ", env, clear=False):
                 with redirect_stdout(StringIO()):
                     cli_main(["ingest", "--source", "Daily Report Desk", "--text", "00700.HK long, watch ads recovery."])
+                repo = Repository(Database(db_path))
+                project_id = int(repo.list_project_rows()[0]["id"])
+                repo.update_project_status(project_id, "exit_signal", needs_review=True)
                 output = StringIO()
                 with redirect_stdout(output):
                     code = cli_main([
@@ -2603,12 +2606,14 @@ class SignalTrackCoreTests(unittest.TestCase):
             payload = json.loads(output.getvalue())
             repo = Repository(Database(db_path))
             projects = repo.list_project_rows()
-            project_id = int(projects[0]["id"])
             report_path = reports_dir / f"project-{project_id}-report.md"
             reports = repo.list_project_reports(project_id=project_id)
             html = html_path.read_text(encoding="utf-8")
             self.assertEqual(code, 0)
             self.assertEqual(payload["checked_projects"], 1)
+            self.assertEqual(payload["exit_signal_count"], 1)
+            self.assertEqual(payload["exit_signals"][0]["id"], project_id)
+            self.assertEqual(payload["exit_signals"][0]["action"], "exit_signal")
             self.assertEqual(len(payload["report_artifacts"]), 1)
             self.assertEqual(payload["report_artifacts"][0]["path"], str(report_path))
             self.assertTrue(report_path.exists())
