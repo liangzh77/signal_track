@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import tempfile
 from datetime import date, timedelta
@@ -11,15 +10,13 @@ from pathlib import Path
 from .analytics import project_performance
 from .checker import DailyChecker
 from .config import Settings
-from .daily_evaluator import build_daily_logic_evaluator
 from .dashboard import render_dashboard
 from .db import Database, Repository
-from .extraction import OpenAISignalExtractor
+from .extraction import extracted_input_from_dict
 from .exit_signals import exit_signal_summaries
 from .instrument_master import InstrumentMasterService
 from .input_summary import input_detail, input_summaries
 from .input_files import UnsupportedInputFileError, read_input_file
-from .logic_supplement import build_logic_supplementer
 from .market_data import MarketDataService
 from .market_smoke import market_data_smoke
 from .models import Direction, Market, ProjectStatus
@@ -174,10 +171,8 @@ def main(argv: list[str] | None = None) -> int:
     ingest_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after ingest.")
     ingest_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     ingest_parser.add_argument(
-        "--extractor",
-        choices=["auto", "heuristic", "openai"],
-        default="auto",
-        help="Extraction engine for raw source text. auto uses OpenAI when OPENAI_API_KEY is configured.",
+        "--extraction-json",
+        help="Read a Codex-produced structured extraction JSON object from this file; otherwise use local heuristics.",
     )
 
     check_parser = subparsers.add_parser("check", help="Run daily checks for active projects.")
@@ -213,10 +208,6 @@ def main(argv: list[str] | None = None) -> int:
     daily_parser.add_argument("--publish", action="store_true")
     daily_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     daily_parser.add_argument("--title", default="Signal Track 投资信号看板")
-
-    serve_parser = subparsers.add_parser("serve", help="Run the FastAPI backend service.")
-    serve_parser.add_argument("--host", default="127.0.0.1")
-    serve_parser.add_argument("--port", type=int, default=8000)
 
     args = parser.parse_args(argv)
     settings = Settings.from_env()
@@ -466,7 +457,6 @@ def main(argv: list[str] | None = None) -> int:
             checked = DailyChecker(
                 repo,
                 provider,
-                evaluator=build_daily_evaluator_from_settings(settings),
             ).run()
         publish_result = None
         if should_publish_update(settings, forced=args.publish, disabled=args.no_publish):
@@ -603,7 +593,6 @@ def main(argv: list[str] | None = None) -> int:
             checked = DailyChecker(
                 repo,
                 provider,
-                evaluator=build_daily_evaluator_from_settings(settings),
             ).run()
         publish_result = None
         if should_publish_update(settings, forced=args.publish, disabled=args.no_publish):
@@ -660,24 +649,11 @@ def main(argv: list[str] | None = None) -> int:
             return 3
         ingest_body = remove_source_marker_lines(content) or content
         extraction = None
-        if args.extractor in {"auto", "openai"}:
-            if not settings.openai_api_key:
-                if args.extractor == "openai":
-                    raise SystemExit("OPENAI_API_KEY is required for --extractor openai")
-            else:
-                try:
-                    extraction = OpenAISignalExtractor(settings.openai_api_key, settings.openai_model).extract(
-                        ingest_body,
-                        source_hint=source_name,
-                    )
-                except Exception as exc:
-                    if args.extractor == "openai":
-                        raise SystemExit(f"OpenAI extractor failed: {exc}") from exc
-                    extraction = None
+        if args.extraction_json:
+            extraction = extracted_input_from_dict(json.loads(Path(args.extraction_json).read_text(encoding="utf-8")))
         result = SignalIngestor(
             repo,
             resolver,
-            logic_supplementer=build_logic_supplementer_from_settings(settings),
         ).ingest(
             source_name=source_name,
             content=ingest_body,
@@ -720,7 +696,6 @@ def main(argv: list[str] | None = None) -> int:
         checked = DailyChecker(
             repo,
             provider,
-            evaluator=build_daily_evaluator_from_settings(settings),
         ).run(check_date)
         publish_result = None
         if should_publish_update(settings, forced=args.publish, disabled=args.no_publish):
@@ -784,7 +759,6 @@ def main(argv: list[str] | None = None) -> int:
         checked = DailyChecker(
             repo,
             provider,
-            evaluator=build_daily_evaluator_from_settings(settings),
         ).run(check_date)
         out_path = Path(args.out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -812,15 +786,6 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0 if publish_result is None or publish_result.ok else 1
 
-    if args.command == "serve":
-        try:
-            import uvicorn
-        except ImportError as exc:
-            raise SystemExit("Install web extras first: pip install -e .[web]") from exc
-        os.environ["SIGNAL_TRACK_DB_PATH"] = str(db.path)
-        uvicorn.run("signal_track.web_app:create_app", factory=True, host=args.host, port=args.port)
-        return 0
-
     parser.error(f"Unknown command {args.command}")
     return 2
 
@@ -840,24 +805,6 @@ def build_provider(name: str, settings: Settings):
     if provider is None:
         raise SystemExit("A concrete market data provider is required here")
     return provider
-
-
-def build_daily_evaluator_from_settings(settings: Settings):
-    return build_daily_logic_evaluator(
-        settings.openai_api_key,
-        settings.openai_model,
-        web_research=settings.openai_web_research,
-        web_search_context_size=settings.openai_web_search_context_size,
-    )
-
-
-def build_logic_supplementer_from_settings(settings: Settings):
-    return build_logic_supplementer(
-        settings.openai_api_key,
-        settings.openai_model,
-        web_research=settings.openai_web_research,
-        web_search_context_size=settings.openai_web_search_context_size,
-    )
 
 
 def parse_date(value: str) -> date:

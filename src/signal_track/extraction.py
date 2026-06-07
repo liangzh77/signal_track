@@ -66,49 +66,6 @@ SIGNAL_EXTRACTION_SCHEMA = {
 }
 
 
-class OpenAISignalExtractor:
-    def __init__(self, api_key: str, model: str):
-        try:
-            from openai import OpenAI  # type: ignore
-        except ImportError as exc:
-            raise RuntimeError("Install LLM extras first: pip install -e .[llm]") from exc
-        self.client = OpenAI(api_key=api_key)
-        self.model = model
-
-    def extract(self, content: str, source_hint: str | None = None) -> ExtractedInput:
-        prompt = (
-            "你是投资信号抽取器。请从用户提供的中文/英文投资信息中抽取可跟踪信号。"
-            "如果逻辑不足，也要创建信号，并把 logic_score 设低。"
-            "如果原文是平仓、止盈、止损、退出已有标的，action=close；如果是开仓/做多/做空/观察，action=open。"
-            "如果多个标的是一个明确组合，is_portfolio=true；否则拆成多个信号。"
-            "weights 只在原文给出权重时填写，不能编造。"
-            "source_logic 必须忠实于原文，observation_logic 必须忠实于原文，不要在这里补充研究逻辑。"
-        )
-        response = self.client.responses.create(
-            model=self.model,
-            instructions=prompt,
-            input=[
-                {
-                    "role": "user",
-                    "content": (
-                        f"信息源提示：{source_hint or '未提供'}\n\n"
-                        f"原文：\n{content}"
-                    ),
-                }
-            ],
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": "investment_signal_extraction",
-                    "strict": True,
-                    "schema": SIGNAL_EXTRACTION_SCHEMA,
-                }
-            },
-        )
-        data = json.loads(response.output_text)
-        return extracted_input_from_dict(data)
-
-
 def extracted_input_from_dict(data: dict) -> ExtractedInput:
     return ExtractedInput(
         source_name=data.get("source_name"),

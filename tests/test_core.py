@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-import types
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
@@ -21,12 +20,12 @@ from signal_track.cli import main as cli_main
 from signal_track.cli import run_self_check
 from signal_track.dashboard import render_dashboard
 from signal_track.analytics import LegPerformance, ProjectPerformance, combine_weighted_points, project_performance
-from signal_track.daily_evaluator import DailyEvaluation, DailyLogicEvaluator, OpenAIDailyLogicEvaluator
+from signal_track.daily_evaluator import DailyEvaluation, DailyLogicEvaluator
 from signal_track.exit_signals import exit_signal_summaries
 from signal_track.extraction import ExtractedInput, ExtractedSignal
 from signal_track.instrument_master import InstrumentMasterService
 from signal_track.input_summary import project_input_history
-from signal_track.logic_supplement import LogicSupplement, LogicSupplementer, OpenAILogicSupplementer
+from signal_track.logic_supplement import LogicSupplement, LogicSupplementer
 from signal_track.market_smoke import market_data_smoke
 from signal_track.market_data import MarketDataService
 from signal_track.models import DailyBar, Direction, Instrument, Market
@@ -48,14 +47,6 @@ from signal_track.rules import evaluate_return_rules, extract_percent_thresholds
 from signal_track.signals import SignalIngestor, extract_probe_terms
 from signal_track.source_detection import remove_source_marker_lines, resolve_source_name
 
-try:
-    from fastapi.testclient import TestClient
-    from signal_track.web_app import create_app
-except Exception:
-    TestClient = None
-    create_app = None
-
-from signal_track.scheduler import build_scheduler, execute_daily_check, scheduler_job_summaries
 
 
 def next_fixture_trading_day(current: date) -> date:
@@ -272,39 +263,6 @@ class ThrowingDemoPublisher:
         raise RuntimeError("network exploded")
 
 
-class FakeOpenAIExtractor:
-    calls: list[dict[str, str | None]] = []
-
-    def __init__(self, api_key: str, model: str):
-        self.api_key = api_key
-        self.model = model
-
-    def extract(self, content: str, source_hint: str | None = None) -> ExtractedInput:
-        self.calls.append({"api_key": self.api_key, "model": self.model, "source_hint": source_hint})
-        return ExtractedInput(
-            signals=[
-                ExtractedSignal(
-                    instruments=["NVDA"],
-                    direction="short",
-                    source_logic=f"structured: {content}",
-                    observation_logic="watch orders and margin.",
-                    logic_score=8,
-                    action="open",
-                )
-            ],
-        )
-
-
-class BrokenOpenAIExtractor:
-    def __init__(self, api_key: str, model: str):
-        self.api_key = api_key
-        self.model = model
-
-    def extract(self, content: str, source_hint: str | None = None) -> ExtractedInput:
-        del content, source_hint
-        raise RuntimeError("openai package missing")
-
-
 class FakeDailyEvaluator(DailyLogicEvaluator):
     def __init__(self):
         self.research_item_count = 0
@@ -320,45 +278,13 @@ class FakeDailyEvaluator(DailyLogicEvaluator):
         )
 
 
-class RecordingResponses:
-    calls: list[dict] = []
-
-    def create(self, **kwargs):
-        self.calls.append(kwargs)
-        schema_name = kwargs["text"]["format"]["name"]
-        if schema_name == "tracking_logic_supplement":
-            payload = {
-                "thesis": "联网补充后的跟踪逻辑。",
-                "tracking_metrics": ["财务数据交叉验证", "行业份额变化", "最新新闻催化"],
-                "exit_conditions": ["核心假设被证伪", "跌破关键均线"],
-                "verification_notes": ["引用来源需保留并复核"],
-                "confidence": 0.7,
-            }
-        else:
-            payload = {
-                "conclusion": "watch",
-                "summary": "联网检查后维持观察。",
-                "triggered_rules": ["未发现明确平仓触发"],
-                "confidence": 0.6,
-            }
-        return types.SimpleNamespace(output_text=json.dumps(payload, ensure_ascii=False))
-
-
-class RecordingOpenAIClient:
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-        self.responses = RecordingResponses()
-
-
 class SignalTrackCoreTests(unittest.TestCase):
     def test_settings_default_daily_provider_is_auto(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             env = {
                 "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_ENABLE_SCHEDULER": "false",
                 "SIGNAL_TRACK_DAILY_PROVIDER": "",
                 "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
                 "GO_SITES_DEMO_PUBLISH_URL": "",
                 "GO_SITES_DEMO_API_KEY": "",
             }
@@ -366,21 +292,6 @@ class SignalTrackCoreTests(unittest.TestCase):
                 settings = Settings.from_env()
 
         self.assertEqual(settings.daily_provider, "auto")
-        self.assertFalse(settings.openai_web_research)
-        self.assertEqual(settings.openai_web_search_context_size, "medium")
-
-    def test_settings_can_enable_openai_web_research(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_OPENAI_WEB_RESEARCH": "true",
-                "SIGNAL_TRACK_OPENAI_WEB_SEARCH_CONTEXT_SIZE": "high",
-            }
-            with patch.dict("os.environ", env, clear=True):
-                settings = Settings.from_env()
-
-        self.assertTrue(settings.openai_web_research)
-        self.assertEqual(settings.openai_web_search_context_size, "high")
 
     def test_resolves_seed_instruments_across_markets(self) -> None:
         resolver = InstrumentResolver()
@@ -660,11 +571,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             tushare_token="token",
             demo_publish_url=None,
             demo_api_key=None,
-            enable_scheduler=False,
             daily_provider="auto",
-            openai_api_key=None,
-            openai_model="model",
-            signal_track_api_key=None,
         )
 
         with patch("signal_track.providers.factory.TushareMarketDataProvider", return_value=tushare_provider):
@@ -686,11 +593,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             tushare_token="token",
             demo_publish_url=None,
             demo_api_key=None,
-            enable_scheduler=False,
             daily_provider="auto",
-            openai_api_key=None,
-            openai_model="model",
-            signal_track_api_key=None,
         )
 
         with patch("signal_track.providers.factory.TushareMarketDataProvider", return_value=tushare_provider):
@@ -711,11 +614,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             tushare_token="token",
             demo_publish_url=None,
             demo_api_key=None,
-            enable_scheduler=False,
             daily_provider="auto",
-            openai_api_key=None,
-            openai_model="model",
-            signal_track_api_key=None,
         )
 
         with patch("signal_track.providers.factory.TushareMarketDataProvider", return_value=tushare_provider):
@@ -753,11 +652,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             tushare_token="token",
             demo_publish_url=None,
             demo_api_key=None,
-            enable_scheduler=False,
             daily_provider="auto",
-            openai_api_key=None,
-            openai_model="model",
-            signal_track_api_key=None,
         )
 
         with patch("signal_track.providers.factory.TushareMarketDataProvider", side_effect=RuntimeError("missing tushare")):
@@ -776,11 +671,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             tushare_token="token",
             demo_publish_url=None,
             demo_api_key=None,
-            enable_scheduler=False,
             daily_provider="auto",
-            openai_api_key=None,
-            openai_model="model",
-            signal_track_api_key=None,
         )
 
         with patch("signal_track.providers.factory.TushareMarketDataProvider", side_effect=RuntimeError("missing tushare")):
@@ -825,11 +716,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             tushare_token="token",
             demo_publish_url=None,
             demo_api_key=None,
-            enable_scheduler=False,
             daily_provider="auto",
-            openai_api_key=None,
-            openai_model="model",
-            signal_track_api_key=None,
         )
 
         with patch("signal_track.provider_diagnostics.find_spec", return_value=object()):
@@ -854,11 +741,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             tushare_token=None,
             demo_publish_url=None,
             demo_api_key=None,
-            enable_scheduler=False,
             daily_provider="auto",
-            openai_api_key=None,
-            openai_model="model",
-            signal_track_api_key=None,
         )
 
         with patch("signal_track.provider_diagnostics.find_spec", return_value=None):
@@ -876,11 +759,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             tushare_token=None,
             demo_publish_url=None,
             demo_api_key=None,
-            enable_scheduler=False,
             daily_provider="fixture",
-            openai_api_key=None,
-            openai_model="model",
-            signal_track_api_key=None,
         )
 
         coverage = market_data_coverage(settings, "fixture")
@@ -966,12 +845,8 @@ class SignalTrackCoreTests(unittest.TestCase):
                 tushare_token=None,
                 demo_publish_url=None,
                 demo_api_key=None,
-                enable_scheduler=False,
-                daily_provider="fixture",
-                openai_api_key=None,
-                openai_model="model",
-                signal_track_api_key=None,
-            )
+                    daily_provider="fixture",
+                        )
             html_path = Path(tmp) / "self-check.html"
 
             result = run_self_check(settings, provider_name="fixture", out=str(html_path))
@@ -1126,28 +1001,6 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIn("数据来源与免责声明", markdown)
         self.assertIn("tracking_metric", markdown)
         self.assertIn("免责声明", markdown)
-
-    def test_openai_logic_supplementer_can_force_web_search(self) -> None:
-        RecordingResponses.calls = []
-        fake_openai = types.SimpleNamespace(OpenAI=RecordingOpenAIClient)
-        with patch.dict("sys.modules", {"openai": fake_openai}):
-            supplementer = OpenAILogicSupplementer(
-                "key",
-                "gpt-5.5",
-                web_research=True,
-                web_search_context_size="high",
-            )
-            supplement = supplementer.supplement(
-                name="腾讯控股",
-                direction=Direction.LONG,
-                source_logic="腾讯 做多，先跟踪。",
-                instruments=[next(item for item in SEED_INSTRUMENTS if item.symbol == "00700.HK")],
-            )
-
-        self.assertEqual(supplement.thesis, "联网补充后的跟踪逻辑。")
-        request = RecordingResponses.calls[0]
-        self.assertEqual(request["tools"], [{"type": "web_search", "search_context_size": "high"}])
-        self.assertEqual(request["tool_choice"], "required")
 
     def test_logic_supplementer_failure_falls_back_to_local_system_logic(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2490,118 +2343,6 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(payload["error"], '{"error":"publish failed"}')
         self.assertEqual(payload["response_body"], '{"error":"publish failed"}')
 
-    def test_scheduler_records_published_address(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db = Database(Path(tmp) / "signal_track.sqlite3")
-            db.init()
-            repo = Repository(db)
-
-            with patch("signal_track.scheduler.DemoPublisher", FakeDemoPublisher):
-                checked = execute_daily_check(
-                    repo,
-                    provider=None,
-                    publish_url="https://example.com/api/publish",
-                    api_key="key",
-                )
-
-            events = repo.list_publish_events()
-            self.assertEqual(checked, 0)
-            self.assertEqual(events[0]["url"], "https://example.com/demo/signal")
-            self.assertEqual(events[0]["status_code"], 200)
-
-    def test_scheduler_records_failed_publish_event(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db = Database(Path(tmp) / "signal_track.sqlite3")
-            db.init()
-            repo = Repository(db)
-
-            with patch("signal_track.scheduler.DemoPublisher", FailingDemoPublisher):
-                checked = execute_daily_check(
-                    repo,
-                    provider=None,
-                    publish_url="https://example.com/api/publish",
-                    api_key="key",
-                )
-
-            events = repo.list_publish_events()
-            metadata = json.loads(events[0]["metadata"])
-            self.assertEqual(checked, 0)
-            self.assertEqual(events[0]["url"], "https://example.com/api/publish")
-            self.assertEqual(events[0]["status_code"], 500)
-            self.assertFalse(metadata["ok"])
-            self.assertEqual(metadata["job"], "daily_check")
-            self.assertEqual(metadata["error"], '{"error":"publish failed"}')
-
-    def test_scheduler_records_publish_exception_without_raising(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db = Database(Path(tmp) / "signal_track.sqlite3")
-            db.init()
-            repo = Repository(db)
-
-            with patch("signal_track.scheduler.DemoPublisher", ThrowingDemoPublisher):
-                checked = execute_daily_check(
-                    repo,
-                    provider=None,
-                    publish_url="invalid-url",
-                    api_key="key",
-                )
-
-            events = repo.list_publish_events()
-            metadata = json.loads(events[0]["metadata"])
-            self.assertEqual(checked, 0)
-            self.assertEqual(events[0]["url"], "invalid-url")
-            self.assertIsNone(events[0]["status_code"])
-            self.assertIn("network exploded", events[0]["response_body"])
-            self.assertFalse(metadata["ok"])
-            self.assertEqual(metadata["exception_type"], "RuntimeError")
-
-    def test_scheduler_registers_asia_evening_and_us_morning_jobs(self) -> None:
-        try:
-            import apscheduler  # noqa: F401
-        except ImportError:
-            self.skipTest("APScheduler unavailable")
-
-        with tempfile.TemporaryDirectory() as tmp:
-            db = Database(Path(tmp) / "signal_track.sqlite3")
-            db.init()
-            repo = Repository(db)
-
-            scheduled = build_scheduler(repo)
-
-        job_ids = {job.id for job in scheduled.scheduler.get_jobs()}
-        self.assertEqual(job_ids, {"asia_evening_daily_check", "us_morning_daily_check"})
-        summaries = scheduler_job_summaries(scheduled.scheduler)
-        self.assertEqual({summary["id"] for summary in summaries}, job_ids)
-        self.assertTrue(any("19" in summary["trigger"] for summary in summaries))
-        self.assertTrue(any("7" in summary["trigger"] for summary in summaries))
-
-    def test_systemd_daily_timer_uses_configured_provider(self) -> None:
-        service = Path("deploy/systemd/signal-track-daily.service").read_text(encoding="utf-8")
-        timer = Path("deploy/systemd/signal-track-daily.timer").read_text(encoding="utf-8")
-
-        self.assertIn("daily-run --out", service)
-        self.assertNotIn("--provider auto", service)
-        self.assertNotIn("--publish", service)
-        self.assertIn("OnCalendar=*-*-* 19:00:00", timer)
-        self.assertIn("OnCalendar=*-*-* 07:00:00", timer)
-        self.assertIn("Timezone=Asia/Shanghai", timer)
-
-    def test_scheduler_job_summaries_handles_scheduler_like_objects(self) -> None:
-        fake_time = types.SimpleNamespace(isoformat=lambda: "2026-06-06T19:00:00+08:00")
-        fake_scheduler = types.SimpleNamespace(
-            get_jobs=lambda: [
-                types.SimpleNamespace(id="asia_evening_daily_check", trigger="cron[hour='19', minute='0']", next_run_time=fake_time),
-                types.SimpleNamespace(id="us_morning_daily_check", trigger="cron[hour='7', minute='0']", next_run_time=None),
-            ]
-        )
-
-        summaries = scheduler_job_summaries(fake_scheduler)
-
-        self.assertEqual(summaries[0]["id"], "asia_evening_daily_check")
-        self.assertEqual(summaries[0]["next_run_time"], "2026-06-06T19:00:00+08:00")
-        self.assertEqual(summaries[1]["id"], "us_morning_daily_check")
-        self.assertIsNone(summaries[1]["next_run_time"])
-
     def test_cli_ingest_auto_publishes_when_configured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"
@@ -2611,7 +2352,6 @@ class SignalTrackCoreTests(unittest.TestCase):
                 "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
                 "GO_SITES_DEMO_API_KEY": "demo-key",
                 "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
             }
             with patch.dict("os.environ", env, clear=False):
                 with patch("signal_track.cli.DemoPublisher", FakeDemoPublisher):
@@ -2637,7 +2377,6 @@ class SignalTrackCoreTests(unittest.TestCase):
                 "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
                 "GO_SITES_DEMO_API_KEY": "demo-key",
                 "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
             }
             output = StringIO()
             with patch.dict("os.environ", env, clear=False):
@@ -2675,7 +2414,6 @@ class SignalTrackCoreTests(unittest.TestCase):
                 "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
                 "GO_SITES_DEMO_API_KEY": "demo-key",
                 "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
             }
             output = StringIO()
             with patch.dict("os.environ", env, clear=False):
@@ -2704,7 +2442,6 @@ class SignalTrackCoreTests(unittest.TestCase):
                 "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
                 "GO_SITES_DEMO_API_KEY": "demo-key",
                 "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
             }
             output = StringIO()
             with patch.dict("os.environ", env, clear=False):
@@ -2750,7 +2487,6 @@ class SignalTrackCoreTests(unittest.TestCase):
                 "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
                 "GO_SITES_DEMO_API_KEY": "demo-key",
                 "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
             }
             output = StringIO()
             with patch.dict("os.environ", env, clear=False):
@@ -2767,37 +2503,6 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(payload["published_url"], "https://example.com/demo/signal")
             self.assertEqual(metadata["flow"], "check")
 
-    def test_cli_serve_passes_global_db_path_to_app_factory_env(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "serve.sqlite3"
-            calls: list[dict[str, object]] = []
-            fake_uvicorn = types.SimpleNamespace(
-                run=lambda target, **kwargs: calls.append(
-                    {
-                        "target": target,
-                        "kwargs": kwargs,
-                        "db_path": os.environ.get("SIGNAL_TRACK_DB_PATH"),
-                    }
-                )
-            )
-
-            with patch.dict("sys.modules", {"uvicorn": fake_uvicorn}):
-                with patch.dict("os.environ", {"SIGNAL_TRACK_DB_PATH": ""}, clear=False):
-                    code = cli_main([
-                        "--db",
-                        str(db_path),
-                        "serve",
-                        "--host",
-                        "127.0.0.1",
-                        "--port",
-                        "8765",
-                    ])
-
-            self.assertEqual(code, 0)
-            self.assertEqual(calls[0]["target"], "signal_track.web_app:create_app")
-            self.assertEqual(calls[0]["kwargs"], {"factory": True, "host": "127.0.0.1", "port": 8765})
-            self.assertEqual(calls[0]["db_path"], str(db_path))
-
     def test_cli_no_publish_disables_auto_publish(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"
@@ -2807,7 +2512,6 @@ class SignalTrackCoreTests(unittest.TestCase):
                 "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
                 "GO_SITES_DEMO_API_KEY": "demo-key",
                 "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
             }
             with patch.dict("os.environ", env, clear=False):
                 with patch("signal_track.cli.DemoPublisher", FakeDemoPublisher):
@@ -2834,7 +2538,6 @@ class SignalTrackCoreTests(unittest.TestCase):
                 "GO_SITES_DEMO_PUBLISH_URL": "",
                 "GO_SITES_DEMO_API_KEY": "",
                 "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
             }
             with patch.dict("os.environ", env, clear=False):
                 with redirect_stdout(StringIO()):
@@ -2862,6 +2565,65 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(shown["input_action"], "close")
         self.assertIn("00700.HK close", shown["content"])
 
+    def test_cli_ingest_accepts_codex_structured_extraction_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            extraction_path = Path(tmp) / "codex-extraction.json"
+            extraction_path.write_text(
+                json.dumps(
+                    {
+                        "source_name": "Codex Desk",
+                        "needs_review": False,
+                        "notes": "Codex structured extraction",
+                        "signals": [
+                            {
+                                "instruments": ["00700.HK"],
+                                "action": "open",
+                                "direction": "long",
+                                "source_logic": "Tencent ad recovery and game revenue improvement.",
+                                "observation_logic": "Review exit if ads recovery misses or price breaks below MA20.",
+                                "logic_score": 8,
+                                "is_portfolio": False,
+                                "weights": {},
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+            }
+            output = StringIO()
+            with patch.dict("os.environ", env, clear=False):
+                with redirect_stdout(output):
+                    code = cli_main([
+                        "ingest",
+                        "--source",
+                        "Codex Desk",
+                        "--text",
+                        "raw source note",
+                        "--extraction-json",
+                        str(extraction_path),
+                    ])
+
+            payload = json.loads(output.getvalue())
+            repo = Repository(Database(db_path))
+            projects = repo.list_project_rows()
+            logic_blocks = repo.list_logic_blocks(int(projects[0]["id"]))
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["resolved_symbols"], ["00700.HK"])
+            self.assertEqual(payload["input_action"], "track")
+            self.assertEqual(payload["logic_score"], 8)
+            self.assertEqual(projects[0]["direction"], "long")
+            self.assertTrue(any("Tencent ad recovery" in block["content"] for block in logic_blocks))
+            self.assertTrue(any("MA20" in block["content"] for block in logic_blocks))
+
     def test_cli_list_projects_includes_performance_and_filters(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"
@@ -2871,7 +2633,6 @@ class SignalTrackCoreTests(unittest.TestCase):
                 "GO_SITES_DEMO_PUBLISH_URL": "",
                 "GO_SITES_DEMO_API_KEY": "",
                 "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
             }
             with patch.dict("os.environ", env, clear=False):
                 with redirect_stdout(StringIO()):
@@ -2919,7 +2680,6 @@ class SignalTrackCoreTests(unittest.TestCase):
                 "GO_SITES_DEMO_PUBLISH_URL": "",
                 "GO_SITES_DEMO_API_KEY": "",
                 "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
             }
             with patch.dict("os.environ", env, clear=False):
                 with redirect_stdout(StringIO()):
@@ -2942,118 +2702,6 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(payload["project"]["source_name"], "CLI Report Desk")
         self.assertEqual(payload["instruments"][0]["symbol"], "00700.HK")
 
-    def test_cli_ingest_auto_extractor_uses_openai_when_configured(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "signal_track.sqlite3"
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(db_path),
-                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "openai-key",
-                "SIGNAL_TRACK_OPENAI_MODEL": "test-model",
-            }
-            FakeOpenAIExtractor.calls = []
-            with patch.dict("os.environ", env, clear=False):
-                with patch("signal_track.cli.OpenAISignalExtractor", FakeOpenAIExtractor):
-                    with redirect_stdout(StringIO()):
-                        code = cli_main([
-                            "ingest",
-                            "--source",
-                            "CLI Desk",
-                            "--text",
-                            "Use structured extraction for this note.",
-                        ])
-
-            repo = Repository(Database(db_path))
-            projects = repo.list_project_rows()
-            self.assertEqual(code, 0)
-            self.assertEqual(FakeOpenAIExtractor.calls[0]["api_key"], "openai-key")
-            self.assertEqual(FakeOpenAIExtractor.calls[0]["model"], "test-model")
-            self.assertEqual(projects[0]["symbols"], "NVDA")
-            self.assertEqual(projects[0]["direction"], "short")
-
-    def test_cli_missing_source_does_not_call_openai_extractor(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "signal_track.sqlite3"
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(db_path),
-                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "openai-key",
-            }
-            FakeOpenAIExtractor.calls = []
-            output = StringIO()
-            with patch.dict("os.environ", env, clear=False):
-                with patch("signal_track.cli.OpenAISignalExtractor", FakeOpenAIExtractor):
-                    with redirect_stdout(output):
-                        code = cli_main([
-                            "ingest",
-                            "--extractor",
-                            "auto",
-                            "--text",
-                            "00700.HK long, watch ads recovery.",
-                        ])
-
-            payload = json.loads(output.getvalue())
-            repo = Repository(Database(db_path))
-            self.assertEqual(code, 3)
-            self.assertEqual(payload["code"], "source_required")
-            self.assertEqual(FakeOpenAIExtractor.calls, [])
-            self.assertEqual(repo.list_raw_inputs(), [])
-
-    def test_cli_auto_extractor_falls_back_to_heuristic_when_openai_fails(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "signal_track.sqlite3"
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(db_path),
-                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "openai-key",
-                "SIGNAL_TRACK_OPENAI_MODEL": "test-model",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                with patch("signal_track.cli.OpenAISignalExtractor", BrokenOpenAIExtractor):
-                    with redirect_stdout(StringIO()):
-                        code = cli_main([
-                            "ingest",
-                            "--source",
-                            "CLI Desk",
-                            "--text",
-                            "00700.HK long, watch ads recovery.",
-                        ])
-
-            projects = Repository(Database(db_path)).list_project_rows()
-            self.assertEqual(code, 0)
-            self.assertEqual(projects[0]["symbols"], "00700.HK")
-            self.assertEqual(projects[0]["direction"], "long")
-
-    def test_cli_forced_openai_extractor_reports_failure(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "openai-key",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                with patch("signal_track.cli.OpenAISignalExtractor", BrokenOpenAIExtractor):
-                    with self.assertRaisesRegex(SystemExit, "OpenAI extractor failed"):
-                        cli_main([
-                            "ingest",
-                            "--extractor",
-                            "openai",
-                            "--source",
-                            "CLI Desk",
-                            "--text",
-                            "00700.HK long, watch ads recovery.",
-                        ])
-
     def test_cli_update_project_weights(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"
@@ -3063,7 +2711,6 @@ class SignalTrackCoreTests(unittest.TestCase):
                 "GO_SITES_DEMO_PUBLISH_URL": "",
                 "GO_SITES_DEMO_API_KEY": "",
                 "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
             }
             with patch.dict("os.environ", env, clear=False):
                 with redirect_stdout(StringIO()):
@@ -3100,7 +2747,6 @@ class SignalTrackCoreTests(unittest.TestCase):
                 "GO_SITES_DEMO_PUBLISH_URL": "",
                 "GO_SITES_DEMO_API_KEY": "",
                 "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
             }
             with patch.dict("os.environ", env, clear=False):
                 with redirect_stdout(StringIO()):
@@ -3136,6 +2782,46 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertTrue(any(block["logic_type"] == "manual_note" for block in logic))
             self.assertTrue(any("ads data improved" in block["content"] for block in logic))
 
+    def test_cli_add_project_note_check_runs_without_backend_evaluator(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "signal_track.sqlite3"
+            env = {
+                "SIGNAL_TRACK_DB_PATH": str(db_path),
+                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
+                "GO_SITES_DEMO_PUBLISH_URL": "",
+                "GO_SITES_DEMO_API_KEY": "",
+                "TUSHARE_TOKEN": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                with redirect_stdout(StringIO()):
+                    cli_main([
+                        "ingest",
+                        "--source",
+                        "CLI Note Desk",
+                        "--text",
+                        "00700.HK long, watch ads.",
+                    ])
+                repo = Repository(Database(db_path))
+                project_id = int(repo.list_project_rows()[0]["id"])
+                output = StringIO()
+                with redirect_stdout(output):
+                    code = cli_main([
+                        "add-project-note",
+                        str(project_id),
+                        "--text",
+                        "manual observation: ads data improved",
+                        "--check",
+                        "--provider",
+                        "fixture",
+                    ])
+
+            payload = json.loads(output.getvalue())
+            checks = Repository(Database(db_path)).list_daily_checks(project_id=project_id)
+            self.assertEqual(code, 0)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["checked_projects"], 1)
+            self.assertTrue(checks)
+
     def test_daily_logic_evaluator_can_trigger_exit_signal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
@@ -3157,35 +2843,6 @@ class SignalTrackCoreTests(unittest.TestCase):
             checks = repo.list_daily_checks(project_id=result.project_ids[0])
             self.assertIn("核心跟踪假设被证伪", checks[0]["summary"])
             self.assertIn("逻辑评估：核心假设被证伪", checks[0]["triggered_rules"])
-
-    def test_openai_daily_evaluator_can_force_web_search(self) -> None:
-        RecordingResponses.calls = []
-        fake_openai = types.SimpleNamespace(OpenAI=RecordingOpenAIClient)
-        with tempfile.TemporaryDirectory() as tmp:
-            db = Database(Path(tmp) / "signal_track.sqlite3")
-            db.init()
-            repo = Repository(db)
-            for instrument in SEED_INSTRUMENTS:
-                repo.upsert_instrument(instrument)
-            SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
-                source_name="测试源",
-                content="腾讯 做多，观察广告恢复和游戏流水。",
-            )
-
-            with patch.dict("sys.modules", {"openai": fake_openai}):
-                evaluator = OpenAIDailyLogicEvaluator(
-                    "key",
-                    "gpt-5.5",
-                    web_research=True,
-                    web_search_context_size="low",
-                )
-                DailyChecker(repo, FixtureMarketDataProvider(), evaluator=evaluator).run(
-                    next_fixture_trading_day(date.today())
-                )
-
-        request = RecordingResponses.calls[0]
-        self.assertEqual(request["tools"], [{"type": "web_search", "search_context_size": "low"}])
-        self.assertEqual(request["tool_choice"], "required")
 
     def test_daily_check_continues_when_one_price_refresh_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3389,7 +3046,6 @@ class SignalTrackCoreTests(unittest.TestCase):
                 "SIGNAL_TRACK_DB_PATH": str(db_path),
                 "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
                 "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
             }
 
             output = StringIO()
@@ -3571,688 +3227,6 @@ class SignalTrackCoreTests(unittest.TestCase):
             checks = repo.list_daily_checks(project_id=result.project_ids[0])
             self.assertIn("研究验证项被证伪", checks[0]["triggered_rules"])
 
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_inbox_page_exposes_text_and_file_ingestion(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-                home = client.get("/")
-                inbox = client.get("/inbox")
-
-        self.assertEqual(home.status_code, 200)
-        self.assertEqual(inbox.status_code, 200)
-        self.assertIn("Signal Track Inbox", home.text)
-        self.assertIn("id=\"text-form\"", home.text)
-        self.assertIn("id=\"file-form\"", home.text)
-        self.assertIn("Project Update", home.text)
-        self.assertIn("id=\"project-id\"", home.text)
-        self.assertIn("id=\"project-select\"", home.text)
-        self.assertIn("id=\"refresh-projects\"", home.text)
-        self.assertIn("id=\"auto-refresh-projects\"", home.text)
-        self.assertIn("id=\"project-note-provider\"", home.text)
-        self.assertIn("id=\"project-note-run-check\"", home.text)
-        self.assertIn("id=\"submit-note\"", home.text)
-        self.assertIn("id=\"submit-weights\"", home.text)
-        self.assertIn("id=\"submit-close\"", home.text)
-        self.assertIn("Research Verification", home.text)
-        self.assertIn("id=\"research-item-select\"", home.text)
-        self.assertIn("id=\"research-status\"", home.text)
-        self.assertIn("id=\"research-source-note\"", home.text)
-        self.assertIn("id=\"research-run-check\"", home.text)
-        self.assertIn("id=\"submit-research\"", home.text)
-        self.assertIn("Daily Operations", home.text)
-        self.assertIn("id=\"check-provider\"", home.text)
-        self.assertIn("id=\"check-date\"", home.text)
-        self.assertIn("id=\"run-checks\"", home.text)
-        self.assertIn("id=\"publish-dashboard\"", home.text)
-        self.assertIn("id=\"refresh-health\"", home.text)
-        self.assertIn("id=\"recent-inputs\"", home.text)
-        self.assertIn("id=\"refresh-inputs\"", home.text)
-        self.assertIn("Market Data", home.text)
-        self.assertIn("id=\"market-provider\"", home.text)
-        self.assertIn("id=\"market-name\"", home.text)
-        self.assertIn("id=\"market-coverage\"", home.text)
-        self.assertIn("id=\"market-smoke\"", home.text)
-        self.assertIn("id=\"refresh-instruments\"", home.text)
-        self.assertIn("fetch('/api/inputs'", home.text)
-        self.assertIn("fetch('/api/inputs?limit=8'", home.text)
-        self.assertIn("fetch('/api/inputs/file'", home.text)
-        self.assertIn("fetch('/api/projects'", home.text)
-        self.assertIn("/api/research-items", home.text)
-        self.assertIn("/api/checks/run", home.text)
-        self.assertIn("/api/publish", home.text)
-        self.assertIn("/api/market-data/coverage", home.text)
-        self.assertIn("/api/market-data/smoke", home.text)
-        self.assertIn("/api/instruments/refresh", home.text)
-        self.assertIn("/health", home.text)
-        self.assertIn("loadResearchItems()", home.text)
-        self.assertIn("loadProjects()", home.text)
-        self.assertIn("loadInputs()", home.text)
-        self.assertIn("renderInputItem", home.text)
-        self.assertIn(".input-action.mixed", home.text)
-        self.assertIn("logic-blocks", home.text)
-        self.assertIn("projectNoteRunCheckInput.checked", home.text)
-        self.assertIn("projectNoteProviderInput.value", home.text)
-        self.assertIn("/weights", home.text)
-        self.assertIn("/close", home.text)
-        self.assertIn("Authorization: `Bearer ${key}`", home.text)
-        self.assertIn("/dashboard", home.text)
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_ingest_requires_or_infers_source(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-
-            missing = client.post("/api/inputs", json={"content": "00700.HK 做多，观察广告"})
-            self.assertEqual(missing.status_code, 422)
-            self.assertEqual(missing.json()["detail"]["code"], "source_required")
-
-            inferred = client.post("/api/inputs", json={"content": "信息源：Alpha Desk；00700.HK 做多，观察广告"})
-            self.assertEqual(inferred.status_code, 200)
-            self.assertEqual(inferred.json()["resolved_symbols"], ["00700.HK"])
-            self.assertEqual(inferred.json()["projects"][0]["action"], "track")
-            self.assertEqual(inferred.json()["projects"][0]["direction"], "long")
-            self.assertEqual(inferred.json()["projects"][0]["symbols"], ["00700.HK"])
-
-            projects = client.get("/api/projects").json()
-            self.assertEqual(projects[0]["source_name"], "Alpha Desk")
-
-            comma_inferred = client.post(
-                "/api/inputs",
-                json={"content": "信息源：Comma Desk，NVDA 做多，观察订单"},
-            )
-            self.assertEqual(comma_inferred.status_code, 200)
-            self.assertEqual(comma_inferred.json()["resolved_symbols"], ["NVDA"])
-            self.assertEqual(comma_inferred.json()["projects"][0]["source_name"], "Comma Desk")
-            inputs = client.get("/api/inputs").json()
-            alpha_input = next(item for item in inputs if item["source_name"] == "Alpha Desk")
-            self.assertIn("00700.HK", alpha_input["content_preview"])
-            self.assertGreater(alpha_input["content_length"], 0)
-            self.assertEqual(alpha_input["project_ids"], [projects[0]["id"]])
-            self.assertEqual(alpha_input["projects"][0]["symbols"], ["00700.HK"])
-            self.assertEqual(alpha_input["projects"][0]["action"], "track")
-            self.assertNotIn("content", alpha_input)
-            input_detail = client.get(f"/api/inputs/{alpha_input['id']}").json()
-            self.assertIn("00700.HK 做多", input_detail["content"])
-            self.assertEqual(input_detail["project_ids"], [projects[0]["id"]])
-            self.assertEqual(input_detail["projects"][0]["title"], projects[0]["title"])
-            self.assertEqual(client.get("/api/inputs/999999").status_code, 404)
-            project_detail = client.get(f"/api/projects/{projects[0]['id']}").json()
-            self.assertEqual(project_detail["source_input"]["id"], alpha_input["id"])
-            self.assertIn("00700.HK 做多", project_detail["source_input"]["content"])
-            self.assertEqual(project_detail["source_input"]["project_ids"], [projects[0]["id"]])
-            self.assertEqual(len(project_detail["input_history"]), 1)
-            self.assertEqual(project_detail["input_history"][0]["input_action"], "track")
-            self.assertEqual(project_detail["research_items"][0]["item_type"], "verification_note")
-            item_id = project_detail["research_items"][0]["id"]
-            listed_items = client.get("/api/research-items", params={"project_id": projects[0]["id"]}).json()
-            self.assertEqual(listed_items[0]["id"], item_id)
-            updated_item = client.patch(
-                f"/api/research-items/{item_id}",
-                json={"status": "verified", "source_note": "manual verification"},
-            )
-            self.assertEqual(updated_item.status_code, 200)
-            self.assertEqual(updated_item.json()["item"]["status"], "verified")
-            self.assertFalse(updated_item.json()["publish"]["attempted"])
-            self.assertIsNone(updated_item.json()["publish"]["url"])
-
-            closed = client.post("/api/inputs", json={"source": "Alpha Desk", "content": "00700.HK 平仓，广告低于预期"})
-            self.assertEqual(closed.status_code, 200)
-            self.assertEqual(closed.json()["project_ids"], [projects[0]["id"]])
-            self.assertEqual(closed.json()["input_action"], "close")
-            self.assertEqual(closed.json()["projects"][0]["action"], "close")
-            self.assertEqual(closed.json()["projects"][0]["status"], "closed")
-            inputs_after_close = client.get("/api/inputs").json()
-            self.assertEqual(inputs_after_close[0]["project_ids"], [projects[0]["id"]])
-            self.assertEqual(inputs_after_close[0]["input_action"], "close")
-            self.assertEqual(inputs_after_close[0]["projects"][0]["action"], "close")
-            close_detail = client.get(f"/api/inputs/{inputs_after_close[0]['id']}").json()
-            self.assertEqual(close_detail["project_ids"], [projects[0]["id"]])
-            self.assertEqual(close_detail["input_action"], "close")
-            project_after_close = client.get(f"/api/projects/{projects[0]['id']}").json()
-            self.assertEqual(
-                [item["input_action"] for item in project_after_close["input_history"]],
-                ["close", "track"],
-            )
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_projects_list_includes_performance_and_filters(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-                client.post("/api/inputs", json={"source": "Desk A", "content": "00700.HK long, watch ads recovery."})
-                client.post("/api/inputs", json={"source": "Desk B", "content": "NVDA short, watch orders."})
-                check_date = next_fixture_trading_day(date.today()).isoformat()
-                checked = client.post("/api/checks/run", json={"provider": "fixture", "date": check_date})
-                projects = client.get("/api/projects").json()
-                desk_a = client.get("/api/projects", params={"source": "Desk A"}).json()
-                active = client.get("/api/projects", params={"status": "needs_review"}).json()
-                long_projects = client.get("/api/projects", params={"direction": "long"}).json()
-                short_projects = client.get("/api/projects", params={"direction": "short"}).json()
-                invalid_direction = client.get("/api/projects", params={"direction": "sideways"})
-
-        self.assertEqual(checked.status_code, 200)
-        self.assertEqual(len(projects), 2)
-        self.assertIn("performance", projects[0])
-        self.assertIn("return_pct", projects[0]["performance"])
-        self.assertIn("points", projects[0]["performance"])
-        self.assertGreater(projects[0]["performance"]["point_count"], 0)
-        self.assertEqual(len(projects[0]["performance"]["legs"]), 1)
-        self.assertEqual(projects[0]["latest_check"]["conclusion"], "needs_review")
-        self.assertIn("Project logic score", projects[0]["latest_check"]["triggered_rules"])
-        self.assertIn(projects[0]["next_action"], {"review_logic", "review_exit", "keep_tracking"})
-        self.assertEqual([project["source_name"] for project in desk_a], ["Desk A"])
-        self.assertEqual(len(active), 2)
-        self.assertEqual([project["source_name"] for project in long_projects], ["Desk A"])
-        self.assertEqual([project["source_name"] for project in short_projects], ["Desk B"])
-        self.assertEqual(invalid_direction.status_code, 422)
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_project_report_endpoint_returns_markdown_and_json(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-                ingested = client.post(
-                    "/api/inputs",
-                    json={"source": "Web Report Desk", "content": "00700.HK long, watch ads recovery."},
-                )
-                project_id = ingested.json()["project_ids"][0]
-                markdown = client.get(f"/api/projects/{project_id}/report")
-                report_json = client.get(f"/api/projects/{project_id}/report", params={"format": "json"})
-                invalid = client.get(f"/api/projects/{project_id}/report", params={"format": "pdf"})
-                missing = client.get("/api/projects/999999/report")
-
-        self.assertEqual(markdown.status_code, 200)
-        self.assertIn("text/markdown", markdown.headers["content-type"])
-        self.assertIn("3C-5M-3D-3T", markdown.text)
-        self.assertEqual(report_json.status_code, 200)
-        self.assertEqual(report_json.json()["project"]["source_name"], "Web Report Desk")
-        self.assertEqual(report_json.json()["instruments"][0]["symbol"], "00700.HK")
-        self.assertEqual(invalid.status_code, 400)
-        self.assertEqual(missing.status_code, 404)
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_auto_extractor_falls_back_when_openai_fails(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "openai-key",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                with patch("signal_track.web_app.OpenAISignalExtractor", BrokenOpenAIExtractor):
-                    client = TestClient(create_app())
-                    response = client.post(
-                        "/api/inputs",
-                        json={
-                            "source": "Web Desk",
-                            "content": "00700.HK long, watch ads recovery.",
-                            "extractor": "auto",
-                        },
-                    )
-
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.json()["resolved_symbols"], ["00700.HK"])
-            self.assertEqual(response.json()["projects"][0]["direction"], "long")
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_missing_source_does_not_call_openai_extractor(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "signal_track.sqlite3"
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(db_path),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "openai-key",
-            }
-            FakeOpenAIExtractor.calls = []
-            with patch.dict("os.environ", env, clear=False):
-                with patch("signal_track.web_app.OpenAISignalExtractor", FakeOpenAIExtractor):
-                    client = TestClient(create_app())
-                    response = client.post(
-                        "/api/inputs",
-                        json={
-                            "content": "00700.HK long, watch ads recovery.",
-                            "extractor": "auto",
-                        },
-                    )
-
-            repo = Repository(Database(db_path))
-            self.assertEqual(response.status_code, 422)
-            self.assertEqual(response.json()["detail"]["code"], "source_required")
-            self.assertEqual(FakeOpenAIExtractor.calls, [])
-            self.assertEqual(repo.list_raw_inputs(), [])
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_forced_openai_extractor_reports_failure(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "openai-key",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                with patch("signal_track.web_app.OpenAISignalExtractor", BrokenOpenAIExtractor):
-                    client = TestClient(create_app())
-                    response = client.post(
-                        "/api/inputs",
-                        json={
-                            "source": "Web Desk",
-                            "content": "00700.HK long, watch ads recovery.",
-                            "extractor": "openai",
-                        },
-                    )
-
-            self.assertEqual(response.status_code, 503)
-            self.assertIn("OpenAI extractor failed", response.json()["detail"])
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_rejects_unknown_extractor(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "signal_track.sqlite3"
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(db_path),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-                response = client.post(
-                    "/api/inputs",
-                    json={
-                        "source": "Web Desk",
-                        "content": "00700.HK long, watch ads recovery.",
-                        "extractor": "typo",
-                    },
-                )
-
-            repo = Repository(Database(db_path))
-            self.assertEqual(response.status_code, 400)
-            self.assertIn("Unknown extractor", response.json()["detail"])
-            self.assertEqual(repo.list_raw_inputs(), [])
-            self.assertEqual(repo.list_project_rows(), [])
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_exit_signals_endpoint(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "signal_track.sqlite3"
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(db_path),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-                created = client.post(
-                    "/api/inputs",
-                    json={"source": "API Desk", "content": "腾讯 做多，观察广告恢复和游戏流水。"},
-                )
-            repo = Repository(Database(db_path))
-            DailyChecker(repo, FixtureMarketDataProvider(), evaluator=FakeDailyEvaluator()).run(
-                next_fixture_trading_day(date.today())
-            )
-
-            signals = client.get("/api/exit-signals").json()
-
-            self.assertEqual(signals[0]["id"], created.json()["project_ids"][0])
-            self.assertEqual(signals[0]["action"], "exit_signal")
-            self.assertEqual(signals[0]["latest_check"]["conclusion"], "exit_signal")
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_unmatched_close_signal_does_not_create_project(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-                response = client.post(
-                    "/api/inputs",
-                    json={"source": "No Position Source", "content": "00700.HK close, no longer tracking."},
-                )
-                projects = client.get("/api/projects").json()
-
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.json()["project_ids"], [])
-            self.assertEqual(response.json()["resolved_symbols"], ["00700.HK"])
-            self.assertEqual(projects, [])
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_plain_instrument_mention_does_not_create_project(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-                response = client.post(
-                    "/api/inputs",
-                    json={"source": "Background Source", "content": "00700.HK earnings released without a trade signal."},
-                )
-                projects = client.get("/api/projects").json()
-
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.json()["project_ids"], [])
-            self.assertEqual(response.json()["resolved_symbols"], ["00700.HK"])
-            self.assertEqual(response.json()["projects"], [])
-            self.assertEqual(projects, [])
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_close_project_endpoint_records_close_logic(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-
-            created = client.post(
-                "/api/inputs",
-                json={"source": "Manual Desk", "content": "00700.HK long, watch ads recovery."},
-            )
-            project_id = created.json()["project_ids"][0]
-            closed = client.post(
-                f"/api/projects/{project_id}/close",
-                json={"closed_date": "2026-06-10", "reason": "manual exit after thesis broke"},
-            )
-            detail = client.get(f"/api/projects/{project_id}").json()
-
-            self.assertEqual(closed.status_code, 200)
-            self.assertEqual(closed.json()["project"]["status"], "closed")
-            self.assertEqual(closed.json()["project"]["closed_date"], "2026-06-10")
-            self.assertFalse(closed.json()["publish"]["attempted"])
-            self.assertTrue(
-                any(
-                    block["logic_type"] == "close_logic"
-                    and "manual exit after thesis broke" in block["content"]
-                    for block in detail["logic_blocks"]
-                )
-            )
-            self.assertEqual(client.post("/api/projects/999999/close", json={}).status_code, 404)
-            self.assertEqual(
-                client.post(
-                    f"/api/projects/{project_id}/close",
-                    json={"closed_date": "not-a-date"},
-                ).status_code,
-                400,
-            )
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_add_project_logic_block_endpoint(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_API_KEY": "",
-                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-
-            created = client.post(
-                "/api/inputs",
-                json={"source": "Manual Desk", "content": "00700.HK long, watch ads recovery."},
-            )
-            project_id = created.json()["project_ids"][0]
-            added = client.post(
-                f"/api/projects/{project_id}/logic-blocks",
-                json={
-                    "logic_type": "manual_note",
-                    "content": "manual observation: ads trend improved",
-                    "confidence": 0.75,
-                    "evidence": ["checked ad tracker"],
-                    "run_check": True,
-                    "provider": "fixture",
-                },
-            )
-            invalid = client.post(
-                f"/api/projects/{project_id}/logic-blocks",
-                json={"logic_type": "close_logic", "content": "bad"},
-            )
-
-            self.assertEqual(added.status_code, 200)
-            self.assertEqual(added.json()["checked_projects"], 1)
-            self.assertFalse(added.json()["publish"]["attempted"])
-            self.assertTrue(any(block["logic_type"] == "manual_note" for block in added.json()["logic_blocks"]))
-            self.assertTrue(any("ads trend improved" in block["content"] for block in added.json()["logic_blocks"]))
-            self.assertTrue(added.json()["daily_checks"])
-            self.assertEqual(invalid.status_code, 400)
-            self.assertEqual(invalid.json()["detail"]["code"], "invalid_logic_type")
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_update_project_weights_endpoint(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-
-            created = client.post(
-                "/api/inputs",
-                json={
-                    "source": "Portfolio Desk",
-                    "content": "portfolio long: 300750.SZ, 600519.SH, watch margin.",
-                },
-            )
-            project_id = created.json()["project_ids"][0]
-            updated = client.patch(
-                f"/api/projects/{project_id}/weights",
-                json={"weights": {"300750.SZ": 55, "600519.SH": 45}, "note": "confirmed weights"},
-            )
-            incomplete = client.patch(
-                f"/api/projects/{project_id}/weights",
-                json={"weights": {"300750.SZ": 100}},
-            )
-            detail = client.get(f"/api/projects/{project_id}").json()
-
-            self.assertEqual(updated.status_code, 200)
-            weights = {leg["symbol"]: leg["weight"] for leg in updated.json()["legs"]}
-            self.assertAlmostEqual(weights["300750.SZ"], 0.55)
-            self.assertAlmostEqual(weights["600519.SH"], 0.45)
-            self.assertFalse(updated.json()["project"]["weight_needs_review"])
-            self.assertFalse(updated.json()["publish"]["attempted"])
-            self.assertEqual(incomplete.status_code, 400)
-            self.assertEqual(incomplete.json()["detail"]["code"], "incomplete_weights")
-            self.assertTrue(any(block["logic_type"] == "weight_update" for block in detail["logic_blocks"]))
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_file_ingest_preserves_same_named_attachments(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "signal_track.sqlite3"
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(db_path),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-                first = client.post(
-                    "/api/inputs/file",
-                    data={"source": "File Source"},
-                    files={"file": ("note.md", b"00700.HK long, watch ads.", "text/markdown")},
-                )
-                second = client.post(
-                    "/api/inputs/file",
-                    data={"source": "File Source"},
-                    files={"file": ("note.md", b"NVDA long, watch orders.", "text/markdown")},
-                )
-
-            self.assertEqual(first.status_code, 200)
-            self.assertEqual(second.status_code, 200)
-            raw_inputs = Repository(Database(db_path)).list_raw_inputs()
-            paths = [Path(row["attachment_path"]) for row in raw_inputs]
-            self.assertEqual(len(paths), 2)
-            self.assertEqual({path.name for path in paths}, {"note.md", "note-1.md"})
-            self.assertEqual({path.read_text(encoding="utf-8") for path in paths}, {
-                "00700.HK long, watch ads.",
-                "NVDA long, watch orders.",
-            })
-            listed = client.get("/api/inputs").json()
-            self.assertEqual(len(listed), 2)
-            self.assertEqual({Path(row["attachment_path"]).name for row in listed}, {"note.md", "note-1.md"})
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_file_ingest_decodes_cjk_text_and_rejects_binary_files(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "signal_track.sqlite3"
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(db_path),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-                cjk = client.post(
-                    "/api/inputs/file",
-                    data={"source": "File Source"},
-                    files={"file": ("note.txt", "腾讯 做多，观察广告。".encode("gb18030"), "text/plain")},
-                )
-                utf16 = client.post(
-                    "/api/inputs/file",
-                    data={"source": "File Source"},
-                    files={"file": ("utf16.txt", "NVDA long, watch orders.".encode("utf-16"), "text/plain")},
-                )
-                docx = client.post(
-                    "/api/inputs/file",
-                    data={"source": "File Source"},
-                    files={"file": ("note.docx", minimal_docx_bytes("00700.HK long, watch ads."), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
-                )
-                with patch.dict("sys.modules", {"pypdf": types.SimpleNamespace(PdfReader=FakePdfReader)}):
-                    pdf = client.post(
-                        "/api/inputs/file",
-                        data={"source": "File Source"},
-                        files={"file": ("note.pdf", b"%PDF-1.7\nfake", "application/pdf")},
-                    )
-                binary = client.post(
-                    "/api/inputs/file",
-                    data={"source": "File Source"},
-                    files={"file": ("note.zip", b"PK\x03\x04binary", "application/zip")},
-                )
-
-            raw_inputs = Repository(Database(db_path)).list_raw_inputs()
-            self.assertEqual(cjk.status_code, 200)
-            self.assertEqual(cjk.json()["resolved_symbols"], ["00700.HK"])
-            self.assertEqual(utf16.status_code, 200)
-            self.assertEqual(utf16.json()["resolved_symbols"], ["NVDA"])
-            self.assertEqual(docx.status_code, 200)
-            self.assertEqual(docx.json()["resolved_symbols"], ["00700.HK"])
-            self.assertEqual(pdf.status_code, 200)
-            self.assertEqual(pdf.json()["resolved_symbols"], ["NVDA"])
-            self.assertEqual(binary.status_code, 415)
-            self.assertEqual(binary.json()["detail"]["code"], "unsupported_input_file")
-            self.assertEqual(len(raw_inputs), 4)
-            attachment_paths = [Path(row["attachment_path"]) for row in raw_inputs]
-            self.assertEqual(len(attachment_paths), 4)
-            self.assertTrue(all(path.exists() for path in attachment_paths))
-            self.assertNotIn("note.zip", {path.name for path in attachment_paths})
-            self.assertTrue(any("腾讯" in row["content"] for row in raw_inputs))
-            self.assertTrue(any("NVDA" in row["content"] for row in raw_inputs))
-            self.assertTrue(any("watch ads" in row["content"] for row in raw_inputs))
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_file_ingest_cleans_attachment_when_source_missing(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "signal_track.sqlite3"
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(db_path),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-                response = client.post(
-                    "/api/inputs/file",
-                    data={},
-                    files={"file": ("missing-source.md", b"00700.HK long, watch ads.", "text/markdown")},
-                )
-
-            attachments = list((db_path.parent / "attachments").glob("*"))
-            raw_inputs = Repository(Database(db_path)).list_raw_inputs()
-            self.assertEqual(response.status_code, 422)
-            self.assertEqual(response.json()["detail"]["code"], "source_required")
-            self.assertEqual(raw_inputs, [])
-            self.assertEqual(attachments, [])
-
     def test_cli_file_ingest_rejects_unsupported_binary_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "signal_track.sqlite3"
@@ -4264,7 +3238,6 @@ class SignalTrackCoreTests(unittest.TestCase):
                 "GO_SITES_DEMO_PUBLISH_URL": "",
                 "GO_SITES_DEMO_API_KEY": "",
                 "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
             }
             output = StringIO()
             with patch.dict("os.environ", env, clear=False):
@@ -4276,519 +3249,6 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(code, 4)
         self.assertEqual(payload["code"], "unsupported_input_file")
         self.assertEqual(raw_inputs, [])
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_check_run_uses_configured_daily_provider_by_default(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_API_KEY": "",
-                "SIGNAL_TRACK_DAILY_PROVIDER": "fixture",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-                created = client.post(
-                    "/api/inputs",
-                    json={"source": "Daily Desk", "content": "00700.HK long, watch ads recovery."},
-                )
-                project_id = created.json()["project_ids"][0]
-                checked = client.post("/api/checks/run", json={})
-                detail = client.get(f"/api/projects/{project_id}").json()
-                stored_bars = Repository(Database(Path(tmp) / "signal_track.sqlite3")).count_price_bars("00700.HK")
-
-            self.assertEqual(checked.status_code, 200)
-            self.assertEqual(checked.json()["checked_projects"], 1)
-            self.assertGreater(stored_bars, 0)
-            self.assertTrue(detail["daily_checks"])
-            self.assertEqual(detail["summary"]["id"], project_id)
-            self.assertEqual(detail["summary"]["source_name"], "Daily Desk")
-            self.assertEqual(
-                detail["summary"]["latest_check"]["conclusion"],
-                detail["daily_checks"][0]["conclusion"],
-            )
-            self.assertIn(detail["summary"]["next_action"], {"review_logic", "review_exit", "keep_tracking"})
-            self.assertIn("performance", detail["summary"])
-            self.assertIn("point_count", detail["summary"]["performance"])
-            self.assertIn("window_start", detail["summary"]["performance"])
-            self.assertIn("window_end", detail["summary"]["performance"])
-            self.assertIn("missing_price_symbols", detail["summary"]["performance"])
-            self.assertEqual(detail["performance"]["window_start"], detail["summary"]["performance"]["window_start"])
-            self.assertEqual(detail["performance"]["window_end"], detail["summary"]["performance"]["window_end"])
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_unknown_provider_and_market_return_bad_request(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "signal_track.sqlite3"
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(db_path),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-                check = client.post("/api/checks/run", json={"provider": "typo"})
-                refresh = client.post("/api/instruments/refresh", json={"provider": "typo", "market": "CN_A"})
-                smoke_bad_market = client.get("/api/market-data/smoke", params={"provider": "fixture", "market": "BAD"})
-                refresh_bad_market = client.post("/api/instruments/refresh", json={"provider": "fixture", "market": "BAD"})
-
-            repo = Repository(Database(db_path))
-            self.assertEqual(check.status_code, 400)
-            self.assertIn("Unknown market data provider", check.json()["detail"])
-            self.assertEqual(refresh.status_code, 400)
-            self.assertIn("Unknown market data provider", refresh.json()["detail"])
-            self.assertEqual(smoke_bad_market.status_code, 400)
-            self.assertEqual(smoke_bad_market.json()["detail"], "Unknown market: BAD")
-            self.assertEqual(refresh_bad_market.status_code, 400)
-            self.assertEqual(refresh_bad_market.json()["detail"], "Unknown market: BAD")
-            self.assertEqual(repo.list_daily_checks(), [])
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_refresh_instruments_defaults_to_auto_provider(self) -> None:
-        calls: list[str] = []
-
-        def fake_build_provider(name: str, settings: Settings) -> MarketDataProvider:
-            del settings
-            calls.append(name)
-            return RecordingMarketDataProvider(name, SEED_INSTRUMENTS)
-
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "signal_track.sqlite3"
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(db_path),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                with patch("signal_track.web_app.build_market_data_provider", side_effect=fake_build_provider):
-                    client = TestClient(create_app())
-                    response = client.post("/api/instruments/refresh", json={"market": "CN_A"})
-
-        payload = response.json()
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(calls, ["auto"])
-        self.assertEqual(payload["provider"], "auto")
-        self.assertEqual(payload["results"][0]["market"], "CN_A")
-        self.assertGreaterEqual(payload["results"][0]["count"], 2)
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_research_item_update_publishes_when_configured(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
-                "GO_SITES_DEMO_API_KEY": "demo-key",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                with patch("signal_track.web_app.DemoPublisher", FakeDemoPublisher):
-                    client = TestClient(create_app())
-                    created = client.post(
-                        "/api/inputs",
-                        json={"source": "测试源", "content": "腾讯 做多"},
-                    )
-                    project_id = created.json()["project_ids"][0]
-                    item_id = client.get(f"/api/projects/{project_id}").json()["research_items"][0]["id"]
-                    updated = client.patch(
-                        f"/api/research-items/{item_id}",
-                        json={"status": "contradicted", "run_check": True, "provider": "fixture"},
-                    )
-                    events = client.get("/api/publish/events").json()
-                    project_detail = client.get(f"/api/projects/{project_id}").json()
-                    manual_publish = client.post("/api/publish")
-
-            self.assertEqual(updated.status_code, 200)
-            self.assertEqual(updated.json()["checked_projects"], 1)
-            self.assertTrue(updated.json()["publish"]["ok"])
-            self.assertEqual(updated.json()["publish"]["url"], "https://example.com/demo/signal")
-            self.assertEqual(updated.json()["publish"]["publish_url"], "https://example.com/api/publish")
-            self.assertEqual(manual_publish.status_code, 200)
-            self.assertEqual(manual_publish.json()["url"], "https://example.com/demo/signal")
-            self.assertEqual(events[0]["url"], "https://example.com/demo/signal")
-            self.assertEqual(project_detail["project"]["status"], "needs_review")
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_auto_publish_can_be_disabled_for_updates(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "signal_track.sqlite3"
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(db_path),
-                "SIGNAL_TRACK_API_KEY": "",
-                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
-                "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
-                "GO_SITES_DEMO_API_KEY": "demo-key",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                with patch("signal_track.web_app.DemoPublisher", side_effect=AssertionError("unexpected auto publish")):
-                    client = TestClient(create_app())
-                    created = client.post(
-                        "/api/inputs",
-                        json={"source": "Web Desk", "content": "00700.HK long, watch ads recovery."},
-                    )
-                    events_after_update = client.get("/api/publish/events").json()
-                with patch("signal_track.web_app.DemoPublisher", FakeDemoPublisher):
-                    manual_publish = client.post("/api/publish")
-                    events_after_manual = client.get("/api/publish/events").json()
-
-        self.assertEqual(created.status_code, 200)
-        self.assertFalse(created.json()["publish"]["attempted"])
-        self.assertEqual(created.json()["publish"]["reason"], "auto publish disabled")
-        self.assertEqual(events_after_update, [])
-        self.assertEqual(manual_publish.status_code, 200)
-        self.assertEqual(manual_publish.json()["url"], "https://example.com/demo/signal")
-        self.assertEqual(events_after_manual[0]["url"], "https://example.com/demo/signal")
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_auto_publish_failure_is_returned_and_recorded(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "signal_track.sqlite3"
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(db_path),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
-                "GO_SITES_DEMO_API_KEY": "demo-key",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                with patch("signal_track.web_app.DemoPublisher", FailingDemoPublisher):
-                    client = TestClient(create_app())
-                    created = client.post(
-                        "/api/inputs",
-                        json={"source": "测试源", "content": "腾讯 做多"},
-                    )
-                    events = client.get("/api/publish/events").json()
-                    health = client.get("/health").json()
-
-            publish = created.json()["publish"]
-            self.assertEqual(created.status_code, 200)
-            self.assertTrue(publish["attempted"])
-            self.assertFalse(publish["ok"])
-            self.assertEqual(publish["status_code"], 500)
-            self.assertEqual(publish["error"], '{"error":"publish failed"}')
-            self.assertEqual(events[0]["status_code"], 500)
-            self.assertEqual(events[0]["response_body"], '{"error":"publish failed"}')
-            self.assertFalse(health["ok"])
-            self.assertIn("latest_publish_failed", health["degraded_reasons"])
-            self.assertFalse(health["latest_publish"]["ok"])
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_auto_publish_exception_is_returned_and_recorded(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "signal_track.sqlite3"
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(db_path),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
-                "GO_SITES_DEMO_API_KEY": "demo-key",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                with patch("signal_track.web_app.DemoPublisher", ThrowingDemoPublisher):
-                    client = TestClient(create_app())
-                    created = client.post(
-                        "/api/inputs",
-                        json={"source": "测试源", "content": "腾讯 做多"},
-                    )
-                    events = client.get("/api/publish/events").json()
-                    health = client.get("/health").json()
-
-            publish = created.json()["publish"]
-            metadata = json.loads(events[0]["metadata"])
-            self.assertEqual(created.status_code, 200)
-            self.assertTrue(created.json()["project_ids"])
-            self.assertTrue(publish["attempted"])
-            self.assertFalse(publish["ok"])
-            self.assertIsNone(publish["status_code"])
-            self.assertIn("network exploded", publish["error"])
-            self.assertEqual(events[0]["url"], "https://example.com/api/publish")
-            self.assertIn("network exploded", events[0]["response_body"])
-            self.assertEqual(metadata["exception_type"], "RuntimeError")
-            self.assertFalse(health["ok"])
-            self.assertIn("latest_publish_failed", health["degraded_reasons"])
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_manual_publish_exception_is_recorded(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "signal_track.sqlite3"
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(db_path),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
-                "GO_SITES_DEMO_API_KEY": "demo-key",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                with patch("signal_track.web_app.DemoPublisher", ThrowingDemoPublisher):
-                    client = TestClient(create_app())
-                    response = client.post("/api/publish")
-                    events = client.get("/api/publish/events").json()
-
-            metadata = json.loads(events[0]["metadata"])
-            self.assertEqual(response.status_code, 502)
-            self.assertIn("network exploded", response.json()["detail"])
-            self.assertEqual(events[0]["url"], "https://example.com/api/publish")
-            self.assertIn("network exploded", events[0]["response_body"])
-            self.assertFalse(metadata["ok"])
-            self.assertEqual(metadata["feature"], "Signal Track 手动发布")
-            self.assertEqual(metadata["exception_type"], "RuntimeError")
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_mutating_web_endpoints_require_api_key_when_configured(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_API_KEY": "secret-key",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-
-            denied = client.post("/api/inputs", json={"source": "测试源", "content": "腾讯 做多"})
-            self.assertEqual(denied.status_code, 401)
-            denied_research = client.patch("/api/research-items/1", json={"status": "verified"})
-            self.assertEqual(denied_research.status_code, 401)
-            denied_close = client.post("/api/projects/1/close", json={})
-            self.assertEqual(denied_close.status_code, 401)
-            denied_weights = client.patch("/api/projects/1/weights", json={"weights": {"00700.HK": 1}})
-            self.assertEqual(denied_weights.status_code, 401)
-            denied_bearer = client.post(
-                "/api/inputs",
-                headers={"Authorization": "Bearer wrong-key"},
-                json={"source": "test", "content": "00700.HK long"},
-            )
-            self.assertEqual(denied_bearer.status_code, 401)
-
-            allowed = client.post(
-                "/api/inputs",
-                headers={"X-Signal-Track-Key": "secret-key"},
-                json={"source": "测试源", "content": "腾讯 做多"},
-            )
-            self.assertEqual(allowed.status_code, 200)
-            self.assertEqual(allowed.json()["resolved_symbols"], ["00700.HK"])
-            allowed_bearer = client.post(
-                "/api/inputs",
-                headers={"Authorization": "Bearer secret-key"},
-                json={"source": "test", "content": "300750.SZ long"},
-            )
-            self.assertEqual(allowed_bearer.status_code, 200)
-            self.assertEqual(allowed_bearer.json()["resolved_symbols"], ["300750.SZ"])
-
-            health = client.get("/health")
-            self.assertEqual(health.status_code, 200)
-            self.assertTrue(health.json()["ok"])
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_scheduler_provider_error_does_not_block_startup(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_ENABLE_SCHEDULER": "true",
-                "SIGNAL_TRACK_DAILY_PROVIDER": "auto",
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            fake_scheduler = types.SimpleNamespace(
-                get_jobs=lambda: [
-                    types.SimpleNamespace(id="asia_evening_daily_check", trigger="cron[hour='19']", next_run_time=None),
-                    types.SimpleNamespace(id="us_morning_daily_check", trigger="cron[hour='7']", next_run_time=None),
-                ]
-            )
-            fake_scheduled_jobs = types.SimpleNamespace(scheduler=fake_scheduler)
-            with patch.dict("os.environ", env, clear=False):
-                with patch("signal_track.web_app.build_market_data_provider", side_effect=ValueError("Auto provider requires configured data source")):
-                    with patch("signal_track.web_app.build_scheduler", return_value=fake_scheduled_jobs):
-                        client = TestClient(create_app())
-                        response = client.get("/health")
-
-        payload = response.json()
-        self.assertEqual(response.status_code, 200)
-        self.assertFalse(payload["ok"])
-        self.assertTrue(payload["scheduler_enabled"])
-        self.assertEqual(
-            {job["id"] for job in payload["scheduler_jobs"]},
-            {"asia_evening_daily_check", "us_morning_daily_check"},
-        )
-        self.assertIn("scheduler_provider_error", payload["degraded_reasons"])
-        self.assertIn("Auto provider requires", payload["scheduler_provider_error"])
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_scheduler_respects_auto_publish_disabled(self) -> None:
-        captured: dict[str, object] = {}
-
-        def fake_build_scheduler(repo, **kwargs):
-            captured.update(kwargs)
-            fake_scheduler = types.SimpleNamespace(get_jobs=lambda: [])
-            return types.SimpleNamespace(scheduler=fake_scheduler)
-
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_ENABLE_SCHEDULER": "true",
-                "SIGNAL_TRACK_DAILY_PROVIDER": "none",
-                "SIGNAL_TRACK_AUTO_PUBLISH_ON_UPDATE": "false",
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "https://example.com/api/publish",
-                "GO_SITES_DEMO_API_KEY": "demo-key",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                with patch("signal_track.web_app.build_scheduler", side_effect=fake_build_scheduler):
-                    client = TestClient(create_app())
-                    response = client.get("/health")
-
-        self.assertEqual(response.status_code, 200)
-        self.assertIsNone(captured["publish_url"])
-        self.assertIsNone(captured["api_key"])
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_health_reports_operational_summary(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "signal_track.sqlite3"
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(db_path),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-                client.post("/api/inputs", json={"source": "Health Desk", "content": "00700.HK long, watch ads."})
-                check_date = next_fixture_trading_day(date.today()).isoformat()
-                client.post("/api/checks/run", json={"provider": "fixture", "date": check_date})
-                Repository(Database(db_path)).record_publish_event(
-                    title="Signal Track 投资信号看板",
-                    url="https://example.com/signal",
-                    status_code=200,
-                    response_body='{"address":"https://example.com/signal"}',
-                    metadata={"ok": True, "flow": "test"},
-                )
-                response = client.get("/health")
-
-        payload = response.json()
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(payload["ok"])
-        self.assertEqual(payload["degraded_reasons"], [])
-        self.assertTrue(payload["database"]["ok"])
-        self.assertFalse(payload["scheduler_enabled"])
-        self.assertEqual(payload["scheduler_jobs"], [])
-        self.assertEqual(payload["projects"]["total"], 1)
-        self.assertEqual(payload["projects"]["needs_review"], 1)
-        self.assertEqual(payload["latest_check"]["check_date"], check_date)
-        self.assertEqual(payload["latest_publish"]["status_code"], 200)
-        self.assertTrue(payload["latest_publish"]["ok"])
-        self.assertEqual(payload["latest_publish"]["url"], "https://example.com/signal")
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_health_ignores_closed_project_review_flags(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "signal_track.sqlite3"
-            db = Database(db_path)
-            db.init()
-            repo = Repository(db)
-            source_id = repo.get_or_create_source("Closed Portfolio Desk")
-            repo.create_tracking_project(
-                title="Closed portfolio with legacy weight flag",
-                source_id=source_id,
-                raw_input_id=None,
-                status="closed",
-                direction="long",
-                entry_date="2026-06-01",
-                logic_score=8,
-                needs_review=False,
-                weight_needs_review=True,
-                metadata={"portfolio": True},
-            )
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(db_path),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-                response = client.get("/health")
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertEqual(payload["projects"]["total"], 1)
-        self.assertEqual(payload["projects"]["needs_review"], 0)
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_market_coverage_endpoint(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-
-            response = client.get("/api/market-data/coverage", params={"provider": "auto"})
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["provider"], "auto")
-        self.assertEqual(
-            {row["market"] for row in response.json()["markets"]},
-            {"CN_A", "HK", "CN_FUT", "HK_FUT", "US", "US_FUT"},
-        )
-
-    @unittest.skipUnless(TestClient and create_app, "FastAPI test client unavailable")
-    def test_web_market_smoke_endpoint_uses_fixture_provider(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {
-                "SIGNAL_TRACK_DB_PATH": str(Path(tmp) / "signal_track.sqlite3"),
-                "SIGNAL_TRACK_API_KEY": "",
-                "GO_SITES_DEMO_PUBLISH_URL": "",
-                "GO_SITES_DEMO_API_KEY": "",
-                "TUSHARE_TOKEN": "",
-                "OPENAI_API_KEY": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                client = TestClient(create_app())
-
-            response = client.get(
-                "/api/market-data/smoke",
-                params={"provider": "fixture", "market": "HK_FUT", "days": 5},
-            )
-
-        payload = response.json()
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(payload["ok"])
-        self.assertEqual(payload["provider"], "fixture")
-        self.assertEqual(payload["markets"][0]["market"], "HK_FUT")
-        self.assertEqual(payload["markets"][0]["symbol"], "HSI")
-        self.assertGreater(payload["markets"][0]["bar_count"], 0)
 
 
 if __name__ == "__main__":

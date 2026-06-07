@@ -5,6 +5,8 @@
 - **What this is:** A private investment signal tracking dashboard that turns source notes into monitored positions, curves, daily checks, and exit signals.
 - **Who it's for:** A discretionary investor who wants to drop raw source material into the system and quickly see what is active, what changed, and what needs attention.
 - **Project type:** Data-heavy dashboard and project detail app.
+- **Runtime boundary:** The published product is a static HTML dashboard. AI analysis, scheduled checks, rendering, and publishing happen in Windows Codex App through local CLI calls, not through a Signal Track backend service.
+- **Data boundary:** SQLite is the source of truth for runtime state. Markdown is the readable archive for long-form research and review notes.
 
 ## Aesthetic Direction
 
@@ -63,6 +65,7 @@ Use green/red only for financial direction or risk. Do not use them as decorativ
 - **Approach:** Grid-disciplined dashboard with selective layered panels.
 - **Desktop shell:** Left rail navigation, top status bar, main content grid.
 - **Mobile shell:** Single column with sticky compact status bar and collapsible filters.
+- **Responsive target:** Desktop landscape and mobile portrait must both be first-class layouts.
 - **Max content width:** 1440px for dashboard pages.
 - **Grid:** 12 columns desktop, 6 columns tablet, 1 column mobile.
 - **Spacing base:** 8px.
@@ -138,6 +141,7 @@ Use green/red only for financial direction or risk. Do not use them as decorativ
   - Key tracking indicators
   - Exit triggers
 - Timeline: daily checks and decisions.
+- Report link: optional Markdown report summary and link when a long-form report exists.
 
 ### Portfolio Project
 
@@ -167,4 +171,4 @@ Use green/red only for financial direction or risk. Do not use them as decorativ
 | 2026-06-05 | Use futuristic minimalism with glassmorphism | Matches user's requested direction while keeping the dashboard calm and data-first. |
 | 2026-06-05 | Use card-based layered UI without nested cards | Preserves the card-based aesthetic without hurting scan speed or layout clarity. |
 | 2026-06-05 | Use cyan/amber/semantic accents over purple gradients | Keeps the system futuristic without falling into generic AI-dashboard styling. |
-
+| 2026-06-07 | Publish a static HTML dashboard only | Keeps all analysis and scheduling inside Codex App while making the shared page simple and responsive. |
