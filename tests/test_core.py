@@ -868,7 +868,10 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertTrue(result["scenario_results"]["portfolio_missing_weights_review"])
             self.assertTrue(result["scenario_results"]["close_signal"])
             self.assertTrue(result["scenario_results"]["market_coverage"])
+            self.assertTrue(result["scenario_results"]["report_archive"])
+            self.assertTrue(result["report_artifacts"])
             self.assertTrue(html_path.exists())
+            self.assertIn("Indexed artifact:", html_path.read_text(encoding="utf-8"))
 
     def test_source_name_can_be_inferred_from_content_marker(self) -> None:
         self.assertEqual(resolve_source_name(None, "信息源：Alpha Desk\n00700.HK 做多"), "Alpha Desk")

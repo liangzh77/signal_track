@@ -1099,6 +1099,12 @@ def run_self_check(settings: Settings, provider_name: str = "fixture", out: str 
         check_date = next_business_day(date.today()) if provider_name == "fixture" else date.today()
         active_project_count = len(repo.list_active_project_ids())
         checked = DailyChecker(repo, provider).run(check_date)
+        report_artifacts = archive_project_reports(
+            repo,
+            repo.list_active_project_ids(),
+            str(Path(tmp) / "reports"),
+            "self-check",
+        )
         html = render_dashboard(repo)
         html_path = None
         if out:
@@ -1115,6 +1121,11 @@ def run_self_check(settings: Settings, provider_name: str = "fixture", out: str 
             and "leg-curves" in html
             and "研究验证项" in html
         )
+        scenario_results["report_archive"] = bool(
+            report_artifacts
+            and all(Path(str(artifact["path"])).exists() for artifact in report_artifacts)
+            and "Indexed artifact:" in html
+        )
         ok = bool(
             ingest_result.project_ids
             and ingest_result.resolved_symbols
@@ -1129,6 +1140,7 @@ def run_self_check(settings: Settings, provider_name: str = "fixture", out: str 
             "active_project_count": active_project_count,
             "daily_checks": len(checks),
             "project_count": len(projects),
+            "report_artifacts": report_artifacts,
             "scenario_results": scenario_results,
             "html": html_path,
         }

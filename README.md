@@ -48,6 +48,7 @@ Signal Track intentionally uses a hybrid SQLite + Markdown design:
   should not infer active/closed state by reparsing Markdown files.
 
 See `docs/数据架构.md` for the Chinese design note.
+See `docs/完成审计.md` for the current requirement-to-evidence audit.
 
 ## Quick Start
 
