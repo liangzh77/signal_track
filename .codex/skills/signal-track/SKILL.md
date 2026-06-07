@@ -48,6 +48,8 @@ If a futures project needs historical prices and the configured provider cannot 
 python -m signal_track.cli import-bars "<symbol or name>" --market CN_FUT --file "<csv path>" --provider licensed-csv
 ```
 
+The repository includes `examples/cu-bars.csv` and `docs/行情CSV导入.md` as the runnable format reference.
+
 ## Project Boundaries
 
 - Use `.env` for local secrets and keep it ignored by git.
