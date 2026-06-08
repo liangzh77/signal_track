@@ -28,7 +28,7 @@ from signal_track.input_summary import project_input_history
 from signal_track.logic_supplement import LogicSupplement, LogicSupplementer
 from signal_track.market_smoke import market_data_smoke
 from signal_track.market_data import MarketDataService
-from signal_track.models import DailyBar, Direction, Instrument, Market
+from signal_track.models import AssetType, DailyBar, Direction, Instrument, Market
 from signal_track.provider_diagnostics import market_data_coverage
 from signal_track.publisher import extract_published_address, publish_payload
 from signal_track.publisher import PublishResult
@@ -37,6 +37,7 @@ from signal_track.providers.auto import AutoMarketDataProvider
 from signal_track.providers.base import MarketDataProvider
 from signal_track.providers.factory import build_auto_provider
 from signal_track.providers.factory import build_market_data_provider
+from signal_track.providers.eastmoney_fund_provider import EastmoneyFundProvider, bars_from_payload, fund_code_for
 from signal_track.providers.fixture import FixtureMarketDataProvider
 from signal_track.providers.tushare_provider import TushareMarketDataProvider
 from signal_track.providers.tushare_provider import to_float as tushare_to_float
@@ -316,10 +317,10 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertFalse(payload["backend_service_required"])
             self.assertFalse(payload["database"]["exists"])
             self.assertFalse(payload["configuration"]["demo_api_key_configured"])
-            self.assertEqual(payload["market_data"]["price_ready_markets"], [])
+            self.assertEqual(payload["market_data"]["price_ready_markets"], ["CN_A"])
             self.assertEqual(
                 payload["market_data"]["missing_price_markets"],
-                ["CN_A", "HK", "CN_FUT", "HK_FUT", "US", "US_FUT"],
+                ["HK", "CN_FUT", "HK_FUT", "US", "US_FUT"],
             )
             self.assertIn("database file does not exist", payload["warnings"])
             self.assertFalse(db_path.exists())
@@ -664,6 +665,71 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(len(bars), 1)
         self.assertEqual(bars[0].provider, "yfinance")
 
+    def test_auto_provider_uses_eastmoney_fund_for_open_fund_fallback(self) -> None:
+        yfinance_provider = EmptyMarketDataProvider("yfinance")
+        eastmoney_provider = RecordingMarketDataProvider("eastmoney_fund")
+        settings = Settings(
+            db_path=Path(":memory:"),
+            tushare_token=None,
+            demo_publish_url=None,
+            demo_api_key=None,
+            daily_provider="auto",
+        )
+        instrument = Instrument(
+            symbol="006947.OF",
+            provider_symbol="006947.OF",
+            name="Open Fund",
+            aliases=("006947",),
+            market=Market.CN_A,
+            asset_type=AssetType.ETF,
+            exchange="OF",
+            currency="CNY",
+            timezone="Asia/Shanghai",
+            metadata={"fund_type": "open_fund"},
+        )
+
+        with patch("signal_track.providers.factory.YFinanceMarketDataProvider", return_value=yfinance_provider):
+            with patch("signal_track.providers.factory.EastmoneyFundProvider", return_value=eastmoney_provider):
+                provider = build_auto_provider(settings)
+
+        bars = provider.get_daily_bars(instrument, date(2026, 6, 1), date(2026, 6, 5))
+
+        self.assertEqual(yfinance_provider.calls, ["006947.OF"])
+        self.assertEqual(eastmoney_provider.calls, ["006947.OF"])
+        self.assertEqual(len(bars), 1)
+        self.assertEqual(bars[0].provider, "eastmoney_fund")
+
+    def test_eastmoney_fund_payload_parses_historical_nav_rows(self) -> None:
+        instrument = Instrument(
+            symbol="006947.OF",
+            provider_symbol="006947.OF",
+            name="Open Fund",
+            aliases=("006947",),
+            market=Market.CN_A,
+            asset_type=AssetType.ETF,
+            exchange="OF",
+            currency="CNY",
+            timezone="Asia/Shanghai",
+            metadata={"fund_type": "open_fund"},
+        )
+        payload = {
+            "Data": {
+                "LSJZList": [
+                    {"FSRQ": "2026-06-08", "DWJZ": "1.2227", "LJJZ": "1.2427"},
+                    {"FSRQ": "2026-06-05", "DWJZ": "1.2229", "LJJZ": "1.2429"},
+                    {"FSRQ": "2026-05-30", "DWJZ": "1.2200", "LJJZ": "1.2400"},
+                ]
+            }
+        }
+
+        bars = bars_from_payload(payload, instrument, "006947", date(2026, 6, 1), date(2026, 6, 8))
+
+        self.assertEqual(fund_code_for(instrument), "006947")
+        self.assertEqual([bar.date for bar in bars], [date(2026, 6, 5), date(2026, 6, 8)])
+        self.assertEqual([bar.close for bar in bars], [1.2229, 1.2227])
+        self.assertEqual([bar.adj_close for bar in bars], [1.2429, 1.2427])
+        self.assertEqual([bar.provider for bar in bars], ["eastmoney_fund", "eastmoney_fund"])
+
     def test_tushare_continuous_future_uses_mapping_contracts(self) -> None:
         provider = TushareMarketDataProvider.__new__(TushareMarketDataProvider)
         provider.pro = FakeTusharePro()
@@ -763,7 +829,7 @@ class SignalTrackCoreTests(unittest.TestCase):
 
         by_market = {row["market"]: row for row in coverage["markets"]}
         self.assertEqual(by_market["CN_A"]["price_provider"], "tushare")
-        self.assertEqual(by_market["CN_A"]["fallback_price_providers"], ["yfinance"])
+        self.assertEqual(by_market["CN_A"]["fallback_price_providers"], ["yfinance", "eastmoney_fund"])
         self.assertEqual(by_market["HK"]["price_provider"], "tushare")
         self.assertEqual(by_market["HK"]["fallback_price_providers"], ["yfinance"])
         self.assertEqual(by_market["CN_FUT"]["instrument_master_provider"], "tushare")
@@ -788,8 +854,9 @@ class SignalTrackCoreTests(unittest.TestCase):
             coverage = market_data_coverage(settings, "auto")
 
         by_market = {row["market"]: row for row in coverage["markets"]}
-        self.assertFalse(by_market["CN_A"]["price_available"])
-        self.assertIn("TUSHARE_TOKEN", by_market["CN_A"]["notes"][1])
+        self.assertTrue(by_market["CN_A"]["price_available"])
+        self.assertEqual(by_market["CN_A"]["price_provider"], "eastmoney_fund")
+        self.assertTrue(any("eastmoney_fund" in note for note in by_market["CN_A"]["notes"]))
         self.assertFalse(by_market["HK_FUT"]["price_available"])
         self.assertFalse(by_market["US_FUT"]["price_available"])
 
@@ -967,7 +1034,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertTrue(result["scenario_results"]["report_archive"])
             self.assertTrue(result["report_artifacts"])
             self.assertTrue(html_path.exists())
-            self.assertIn("Indexed artifact:", html_path.read_text(encoding="utf-8"))
+            self.assertIn("已归档报告：", html_path.read_text(encoding="utf-8"))
 
     def test_source_name_can_be_inferred_from_content_marker(self) -> None:
         self.assertEqual(resolve_source_name(None, "信息源：Alpha Desk\n00700.HK 做多"), "Alpha Desk")
@@ -1009,10 +1076,17 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(checked, 1)
 
             html = render_dashboard(repo)
-            self.assertIn("Signal Track 投资信号看板", html)
+            self.assertIn("投资信号看板", html)
             self.assertIn("腾讯控股", html)
             self.assertIn("needs_review", html)
             self.assertIn("polyline", html)
+            self.assertIn("chart-marker-open", html)
+            self.assertIn("开仓点：", html)
+            self.assertIn("chart-marker-curve-start", html)
+            self.assertIn("chart-marker-curve-end", html)
+            self.assertIn("曲线开始点：", html)
+            self.assertIn("曲线结束点：", html)
+            self.assertNotIn("平仓点：", html)
             self.assertIn("系统补充逻辑", html)
             self.assertIn("项目检查日志", html)
             self.assertIn("needs_review", html)
@@ -1059,9 +1133,9 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(updated["source_note"], "checked public filings")
 
             html = render_dashboard(repo)
-            self.assertIn("Evidence / verification", html)
+            self.assertIn("证据 / 验证", html)
             self.assertIn("研究验证项", html)
-            self.assertIn("tracking_metric: 广告收入环比改善", html)
+            self.assertIn("跟踪指标：广告收入环比改善", html)
             self.assertIn("广告收入环比改善", html)
 
     def test_project_report_exports_framework_and_verification_state(self) -> None:
@@ -1164,20 +1238,20 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("data-source='信息源A'", html)
             self.assertIn("data-status='needs_review'", html)
             self.assertIn("data-direction='long'", html)
-            self.assertIn("title='needs_review'", html)
+            self.assertIn("title='待复核'>待复核", html)
             self.assertIn("title='00700.HK / 腾讯控股'", html)
             self.assertIn("data-filter-type='status' data-value='exit_signal'", html)
             self.assertIn("data-filter-type='direction' data-value='short'", html)
             self.assertIn("report-card", html)
             self.assertIn("report-body", html)
             self.assertIn("data:text/markdown;charset=utf-8,", html)
-            self.assertIn("aria-label='下载项目投研报告 Markdown'", html)
+            self.assertIn("aria-label='下载项目投研报告文件'", html)
             self.assertIn("download='signal-track-project-", html)
             self.assertNotIn("/api/projects/", html)
             self.assertIn("投研报告 | 基于风和3C-5M-3D-3T框架", html)
             self.assertIn("免责声明", html)
             self.assertIn("framework-tag covered", html)
-            self.assertIn("<span>pending</span>", html)
+            self.assertIn("<span>待验证</span>", html)
             self.assertIn("class='card detail-card' data-source='信息源B'", html)
             self.assertIn("applyFilters", html)
             self.assertIn("最新检查", html)
@@ -1212,11 +1286,11 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("data-input-action='close'", html)
             self.assertIn("data-input-action='mixed'", html)
             self.assertIn("input-action mixed", html)
-            self.assertIn("Input history", html)
+            self.assertIn("输入记录", html)
             self.assertIn("Input Desk", html)
             self.assertIn("Mixed Desk", html)
             self.assertIn("00700.HK", html)
-            self.assertIn("projects 1", html)
+            self.assertIn("关联项目 1", html)
 
     def test_project_input_history_scans_beyond_recent_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1280,6 +1354,10 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("mini-chart", html)
             self.assertIn("300750.SZ 价格曲线", html)
             self.assertIn("600519.SH 价格曲线", html)
+            self.assertIn("chart-marker-open", html)
+            self.assertIn("chart-marker-curve-start", html)
+            self.assertIn("chart-marker-curve-end", html)
+            self.assertNotIn("平仓点：", html)
             self.assertNotIn("300750.SZ 收益曲线", html)
 
     def test_portfolio_curve_carries_forward_missing_leg_dates(self) -> None:
@@ -2618,7 +2696,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(payload["report_artifacts"][0]["path"], str(report_path))
             self.assertTrue(report_path.exists())
             self.assertEqual(len(reports), 1)
-            self.assertIn("Indexed artifact:", html)
+            self.assertIn("已归档报告：", html)
             self.assertIn(f"project-{project_id}-report.md", html)
 
     def test_cli_check_auto_publishes_when_configured(self) -> None:
@@ -2874,7 +2952,7 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(len(markdown_payload["report_artifact"]["content_hash"]), 64)
         self.assertEqual(len(reports_payload["reports"]), 1)
         self.assertEqual(reports_payload["reports"][0]["id"], markdown_payload["report_artifact_id"])
-        self.assertIn("Indexed artifact:", dashboard_html)
+        self.assertIn("已归档报告：", dashboard_html)
         self.assertIn("project-report.md", dashboard_html)
         self.assertEqual(payload["project"]["source_name"], "CLI Report Desk")
         self.assertEqual(payload["instruments"][0]["symbol"], "00700.HK")

@@ -12,7 +12,7 @@ from pathlib import Path
 from .analytics import project_performance
 from .checker import DailyChecker
 from .config import Settings
-from .dashboard import render_dashboard
+from .dashboard import localize_text, render_dashboard
 from .db import Database, Repository
 from .extraction import extracted_input_from_dict
 from .exit_signals import exit_signal_summaries
@@ -60,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
 
     bars_parser = subparsers.add_parser("fetch-bars", help="Fetch and store daily bars.")
     bars_parser.add_argument("query", help="Instrument name, alias, or symbol.")
-    bars_parser.add_argument("--provider", choices=["auto", "fixture", "tushare", "yfinance"], default="fixture")
+    bars_parser.add_argument("--provider", choices=["auto", "fixture", "tushare", "yfinance", "eastmoney_fund"], default="fixture")
     bars_parser.add_argument("--start")
     bars_parser.add_argument("--end")
     bars_parser.add_argument("--market", choices=[market.value for market in Market])
@@ -84,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
     coverage_parser = subparsers.add_parser("market-coverage", help="Report configured market data coverage.")
     coverage_parser.add_argument(
         "--provider",
-        choices=["none", "auto", "fixture", "tushare", "yfinance"],
+        choices=["none", "auto", "fixture", "tushare", "yfinance", "eastmoney_fund"],
         default="auto",
         help="Provider configuration to inspect without calling remote market APIs.",
     )
@@ -92,13 +92,13 @@ def main(argv: list[str] | None = None) -> int:
     doctor_parser = subparsers.add_parser("doctor", help="Run a read-only readiness check for local Codex App operation.")
     doctor_parser.add_argument(
         "--provider",
-        choices=["none", "auto", "fixture", "tushare", "yfinance"],
+        choices=["none", "auto", "fixture", "tushare", "yfinance", "eastmoney_fund"],
         default="auto",
         help="Provider configuration to inspect without calling remote market APIs.",
     )
 
     smoke_parser = subparsers.add_parser("market-smoke", help="Fetch sample daily bars for configured markets.")
-    smoke_parser.add_argument("--provider", choices=["auto", "fixture", "tushare", "yfinance"], default="auto")
+    smoke_parser.add_argument("--provider", choices=["auto", "fixture", "tushare", "yfinance", "eastmoney_fund"], default="auto")
     smoke_parser.add_argument(
         "--market",
         choices=["all", *[market.value for market in Market]],
@@ -146,12 +146,12 @@ def main(argv: list[str] | None = None) -> int:
     update_research_parser.add_argument("--source-note")
     update_research_parser.add_argument("--metadata-json")
     update_research_parser.add_argument("--check", action="store_true", help="Run a daily check after updating.")
-    update_research_parser.add_argument("--provider", choices=["none", "auto", "fixture", "tushare", "yfinance"], default="none")
+    update_research_parser.add_argument("--provider", choices=["none", "auto", "fixture", "tushare", "yfinance", "eastmoney_fund"], default="none")
     update_research_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after updating.")
     update_research_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     update_research_parser.add_argument("--archive-reports", action="store_true", help="Archive affected project Markdown reports before rendering/publishing.")
     update_research_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
-    update_research_parser.add_argument("--title", default="Signal Track 投资信号看板")
+    update_research_parser.add_argument("--title", default="投资信号看板")
 
     close_project_parser = subparsers.add_parser("close-project", help="Manually close a tracking project.")
     close_project_parser.add_argument("project_id", type=int)
@@ -161,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     close_project_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     close_project_parser.add_argument("--archive-reports", action="store_true", help="Archive affected project Markdown reports before rendering/publishing.")
     close_project_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
-    close_project_parser.add_argument("--title", default="Signal Track 投资信号看板")
+    close_project_parser.add_argument("--title", default="投资信号看板")
 
     weights_parser = subparsers.add_parser("update-project-weights", help="Update all leg weights for a portfolio project.")
     weights_parser.add_argument("project_id", type=int)
@@ -171,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
     weights_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     weights_parser.add_argument("--archive-reports", action="store_true", help="Archive affected project Markdown reports before rendering/publishing.")
     weights_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
-    weights_parser.add_argument("--title", default="Signal Track 投资信号看板")
+    weights_parser.add_argument("--title", default="投资信号看板")
 
     note_parser = subparsers.add_parser("add-project-note", help="Append manual observation logic to a project.")
     note_parser.add_argument("project_id", type=int)
@@ -185,12 +185,12 @@ def main(argv: list[str] | None = None) -> int:
     note_parser.add_argument("--confidence", type=float, default=1.0)
     note_parser.add_argument("--evidence-json", help='Optional JSON array of evidence strings.')
     note_parser.add_argument("--check", action="store_true", help="Run a daily check after adding the note.")
-    note_parser.add_argument("--provider", choices=["none", "auto", "fixture", "tushare", "yfinance"], default="none")
+    note_parser.add_argument("--provider", choices=["none", "auto", "fixture", "tushare", "yfinance", "eastmoney_fund"], default="none")
     note_parser.add_argument("--publish", action="store_true", help="Publish the dashboard after adding the note.")
     note_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     note_parser.add_argument("--archive-reports", action="store_true", help="Archive affected project Markdown reports before rendering/publishing.")
     note_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
-    note_parser.add_argument("--title", default="Signal Track 投资信号看板")
+    note_parser.add_argument("--title", default="投资信号看板")
 
     ingest_parser = subparsers.add_parser("ingest", help="Create tracking projects from raw source text.")
     ingest_parser.add_argument("--source")
@@ -210,14 +210,14 @@ def main(argv: list[str] | None = None) -> int:
     check_parser.add_argument("--date", help="Check date, YYYY-MM-DD. Defaults to today.")
     check_parser.add_argument(
         "--provider",
-        choices=["none", "auto", "fixture", "tushare", "yfinance"],
+        choices=["none", "auto", "fixture", "tushare", "yfinance", "eastmoney_fund"],
         help="Optional provider used to refresh prices before checking. Defaults to SIGNAL_TRACK_DAILY_PROVIDER.",
     )
     check_parser.add_argument("--publish", action="store_true")
     check_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     check_parser.add_argument("--archive-reports", action="store_true", help="Archive active project Markdown reports before rendering/publishing.")
     check_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
-    check_parser.add_argument("--title", default="Signal Track 投资信号看板")
+    check_parser.add_argument("--title", default="投资信号看板")
 
     render_parser = subparsers.add_parser("render-dashboard", help="Render dashboard HTML.")
     render_parser.add_argument("--out", default="dist/dashboard.html")
@@ -227,14 +227,14 @@ def main(argv: list[str] | None = None) -> int:
     self_check_parser.add_argument("--out", help="Optional HTML output path.")
 
     publish_parser = subparsers.add_parser("publish-dashboard", help="Render and publish dashboard HTML.")
-    publish_parser.add_argument("--title", default="Signal Track 投资信号看板")
-    publish_parser.add_argument("--feature", default="Signal Track 自动发布")
+    publish_parser.add_argument("--title", default="投资信号看板")
+    publish_parser.add_argument("--feature", default="投资信号看板自动发布")
 
     daily_parser = subparsers.add_parser("daily-run", help="Run the full daily check -> render -> optional publish flow.")
     daily_parser.add_argument("--date", help="Check date, YYYY-MM-DD. Defaults to today.")
     daily_parser.add_argument(
         "--provider",
-        choices=["none", "auto", "fixture", "tushare", "yfinance"],
+        choices=["none", "auto", "fixture", "tushare", "yfinance", "eastmoney_fund"],
         help="Optional provider used to refresh prices before checking. Defaults to SIGNAL_TRACK_DAILY_PROVIDER.",
     )
     daily_parser.add_argument("--out", default="dist/dashboard.html")
@@ -242,7 +242,7 @@ def main(argv: list[str] | None = None) -> int:
     daily_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     daily_parser.add_argument("--archive-reports", action="store_true", help="Archive active project Markdown reports before rendering/publishing.")
     daily_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
-    daily_parser.add_argument("--title", default="Signal Track 投资信号看板")
+    daily_parser.add_argument("--title", default="投资信号看板")
 
     args = parser.parse_args(argv)
     settings = Settings.from_env()
@@ -499,7 +499,7 @@ def main(argv: list[str] | None = None) -> int:
         content = (
             json.dumps(report, ensure_ascii=False, indent=2)
             if args.format == "json"
-            else render_project_report_markdown(report)
+            else localize_text(render_project_report_markdown(report))
         )
         if args.out:
             out_path = Path(args.out)
@@ -798,7 +798,7 @@ def main(argv: list[str] | None = None) -> int:
             publish_result = publish_dashboard(
                 repo,
                 settings,
-                title="Signal Track 投资信号看板",
+                title="投资信号看板",
                 feature="新增信息后自动发布",
                 flow="ingest",
             )
@@ -1094,7 +1094,7 @@ def write_project_report_artifact(
         content = (
             json.dumps(report, ensure_ascii=False, indent=2)
             if artifact_format == "json"
-            else render_project_report_markdown(report)
+            else localize_text(render_project_report_markdown(report))
         )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(content, encoding="utf-8")
@@ -1262,7 +1262,7 @@ def run_self_check(settings: Settings, provider_name: str = "fixture", out: str 
         checks = repo.list_daily_checks()
         scenario_results["daily_checks"] = bool(checked == active_project_count and checks)
         scenario_results["dashboard"] = bool(
-            "Signal Track" in html
+            "投资信号看板" in html
             and "source-summary" in html
             and "leg-curves" in html
             and "研究验证项" in html
@@ -1270,7 +1270,7 @@ def run_self_check(settings: Settings, provider_name: str = "fixture", out: str 
         scenario_results["report_archive"] = bool(
             report_artifacts
             and all(Path(str(artifact["path"])).exists() for artifact in report_artifacts)
-            and "Indexed artifact:" in html
+            and "已归档报告：" in html
         )
         ok = bool(
             ingest_result.project_ids

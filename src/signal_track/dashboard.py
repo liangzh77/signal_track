@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from datetime import datetime
 from urllib.parse import quote
 
@@ -51,7 +52,7 @@ def render_dashboard(repo: Repository) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Signal Track 投资信号看板</title>
+  <title>投资信号看板</title>
   <style>
     :root {{
       color-scheme: dark;
@@ -131,8 +132,8 @@ def render_dashboard(repo: Repository) -> str:
     td.check-cell span:first-child {{ white-space: nowrap; }}
     td.action-cell {{ min-width: 72px; }}
     .symbol {{ color: var(--cyan); font-family: "IBM Plex Mono", "Geist Mono", monospace; }}
-    .positive {{ color: var(--green); }}
-    .negative {{ color: var(--red); }}
+    .positive {{ color: var(--red); }}
+    .negative {{ color: var(--green); }}
     .muted {{ color: var(--muted); }}
     .pill {{ display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: 999px; font-size: 12px; }}
     .pill.active {{ color: var(--cyan); border-color: rgba(68,215,200,.55); }}
@@ -161,6 +162,14 @@ def render_dashboard(repo: Repository) -> str:
     .detail-top {{ display: flex; justify-content: space-between; gap: 12px; align-items: start; margin-bottom: 12px; }}
     .detail-top h3 {{ margin: 0; font-size: 15px; line-height: 22px; }}
     .chart {{ width: 100%; height: 120px; margin: 8px 0 14px; border: 1px solid rgba(231,238,232,.08); border-radius: 8px; background: rgba(255,255,255,.025); }}
+    .chart-marker circle {{ stroke: rgba(13,15,14,.9); stroke-width: 2; }}
+    .chart-marker text {{ font: 600 13px/1 "Geist Mono", monospace; paint-order: stroke; stroke: rgba(13,15,14,.85); stroke-width: 3px; }}
+    .chart-marker-curve-start circle, .chart-marker-curve-end circle {{ fill: var(--cyan); }}
+    .chart-marker-curve-start text, .chart-marker-curve-end text {{ fill: var(--cyan); }}
+    .chart-marker-open circle {{ fill: var(--amber); }}
+    .chart-marker-open text {{ fill: var(--amber); }}
+    .chart-marker-close circle {{ fill: var(--red); }}
+    .chart-marker-close text {{ fill: var(--red); }}
     .logic-grid {{ display: grid; gap: 10px; }}
     .logic-block {{ border-left: 2px solid rgba(68,215,200,.45); padding-left: 10px; color: var(--muted); font-size: 13px; line-height: 20px; }}
     .logic-block.system_logic {{ border-left-color: rgba(216,179,93,.65); }}
@@ -234,11 +243,11 @@ def render_dashboard(repo: Repository) -> str:
   <main class="shell">
     <section class="topbar">
       <div>
-        <h1>Signal Track 投资信号看板</h1>
+        <h1>投资信号看板</h1>
         <div class="stamp">最后生成：{escape(now)}</div>
       </div>
       <div class="top-actions">
-        <a class="nav-link" href="/inbox" title="打开信息录入页">Inbox</a>
+        <a class="nav-link" href="/inbox" title="打开信息录入页">录入</a>
         <div class="stamp">{render_publish_stamp(last_publish)}</div>
       </div>
     </section>
@@ -400,7 +409,8 @@ def render_source_summary(projects, performances: dict[int, object]) -> str:
 
 
 def render_project_row(row, performance, latest_check=None) -> str:
-    status = escape(row["status"])
+    status = str(row["status"])
+    status_class = escape(status)
     review = "是" if project_needs_review(row) else "否"
     return_class = return_css(performance.return_pct)
     symbols = row["symbols"] or ""
@@ -409,11 +419,11 @@ def render_project_row(row, performance, latest_check=None) -> str:
     return (
         f"<tr data-source='{escape(row['source_name'])}' "
         f"data-status='{escape(row['status'])}' data-direction='{escape(row['direction'])}'>"
-        f"<td><span class='pill {status}' title='{status}'>{status}</span></td>"
+        f"<td><span class='pill {status_class}' title='{escape(status_label(status))}'>{escape(status_label(status))}</span></td>"
         f"<td title='{escape(row['source_name'])}'>{escape(row['source_name'])}</td>"
         f"<td>{escape(row['title'])}</td>"
         f"<td title='{escape(symbols)} / {escape(instrument_names)}'><span class='symbol'>{escape(symbols)}</span><br><span class='muted'>{escape(instrument_names)}</span></td>"
-        f"<td title='{escape(row['direction'])}'>{escape(row['direction'])}</td>"
+        f"<td title='{escape(direction_label(row['direction']))}'>{escape(direction_label(row['direction']))}</td>"
         f"<td class='num' title='{escape(row['entry_date'] or '--')}'>{escape(row['entry_date'] or '--')}</td>"
         f"<td class='num'>{float(row['logic_score']):.1f}</td>"
         f"<td class='num {return_class}' title='{latest_return}'>{latest_return}</td>"
@@ -426,12 +436,12 @@ def render_project_row(row, performance, latest_check=None) -> str:
 
 def render_check_item(row) -> str:
     rules = json.loads(row["triggered_rules"] or "[]")
-    rule_html = "".join(f"<div class='rule-hit'>{escape(rule)}</div>" for rule in rules)
+    rule_html = "".join(f"<div class='rule-hit'>{escape(localize_text(rule))}</div>" for rule in rules)
     return (
         "<li>"
         f"<span>{escape(row['check_date'])}</span>"
         f"<strong>{escape(row['title'])}</strong>"
-        f"<em>{escape(row['conclusion'])}</em>"
+        f"<em>{escape(conclusion_label(row['conclusion']))}</em>"
         f"{rule_html}"
         "</li>"
     )
@@ -452,19 +462,19 @@ def render_input_item(item: dict) -> str:
         f"<li data-input-action='{escape(action)}'>"
         "<div class='input-top'>"
         f"<strong>{escape(item.get('source_name'))}</strong>"
-        f"<span class='input-action {escape(action)}'>{escape(action)}</span>"
+        f"<span class='input-action {escape(action)}'>{escape(input_action_label(action))}</span>"
         "</div>"
         f"<div class='input-preview'>{escape(item.get('content_preview'))}</div>"
-        f"<div class='input-meta'>{escape(item.get('received_at'))} · {escape(symbol_text)} · projects {project_count}</div>"
+        f"<div class='input-meta'>{escape(item.get('received_at'))} · {escape(symbol_text)} · 关联项目 {project_count}</div>"
         "</li>"
     )
 
 
 def render_project_inputs(inputs: list[dict]) -> str:
     if not inputs:
-        return "<div class='project-inputs'><h4>Input history</h4><div class='check-log-item empty'>No linked inputs</div></div>"
+        return "<div class='project-inputs'><h4>输入记录</h4><div class='check-log-item empty'>暂无关联输入</div></div>"
     items = "".join(render_input_item(item) for item in inputs)
-    return f"<div class='project-inputs'><h4>Input history</h4><ul class='recent-inputs'>{items}</ul></div>"
+    return f"<div class='project-inputs'><h4>输入记录</h4><ul class='recent-inputs'>{items}</ul></div>"
 
 
 def render_project_detail(repo: Repository, row, performance) -> str:
@@ -478,7 +488,7 @@ def render_project_detail(repo: Repository, row, performance) -> str:
         f"<span class='leg'>{escape(leg.symbol)} · {leg.weight:.0%} · {format_return(leg.return_pct)}</span>"
         for leg in performance.legs
     )
-    leg_curves = "\n".join(render_leg_curve(leg) for leg in performance.legs)
+    leg_curves = "\n".join(render_leg_curve(leg, row["entry_date"], row["closed_date"]) for leg in performance.legs)
     return (
         f"<article class='card detail-card' data-source='{escape(row['source_name'])}' "
         f"data-status='{escape(row['status'])}' data-direction='{escape(row['direction'])}'>"
@@ -487,7 +497,7 @@ def render_project_detail(repo: Repository, row, performance) -> str:
         f"<strong class='{return_css(performance.return_pct)}'>{format_return(performance.return_pct)}</strong>"
         "</div>"
         f"{render_performance_window(row, performance)}"
-        f"{render_sparkline(performance.points)}"
+        f"{render_sparkline(performance.points, trade_markers=project_chart_markers(row['entry_date'], row['closed_date']))}"
         f"<div class='leg-list'>{legs}</div>"
         f"<div class='leg-curves'>{leg_curves}</div>"
         f"{report_snapshot}"
@@ -519,7 +529,7 @@ def render_report_snapshot(repo: Repository, project_id: int) -> str:
     if not report:
         return ""
     verification = report["data_verification"]
-    markdown = render_project_report_markdown(report)
+    markdown = localize_text(render_project_report_markdown(report))
     artifact = repo.get_latest_project_report(project_id, "markdown") or repo.get_latest_project_report(project_id)
     artifact_line = render_report_artifact_line(artifact)
     covered = {section["name"] for section in report["framework"] if section["items"]}
@@ -528,22 +538,22 @@ def render_report_snapshot(repo: Repository, project_id: int) -> str:
         for name in ["3C", "5M", "3D", "3T"]
     )
     return (
-        "<section class='report-card' aria-label='project research report'>"
+        "<section class='report-card' aria-label='项目投研报告'>"
         "<div class='report-card-head'>"
-        f"<div><h4>{escape(report['title'])}</h4><div class='muted'>Embedded report with Markdown download</div></div>"
+        f"<div><h4>{escape(report['title'])}</h4><div class='muted'>内嵌投研报告，可下载报告文件</div></div>"
         f"<a class='report-link' href='{report_download_href(markdown)}' "
-        "aria-label='下载项目投研报告 Markdown' title='下载项目投研报告 Markdown' "
-        f"download='signal-track-project-{project_id}-report.md'>Markdown</a>"
+        "aria-label='下载项目投研报告文件' title='下载项目投研报告文件' "
+        f"download='signal-track-project-{project_id}-report.md'>下载报告</a>"
         "</div>"
         f"{artifact_line}"
         "<div class='report-stats'>"
-        f"<div class='report-stat'><span>verified</span><strong>{verification['verified_count']}</strong></div>"
-        f"<div class='report-stat'><span>pending</span><strong>{verification['pending_count']}</strong></div>"
-        f"<div class='report-stat'><span>contradicted</span><strong>{verification['contradicted_count']}</strong></div>"
+        f"<div class='report-stat'><span>已验证</span><strong>{verification['verified_count']}</strong></div>"
+        f"<div class='report-stat'><span>待验证</span><strong>{verification['pending_count']}</strong></div>"
+        f"<div class='report-stat'><span>已证伪</span><strong>{verification['contradicted_count']}</strong></div>"
         "</div>"
         f"<div class='framework-tags'>{tags}</div>"
         "<details class='report-body'>"
-        "<summary>View embedded report</summary>"
+        "<summary>查看内嵌报告</summary>"
         f"<pre>{escape(markdown)}</pre>"
         "</details>"
         "</section>"
@@ -552,12 +562,12 @@ def render_report_snapshot(repo: Repository, project_id: int) -> str:
 
 def render_report_artifact_line(artifact) -> str:
     if not artifact:
-        return "<div class='report-artifact'>No indexed Markdown artifact yet. Export once to archive a report file.</div>"
+        return "<div class='report-artifact'>尚未归档报告文件。导出一次后会显示报告文件。</div>"
     digest = str(artifact["content_hash"] or "")
     digest_label = digest[:12] if digest else "--"
     return (
         "<div class='report-artifact'>"
-        f"Indexed artifact: {escape(str(artifact['path']))} - {escape(str(artifact['format']))} - "
+        f"已归档报告：{escape(str(artifact['path']))} · {escape(format_label(str(artifact['format'])))} · "
         f"sha256 {escape(digest_label)} - {escape(str(artifact['generated_at']))}"
         "</div>"
     )
@@ -574,9 +584,9 @@ def render_research_items(items) -> str:
     for item in items:
         rows.append(
             "<div class='research-item'>"
-            f"<strong>{escape(item['item_type'])}</strong>"
-            f"<span>{escape(item['content'])}</span>"
-            f"<em>{escape(item['status'])}</em>"
+            f"<strong>{escape(research_type_label(item['item_type']))}</strong>"
+            f"<span>{escape(localize_text(item['content']))}</span>"
+            f"<em>{escape(research_status_label(item['status']))}</em>"
             "</div>"
         )
     return "<div class='research-items'><h4>研究验证项</h4>" + "".join(rows) + "</div>"
@@ -587,7 +597,7 @@ def render_logic_block(block) -> str:
     return (
         f"<div class='logic-block {escape(block['logic_type'])}'>"
         f"<strong>{logic_label(block['logic_type'])}</strong><br>"
-        f"{escape(block['content'])}"
+        f"{escape(localize_text(block['content']))}"
         f"{evidence_html}"
         "</div>"
     )
@@ -597,8 +607,8 @@ def render_logic_evidence(raw_evidence: str | None) -> str:
     evidence = parse_logic_evidence(raw_evidence)
     if not evidence:
         return ""
-    items = "".join(f"<div class='logic-evidence-item'>{escape(item)}</div>" for item in evidence)
-    return f"<div class='logic-evidence'><span>Evidence / verification</span>{items}</div>"
+    items = "".join(f"<div class='logic-evidence-item'>{escape(localize_text(item))}</div>" for item in evidence)
+    return f"<div class='logic-evidence'><span>证据 / 验证</span>{items}</div>"
 
 
 def parse_logic_evidence(raw_evidence: str | None) -> list[str]:
@@ -611,7 +621,7 @@ def parse_logic_evidence(raw_evidence: str | None) -> list[str]:
     if isinstance(parsed, list):
         return [str(item) for item in parsed if str(item).strip()]
     if isinstance(parsed, dict):
-        return [f"{key}: {value}" for key, value in parsed.items()]
+        return [f"{format_label(str(key))}: {value}" for key, value in parsed.items()]
     return [str(parsed)]
 
 
@@ -621,28 +631,28 @@ def render_project_check_log(checks) -> str:
     items = []
     for row in checks:
         rules = json.loads(row["triggered_rules"] or "[]")
-        rule_html = "".join(f"<div class='rule-hit'>{escape(rule)}</div>" for rule in rules)
+        rule_html = "".join(f"<div class='rule-hit'>{escape(localize_text(rule))}</div>" for rule in rules)
         items.append(
             "<div class='check-log-item'>"
             "<div class='check-log-top'>"
             f"<strong>{escape(row['check_date'])}</strong>"
-            f"<span>{escape(row['conclusion'])}</span>"
+            f"<span>{escape(conclusion_label(row['conclusion']))}</span>"
             "</div>"
-            f"<div class='check-log-summary'>{escape(row['summary'])}</div>"
+            f"<div class='check-log-summary'>{escape(localize_text(row['summary']))}</div>"
             f"{rule_html}"
             "</div>"
         )
     return "<div class='check-log'><h4>项目检查日志</h4>" + "".join(items) + "</div>"
 
 
-def render_leg_curve(leg) -> str:
+def render_leg_curve(leg, project_entry_date: str | None, project_closed_date: str | None) -> str:
     return (
         "<div class='leg-curve'>"
         "<div class='leg-curve-head'>"
         f"<strong>{escape(leg.symbol)} · {escape(leg.name)} · {leg.weight:.0%}</strong>"
         f"<span class='{return_css(leg.return_pct)}'>{format_price(leg.latest_price)} · {format_return(leg.return_pct)}</span>"
         "</div>"
-        f"{render_sparkline(leg.price_points, css_class='mini-chart', label=f'{leg.symbol} 价格曲线', show_zero=False)}"
+        f"{render_sparkline(leg.price_points, css_class='mini-chart', label=f'{leg.symbol} 价格曲线', show_zero=False, trade_markers=project_chart_markers(project_entry_date, project_closed_date))}"
         "</div>"
     )
 
@@ -652,6 +662,7 @@ def render_sparkline(
     css_class: str = "chart",
     label: str = "收益曲线",
     show_zero: bool = True,
+    trade_markers: list[dict[str, str]] | None = None,
 ) -> str:
     if len(points) < 2:
         return f"<div class='{escape(css_class)} empty'>暂无价格曲线。运行 check --provider 或 fetch-bars 后显示。</div>"
@@ -672,12 +683,103 @@ def render_sparkline(
         zero_y = height - ((0 - minimum) / span * (height - 18)) - 9
         zero_y = max(8, min(height - 8, zero_y))
         zero_line = f"<line x1='0' y1='{zero_y:.1f}' x2='640' y2='{zero_y:.1f}' stroke='rgba(231,238,232,.18)' />"
+    markers = curve_boundary_markers(points) + (trade_markers or [])
+    marker_html = render_chart_markers(points, coords, markers)
     return (
         f"<svg class='{escape(css_class)}' viewBox='0 0 640 120' role='img' aria-label='{escape(label)}'>"
         f"{zero_line}"
         f"<polyline points='{' '.join(coords)}' fill='none' stroke='#44D7C8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' />"
+        f"{marker_html}"
         "</svg>"
     )
+
+
+def project_chart_markers(entry_date: str | None, closed_date: str | None) -> list[dict[str, str]]:
+    markers = []
+    if entry_date:
+        markers.append({"date": entry_date, "label": "开", "title_label": "开仓", "kind": "open"})
+    if closed_date:
+        markers.append({"date": closed_date, "label": "平", "title_label": "平仓", "kind": "close"})
+    return markers
+
+
+def curve_boundary_markers(points: list[tuple[str, float]]) -> list[dict[str, str]]:
+    if not points:
+        return []
+    markers = [{"date": points[0][0], "label": "始", "title_label": "曲线开始", "kind": "curve-start"}]
+    if points[-1][0] != points[0][0]:
+        markers.append({"date": points[-1][0], "label": "末", "title_label": "曲线结束", "kind": "curve-end"})
+    return markers
+
+
+def render_chart_markers(points: list[tuple[str, float]], coords: list[str], markers: list[dict[str, str]]) -> str:
+    if not points or not coords or not markers:
+        return ""
+    return "".join(chart_marker(points, coords, marker) for marker in markers)
+
+
+def chart_marker(points: list[tuple[str, float]], coords: list[str], marker: dict[str, str]) -> str:
+    target_date = marker["date"]
+    index = chart_marker_index(points, target_date)
+    if index is None:
+        return ""
+    point = points[index]
+    coord = coords[index]
+    date_label, value = point
+    x_text, y_text = coord.split(",", 1)
+    x = float(x_text)
+    y = float(y_text)
+    label = marker["label"]
+    kind = marker["kind"]
+    is_left_label = kind in {"open", "curve-start"}
+    css_class = f"chart-marker-{kind}"
+    text_anchor = "start" if is_left_label else "end"
+    text_x = min(620, x + 10) if is_left_label else max(20, x - 10)
+    text_y = marker_text_y(y, kind)
+    plotted_suffix = marker_plotted_suffix(points, target_date, date_label)
+    title_label = marker.get("title_label", label)
+    title = f"{title_label}点：{target_date}{plotted_suffix} / {value:.4g}"
+    visible_label = f"{label} {compact_date(target_date)}"
+    return (
+        f"<g class='chart-marker {css_class}'>"
+        f"<title>{escape(title)}</title>"
+        f"<circle cx='{x:.1f}' cy='{y:.1f}' r='5' />"
+        f"<text x='{text_x:.1f}' y='{text_y:.1f}' text-anchor='{text_anchor}'>{escape(visible_label)}</text>"
+        "</g>"
+    )
+
+
+def marker_text_y(y: float, kind: str) -> float:
+    offset = 20 if kind in {"curve-start", "curve-end"} else -8
+    return min(112, max(18, y + offset))
+
+
+def marker_plotted_suffix(points: list[tuple[str, float]], target_date: str, plotted_date: str) -> str:
+    if plotted_date == target_date:
+        return ""
+    first_date = points[0][0]
+    last_date = points[-1][0]
+    if target_date < first_date:
+        return f"（早于曲线开始 {first_date}）"
+    if target_date > last_date:
+        return f"（晚于曲线结束 {last_date}）"
+    return f"（图上定位 {plotted_date}）"
+
+
+def compact_date(value: str) -> str:
+    parts = value.split("-")
+    if len(parts) == 3:
+        return f"{parts[1]}-{parts[2]}"
+    return value
+
+
+def chart_marker_index(points: list[tuple[str, float]], target_date: str) -> int | None:
+    if not points:
+        return None
+    for index, (point_date, _) in enumerate(points):
+        if point_date >= target_date:
+            return index
+    return len(points) - 1
 
 
 def format_return(value: float | None) -> str:
@@ -705,11 +807,204 @@ def return_css(value: float | None) -> str:
 def format_latest_check(row) -> str:
     if not row:
         return "<span class='muted'>--</span>"
-    title = f"{row['check_date']} / {row['conclusion']}"
+    conclusion = conclusion_label(row["conclusion"])
+    title = f"{row['check_date']} / {conclusion}"
     return (
         f"<span title='{escape(title)}'>{escape(row['check_date'])}</span><br>"
-        f"<span class='muted'>{escape(row['conclusion'])}</span>"
+        f"<span class='muted'>{escape(conclusion)}</span>"
     )
+
+
+def status_label(value: object) -> str:
+    labels = {
+        "active": "跟踪中",
+        "needs_review": "待复核",
+        "exit_signal": "平仓信号",
+        "closed": "已平仓",
+        "watch_after_close": "平仓后观察",
+        "archived": "已归档",
+    }
+    return labels.get(str(value), str(value))
+
+
+def direction_label(value: object) -> str:
+    labels = {
+        "long": "做多",
+        "short": "做空",
+        "neutral": "观察",
+        "unknown": "未知",
+    }
+    return labels.get(str(value), str(value))
+
+
+def conclusion_label(value: object) -> str:
+    labels = {
+        "hold": "持有",
+        "watch": "观察",
+        "needs_review": "待复核",
+        "exit_signal": "平仓信号",
+    }
+    return labels.get(str(value), str(value))
+
+
+def input_action_label(value: object) -> str:
+    labels = {
+        "track": "新增跟踪",
+        "update": "更新",
+        "mixed": "更新/新增",
+        "close": "平仓",
+        "close_unmatched": "未匹配平仓",
+        "none": "无操作",
+    }
+    return labels.get(str(value), str(value))
+
+
+def research_type_label(value: object) -> str:
+    labels = {
+        "verification_note": "验证项",
+        "exit_condition": "退出条件",
+        "tracking_metric": "跟踪指标",
+    }
+    return labels.get(str(value), str(value))
+
+
+def research_status_label(value: object) -> str:
+    labels = {
+        "pending": "待处理",
+        "unverified": "未验证",
+        "verified": "已验证",
+        "contradicted": "已证伪",
+        "ignored": "已忽略",
+    }
+    return labels.get(str(value), str(value))
+
+
+def format_label(value: str) -> str:
+    labels = {
+        "markdown": "报告文件",
+        "source": "来源",
+        "local 3C-5M-3D-3T fallback": "本地 3C-5M-3D-3T 补充框架",
+        "research_playbook": "研究手册",
+        "cross_validation_rule": "交叉验证规则",
+        "verification_note": "验证备注",
+        "verification_status": "验证状态",
+        "source_logic": "原始信号逻辑",
+        "system_logic": "系统补充逻辑",
+        "manual_note": "手动备注",
+    }
+    return labels.get(value, value.replace("_", " "))
+
+
+def localize_text(value: object) -> str:
+    text = "" if value is None else str(value)
+    replacements = {
+        "Project logic score 4.0 is below 6; keep the project in review until the thesis and tracking logic are verified.": "项目逻辑分 4.0 低于 6；在投资假设和跟踪逻辑完成复核前，保持待复核状态。",
+        "Project logic score": "项目逻辑分",
+        "is below 6; keep the project in review until the thesis and tracking logic are verified.": "低于 6；在投资假设和跟踪逻辑完成复核前，保持待复核状态。",
+        "source: local 3C-5M-3D-3T fallback": "来源：本地 3C-5M-3D-3T 补充框架",
+        "research_playbook: Step 1 financial/valuation, Step 2 industry/competition, Step 3 latest dynamics/management": "研究手册：第一步财务与估值，第二步行业与竞争，第三步最新动态与管理层。",
+        "cross_validation_rule: core financial data requires at least two independent sources before being marked verified": "交叉验证规则：核心财务数据至少需要两个独立来源确认后才能标记为已验证。",
+        "verification_status: unverified": "验证状态：未验证",
+        "financial/valuation": "财务与估值",
+        "industry/competition": "行业与竞争",
+        "latest dynamics/management": "最新动态与管理层",
+        "core financial data requires at least two independent sources before being marked verified": "核心财务数据至少需要两个独立来源确认后才能标记为已验证",
+        "external financial, industry, and news verification": "外部财务、行业和新闻验证",
+        "high-conviction use": "高置信度使用",
+        "requires external financial, industry, and news verification before high-conviction use.": "需要完成外部财务、行业和新闻验证后，才能作为高置信度依据使用。",
+        "collect latest revenue, net profit, OPM, ROE, PE/PB, free cash flow, and leverage; verify core financial numbers against at least two independent sources before using them.": "收集最新收入、净利润、经营利润率、ROE、PE/PB、自由现金流和杠杆数据；核心财务数据使用前至少用两个独立来源交叉验证。",
+        "collect industry TAM/growth, market share trend, competitors, cycle position, and entry barriers; mark unverified figures explicitly until source quality is checked.": "收集行业空间/增速、份额趋势、竞争对手、周期位置和进入壁垒；来源质量确认前，所有数字都明确标记为未验证。",
+        "review latest company news, strategy changes, management changes, M&A, analyst sentiment, and user-specific concerns from the original note.": "复核最新公司新闻、战略变化、管理层变化、并购、分析师情绪，以及原始笔记中的用户关注点。",
+        "track whether the original thesis is improving or deteriorating through 3C signals (cycle position, key change, certainty) and the most relevant 5M operating metrics.": "通过 3C 信号（周期位置、关键变化、确定性）和最相关的 5M 经营指标，跟踪原始投资假设是在改善还是恶化。",
+        "track price/return, moving-average breaks, valuation sentiment, and missing price data as daily 3D/3T risk signals.": "把价格/收益、均线跌破、估值情绪和缺失行情作为每日 3D/3T 风险信号跟踪。",
+        "if verified data contradicts the original opening thesis or shows the key 3C change has reversed, mark this item contradicted and run a check.": "如果已验证数据与原始开仓假设冲突，或显示关键 3C 变化已经逆转，则将该项标记为已证伪并运行检查。",
+        "if price action confirms thesis failure, for example a decisive moving-average break or configured drawdown/stop-loss threshold, trigger exit review.": "如果价格行为确认假设失败，例如有效跌破均线或触发已配置的回撤/止损阈值，则触发退出复核。",
+        "local 3C-5M-3D-3T fallback": "本地 3C-5M-3D-3T 补充框架",
+        "Step 1": "第一步",
+        "Step 2": "第二步",
+        "Step 3": "第三步",
+        "Cycle": "周期",
+        "Change": "变化",
+        "Certainty": "确定性",
+        "Market Space": "市场空间",
+        "Market Share": "市场份额",
+        "Business Model": "商业模式",
+        "Management": "管理层",
+        "External Change": "外部变化",
+        "Sentiment/Valuation": "情绪/估值",
+        "0-3 months": "0-3 个月",
+        "3-15 months": "3-15 个月",
+        "15+ months": "15 个月以上",
+        "verified": "已验证",
+        "unverified": "未验证",
+        "pending": "待处理",
+        "contradicted": "已证伪",
+        "verification_note": "验证项",
+        "exit_condition": "退出条件",
+        "tracking_metric": "跟踪指标",
+        "source_logic": "原始信号逻辑",
+        "source_update": "后续信息更新",
+        "system_logic": "系统补充逻辑",
+        "close_logic": "平仓逻辑",
+        "manual_note": "手动备注",
+        "user_request": "用户请求",
+        "supplement_confidence": "补充置信度",
+        "exit_signal": "平仓信号",
+        "needs_review": "待复核",
+        "_supplement": "补充",
+        "**long**": "**做多**",
+        "**short**": "**做空**",
+        "**neutral**": "**观察**",
+        "：long": "：做多",
+        "：short": "：做空",
+        "：neutral": "：观察",
+        " long，": " 做多，",
+        " short，": " 做空，",
+        " neutral，": " 观察，",
+        " / etf": " / ETF",
+        " / stock": " / 股票",
+        " / index": " / 指数",
+        " / fund": " / 基金",
+        " / future": " / 期货",
+        "provider/provider_symbol": "数据供应商/供应商代码",
+        "price_bars": "本地行情表",
+        "daily_checks": "每日检查表",
+        "research_items": "研究验证项表",
+        "user_request: start date changed to 2026-05-04": "用户请求：开始时间调整为 2026-05-04",
+        "start date changed to 2026-05-04": "开始时间调整为 2026-05-04",
+        "financial_data_and_valuation": "财务数据与估值",
+        "industry_and_competition": "行业与竞争",
+        "latest_dynamics_and_management": "最新动态与管理层",
+    }
+    for source, target in replacements.items():
+        text = text.replace(source, target)
+    text = re.sub(
+        r"项目逻辑分\s+([0-9]+(?:\.[0-9]+)?)\s+低于 6；在投资假设和跟踪逻辑完成复核前，保持待复核状态。",
+        r"项目逻辑分 \1 低于 6；在投资假设和跟踪逻辑完成复核前，保持待复核状态。",
+        text,
+    )
+    text = re.sub(
+        r"Project logic score\s+([0-9]+(?:\.[0-9]+)?)\s+低于 6；在投资假设和跟踪逻辑完成复核前，保持待复核状态。",
+        r"项目逻辑分 \1 低于 6；在投资假设和跟踪逻辑完成复核前，保持待复核状态。",
+        text,
+    )
+    text = re.sub(
+        r"验证项: (.+?) 需要完成外部财务、行业和新闻验证后，才能作为高置信度依据使用。",
+        r"验证项：\1 需要完成外部财务、行业和新闻验证后，才能作为高置信度依据使用。",
+        text,
+    )
+    text = text.replace("验证项:", "验证项：")
+    text = text.replace("退出条件:", "退出条件：")
+    text = text.replace("跟踪指标:", "跟踪指标：")
+    text = text.replace("来源:", "来源：")
+    text = text.replace("研究手册:", "研究手册：")
+    text = text.replace("交叉验证规则:", "交叉验证规则：")
+    text = text.replace("验证状态:", "验证状态：")
+    text = text.replace("用户请求:", "用户请求：")
+    text = text.replace("手动备注:", "手动备注：")
+    text = text.replace("[un已验证]", "[未验证]")
+    text = text.replace("un已验证", "未验证")
+    return text
 
 
 def next_action_label(row) -> str:
@@ -736,6 +1031,8 @@ def logic_label(value: str) -> str:
         return "平仓逻辑"
     if value == "weight_update":
         return "权重更新"
+    if value == "manual_note":
+        return "手动备注"
     return value
 
 

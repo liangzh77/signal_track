@@ -22,7 +22,7 @@ class DemoPublisher:
         self,
         title: str,
         html: str,
-        feature: str = "Signal Track 自动发布",
+        feature: str = "投资信号看板自动发布",
         disabled: bool = False,
     ) -> PublishResult:
         payload = json.dumps(

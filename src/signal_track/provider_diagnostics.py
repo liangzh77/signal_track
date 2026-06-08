@@ -14,6 +14,8 @@ def market_data_coverage(settings: Settings, provider_name: str = "auto") -> dic
 
     if provider_name == "auto":
         rows = auto_coverage(tushare_ready, yfinance_ready)
+    elif provider_name == "eastmoney_fund":
+        rows = eastmoney_fund_coverage()
     elif provider_name == "fixture":
         rows = [
             coverage_row(market, "fixture", "seed_fallback", False, ["representative local seed data"])
@@ -59,6 +61,13 @@ def auto_coverage(tushare_ready: bool, yfinance_ready: bool) -> list[dict]:
             else:
                 fallback_price_providers.append("yfinance")
 
+        if market == Market.CN_A:
+            if price_provider is None:
+                price_provider = "eastmoney_fund"
+            else:
+                fallback_price_providers.append("eastmoney_fund")
+            notes.append("eastmoney_fund fallback supports China open-fund NAV by fund code")
+
         if master_provider == "seed_fallback":
             notes.append("instrument master uses built-in seed fallback")
         if fallback_price_providers:
@@ -85,6 +94,25 @@ def tushare_coverage(tushare_ready: bool) -> list[dict]:
                 "tushare" if supported and tushare_ready else None,
                 "tushare" if supported and tushare_ready else None,
                 supported and tushare_ready,
+                notes,
+            )
+        )
+    return rows
+
+
+def eastmoney_fund_coverage() -> list[dict]:
+    rows: list[dict] = []
+    for market in all_markets():
+        supported = market == Market.CN_A
+        notes = ["supports China open-fund historical NAV by fund code"] if supported else [
+            "eastmoney_fund route is not configured for this market"
+        ]
+        rows.append(
+            coverage_row(
+                market,
+                "eastmoney_fund" if supported else None,
+                None,
+                False,
                 notes,
             )
         )

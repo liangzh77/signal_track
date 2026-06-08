@@ -4,6 +4,7 @@ from signal_track.config import Settings
 from signal_track.models import Market
 from signal_track.providers.auto import AutoMarketDataProvider
 from signal_track.providers.base import MarketDataProvider
+from signal_track.providers.eastmoney_fund_provider import EastmoneyFundProvider
 from signal_track.providers.fixture import FixtureMarketDataProvider
 from signal_track.providers.tushare_provider import TushareMarketDataProvider
 from signal_track.providers.yfinance_provider import YFinanceMarketDataProvider
@@ -14,6 +15,8 @@ def build_market_data_provider(name: str, settings: Settings) -> MarketDataProvi
         return None
     if name == "fixture":
         return FixtureMarketDataProvider()
+    if name == "eastmoney_fund":
+        return EastmoneyFundProvider()
     if name == "auto":
         return build_auto_provider(settings)
     if name == "tushare":
@@ -51,6 +54,8 @@ def build_auto_provider(settings: Settings) -> AutoMarketDataProvider:
     else:
         for market in (Market.CN_A, Market.HK, Market.HK_FUT, Market.US, Market.US_FUT):
             routes.setdefault(market, []).append(yfinance)
+
+    routes.setdefault(Market.CN_A, []).append(EastmoneyFundProvider())
 
     if not routes:
         detail = "; ".join(errors) if errors else "no market providers configured"
