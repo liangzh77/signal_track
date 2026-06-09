@@ -29,10 +29,37 @@ class EastmoneyFundProvider(MarketDataProvider):
         return bars_from_payload(payload, instrument, fund_code, start_date, end_date)
 
     def _fetch_nav_history(self, fund_code: str, start_date: date, end_date: date) -> dict:
+        rows = []
+        total_count = None
+        page_index = 1
+        while True:
+            payload = self._fetch_nav_page(fund_code, start_date, end_date, page_index)
+            data = payload.get("Data") or {}
+            page_rows = data.get("LSJZList") if isinstance(data, dict) else None
+            if not isinstance(page_rows, list) or not page_rows:
+                break
+            rows.extend(page_rows)
+            total_count = payload.get("TotalCount")
+            if isinstance(total_count, int) and len(rows) >= total_count:
+                break
+            page_size = int(payload.get("PageSize") or len(page_rows) or 20)
+            if len(page_rows) < page_size:
+                break
+            page_index += 1
+        return {
+            "Data": {"LSJZList": rows},
+            "ErrCode": 0,
+            "ErrMsg": None,
+            "TotalCount": len(rows) if total_count is None else total_count,
+            "PageIndex": 1,
+            "PageSize": len(rows),
+        }
+
+    def _fetch_nav_page(self, fund_code: str, start_date: date, end_date: date, page_index: int) -> dict:
         query = urlencode(
             {
                 "fundCode": fund_code,
-                "pageIndex": 1,
+                "pageIndex": page_index,
                 "pageSize": max(20, (end_date - start_date).days + 10),
                 "startDate": start_date.isoformat(),
                 "endDate": end_date.isoformat(),
@@ -69,7 +96,8 @@ def bars_from_payload(
     start_date: date,
     end_date: date,
 ) -> list[DailyBar]:
-    rows = payload.get("Data", {}).get("LSJZList", [])
+    data = payload.get("Data") or {}
+    rows = data.get("LSJZList", []) if isinstance(data, dict) else []
     if not isinstance(rows, list):
         return []
     bars: list[DailyBar] = []

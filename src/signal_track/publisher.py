@@ -5,6 +5,9 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
+DEFAULT_DEMO_TITLE = "Signal Track"
+DEFAULT_DEMO_SLUG = "signal-track"
+
 
 @dataclass(frozen=True)
 class PublishResult:
@@ -24,16 +27,17 @@ class DemoPublisher:
         html: str,
         feature: str = "投资信号看板自动发布",
         disabled: bool = False,
+        slug: str | None = DEFAULT_DEMO_SLUG,
     ) -> PublishResult:
-        payload = json.dumps(
-            {
-                "title": title,
-                "html": html,
-                "feature": feature,
-                "disabled": disabled,
-            },
-            ensure_ascii=False,
-        ).encode("utf-8")
+        payload_data = {
+            "title": title,
+            "html": html,
+            "feature": feature,
+            "disabled": disabled,
+        }
+        if slug:
+            payload_data["slug"] = slug
+        payload = json.dumps(payload_data, ensure_ascii=False).encode("utf-8")
         request = urllib.request.Request(
             self.publish_url,
             data=payload,

@@ -576,19 +576,20 @@ class SignalIngestor:
             }
         )
 
-        review_required = needs_review or weight_needs_review
+        system_logic_required = needs_review or weight_needs_review
+        review_required = weight_needs_review
         self.repo.update_tracking_project_details(
             project_id,
             title=title,
             status=(ProjectStatus.NEEDS_REVIEW if review_required else ProjectStatus.ACTIVE).value,
             direction=effective_direction.value,
             logic_score=logic_score,
-            needs_review=needs_review,
+            needs_review=False,
             weight_needs_review=weight_needs_review,
             metadata=project_metadata,
         )
         self.repo.add_logic_block(project_id, "source_update", summarize_source_logic(content), logic_score / 10, [content[:240]])
-        if review_required:
+        if system_logic_required:
             self._add_system_logic_block(
                 project_id,
                 title,
@@ -625,11 +626,11 @@ class SignalIngestor:
             title=f"{resolution.instrument.name} {direction_label(direction)}跟踪",
             source_id=source_id,
             raw_input_id=raw_input_id,
-            status=(ProjectStatus.NEEDS_REVIEW if needs_review else ProjectStatus.ACTIVE).value,
+            status=ProjectStatus.ACTIVE.value,
             direction=direction.value,
             entry_date=date.today().isoformat(),
             logic_score=logic_score,
-            needs_review=needs_review,
+            needs_review=False,
             metadata={"resolution_confidence": resolution.confidence, "resolution_reason": resolution.reason},
         )
         self.repo.add_project_leg(project_id, instrument_id, direction.value, 1.0)
@@ -661,7 +662,8 @@ class SignalIngestor:
         weights_complete = has_complete_weights(weights, resolutions)
         effective_weights = normalize_weights(weights) if weights_complete else {}
         weight_needs_review = not weights_complete
-        review_required = needs_review or weight_needs_review
+        system_logic_required = needs_review or weight_needs_review
+        review_required = weight_needs_review
         title = "组合跟踪：" + " / ".join(resolution.instrument.name for resolution in resolutions)
         project_id = self.repo.create_tracking_project(
             title=title,
@@ -671,7 +673,7 @@ class SignalIngestor:
             direction=direction.value,
             entry_date=date.today().isoformat(),
             logic_score=logic_score,
-            needs_review=needs_review,
+            needs_review=False,
             weight_needs_review=weight_needs_review,
             metadata={"portfolio": True},
         )
@@ -680,7 +682,7 @@ class SignalIngestor:
             weight = resolve_weight_for_instrument(effective_weights, resolution.instrument, default_weight)
             self.repo.add_project_leg(project_id, instrument_id, direction.value, weight)
         self.repo.add_logic_block(project_id, "source_logic", summarize_source_logic(content), logic_score / 10, [content[:240]])
-        if review_required:
+        if system_logic_required:
             self._add_system_logic_block(
                 project_id,
                 title,

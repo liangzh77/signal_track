@@ -53,6 +53,8 @@ def build_project_report(repo: Repository, project_id: int) -> dict[str, Any] | 
     logic_blocks = [dict(item) for item in repo.list_logic_blocks(project_id)]
     research_items = [normalize_research_item(dict(item)) for item in repo.list_research_items(project_id=project_id)]
     daily_checks = [dict(item) for item in repo.list_daily_checks(project_id=project_id)]
+    if row["status"] == "active" and not bool(row["needs_review"]) and not bool(row["weight_needs_review"]):
+        daily_checks = [item for item in daily_checks if not is_low_logic_review_check(item)]
     legs = [dict(item) for item in repo.list_project_legs(project_id)]
     performance_snapshot = performance_summary(performance)
     return {
@@ -466,6 +468,14 @@ def daily_check_lines(daily_checks: list[dict[str, Any]]) -> list[str]:
         f"- {item['check_date']}：**{item['conclusion']}**，{item['summary']}"
         for item in daily_checks[:10]
     ]
+
+
+def is_low_logic_review_check(row: dict[str, Any]) -> bool:
+    try:
+        rules = json.loads(row.get("triggered_rules") or "[]")
+    except json.JSONDecodeError:
+        return False
+    return row.get("conclusion") == "needs_review" and any("Project logic score" in str(rule) for rule in rules)
 
 
 def research_item_lines(research_items: list[dict[str, Any]]) -> list[str]:

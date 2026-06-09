@@ -26,7 +26,7 @@ from .provider_diagnostics import market_data_coverage
 from .project_actions import ProjectActionError, add_project_logic_block, close_tracking_project, update_tracking_project_weights
 from .project_report import build_project_report, render_project_report_markdown
 from .project_summary import project_summaries, project_summary
-from .publisher import DemoPublisher, PublishResult, publish_payload
+from .publisher import DEFAULT_DEMO_SLUG, DEFAULT_DEMO_TITLE, DemoPublisher, PublishResult, publish_payload
 from .providers.factory import build_market_data_provider
 from .resolver import InstrumentResolver, SEED_INSTRUMENTS
 from .signals import SignalIngestor
@@ -151,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     update_research_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     update_research_parser.add_argument("--archive-reports", action="store_true", help="Archive affected project Markdown reports before rendering/publishing.")
     update_research_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
-    update_research_parser.add_argument("--title", default="投资信号看板")
+    update_research_parser.add_argument("--title", default=DEFAULT_DEMO_TITLE)
 
     close_project_parser = subparsers.add_parser("close-project", help="Manually close a tracking project.")
     close_project_parser.add_argument("project_id", type=int)
@@ -161,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     close_project_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     close_project_parser.add_argument("--archive-reports", action="store_true", help="Archive affected project Markdown reports before rendering/publishing.")
     close_project_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
-    close_project_parser.add_argument("--title", default="投资信号看板")
+    close_project_parser.add_argument("--title", default=DEFAULT_DEMO_TITLE)
 
     weights_parser = subparsers.add_parser("update-project-weights", help="Update all leg weights for a portfolio project.")
     weights_parser.add_argument("project_id", type=int)
@@ -171,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
     weights_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     weights_parser.add_argument("--archive-reports", action="store_true", help="Archive affected project Markdown reports before rendering/publishing.")
     weights_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
-    weights_parser.add_argument("--title", default="投资信号看板")
+    weights_parser.add_argument("--title", default=DEFAULT_DEMO_TITLE)
 
     note_parser = subparsers.add_parser("add-project-note", help="Append manual observation logic to a project.")
     note_parser.add_argument("project_id", type=int)
@@ -190,7 +190,7 @@ def main(argv: list[str] | None = None) -> int:
     note_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     note_parser.add_argument("--archive-reports", action="store_true", help="Archive affected project Markdown reports before rendering/publishing.")
     note_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
-    note_parser.add_argument("--title", default="投资信号看板")
+    note_parser.add_argument("--title", default=DEFAULT_DEMO_TITLE)
 
     ingest_parser = subparsers.add_parser("ingest", help="Create tracking projects from raw source text.")
     ingest_parser.add_argument("--source")
@@ -217,7 +217,7 @@ def main(argv: list[str] | None = None) -> int:
     check_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     check_parser.add_argument("--archive-reports", action="store_true", help="Archive active project Markdown reports before rendering/publishing.")
     check_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
-    check_parser.add_argument("--title", default="投资信号看板")
+    check_parser.add_argument("--title", default=DEFAULT_DEMO_TITLE)
 
     render_parser = subparsers.add_parser("render-dashboard", help="Render dashboard HTML.")
     render_parser.add_argument("--out", default="dist/dashboard.html")
@@ -227,7 +227,7 @@ def main(argv: list[str] | None = None) -> int:
     self_check_parser.add_argument("--out", help="Optional HTML output path.")
 
     publish_parser = subparsers.add_parser("publish-dashboard", help="Render and publish dashboard HTML.")
-    publish_parser.add_argument("--title", default="投资信号看板")
+    publish_parser.add_argument("--title", default=DEFAULT_DEMO_TITLE)
     publish_parser.add_argument("--feature", default="投资信号看板自动发布")
 
     daily_parser = subparsers.add_parser("daily-run", help="Run the full daily check -> render -> optional publish flow.")
@@ -242,7 +242,7 @@ def main(argv: list[str] | None = None) -> int:
     daily_parser.add_argument("--no-publish", action="store_true", help="Disable auto publish for this update.")
     daily_parser.add_argument("--archive-reports", action="store_true", help="Archive active project Markdown reports before rendering/publishing.")
     daily_parser.add_argument("--reports-dir", default="reports", help="Directory for archived Markdown project reports.")
-    daily_parser.add_argument("--title", default="投资信号看板")
+    daily_parser.add_argument("--title", default=DEFAULT_DEMO_TITLE)
 
     args = parser.parse_args(argv)
     settings = Settings.from_env()
@@ -798,7 +798,7 @@ def main(argv: list[str] | None = None) -> int:
             publish_result = publish_dashboard(
                 repo,
                 settings,
-                title="投资信号看板",
+                title=DEFAULT_DEMO_TITLE,
                 feature="新增信息后自动发布",
                 flow="ingest",
             )
@@ -1127,7 +1127,14 @@ def archive_project_reports(repo: Repository, project_ids: list[int], reports_di
     return artifacts
 
 
-def publish_dashboard(repo: Repository, settings: Settings, title: str, feature: str, flow: str):
+def publish_dashboard(
+    repo: Repository,
+    settings: Settings,
+    title: str,
+    feature: str,
+    flow: str,
+    slug: str | None = DEFAULT_DEMO_SLUG,
+):
     if not settings.demo_publish_url or not settings.demo_api_key:
         raise SystemExit("GO_SITES_DEMO_PUBLISH_URL and GO_SITES_DEMO_API_KEY are required")
     metadata = {"flow": flow}
@@ -1136,6 +1143,7 @@ def publish_dashboard(repo: Repository, settings: Settings, title: str, feature:
             title=title,
             html=render_dashboard(repo),
             feature=feature,
+            slug=slug,
         )
     except Exception as exc:
         result = PublishResult(False, None, str(exc))
@@ -1262,15 +1270,18 @@ def run_self_check(settings: Settings, provider_name: str = "fixture", out: str 
         checks = repo.list_daily_checks()
         scenario_results["daily_checks"] = bool(checked == active_project_count and checks)
         scenario_results["dashboard"] = bool(
-            "投资信号看板" in html
-            and "source-summary" in html
-            and "leg-curves" in html
-            and "研究验证项" in html
+            "Signal Track" in html
+            and "project-list" in html
+            and "source-chip" in html
+            and "data-toggle-project" in html
+            and "leg-panel" in html
+            and "data-tooltip" in html
+            and "默认：跌 20% 平仓" in html
         )
         scenario_results["report_archive"] = bool(
             report_artifacts
             and all(Path(str(artifact["path"])).exists() for artifact in report_artifacts)
-            and "已归档报告：" in html
+            and "已归档报告：" not in html
         )
         ok = bool(
             ingest_result.project_ids

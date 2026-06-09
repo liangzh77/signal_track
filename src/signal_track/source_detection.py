@@ -8,6 +8,7 @@ from .extraction import ExtractedInput
 
 MISSING_SOURCE_NAMES = {"", "manual", "unknown", "none", "null", "未提供", "未知", "手动"}
 SOURCE_MARKER_RE = re.compile(r"\s*(?:信息来源|信息源|信号源|消息源|来源|source)\s*[:：]\s*(?P<source>.+?)\s*$", flags=re.I)
+SOURCE_WRAPPER_RE = re.compile(r"^(?:信息来源|信息源|信号源|消息源|来源)\s*[（(]\s*(?P<source>.+?)\s*[）)]$")
 INLINE_SOURCE_SEPARATORS = ("；", ";", "｜", "|", "，", ",")
 
 
@@ -33,6 +34,9 @@ def resolve_source_name(
 
 def normalize_source_name(value: str | None) -> str | None:
     normalized = (value or "").strip()
+    wrapper = SOURCE_WRAPPER_RE.match(normalized)
+    if wrapper:
+        normalized = wrapper.group("source").strip()
     if normalized.lower() in MISSING_SOURCE_NAMES:
         return None
     return normalized

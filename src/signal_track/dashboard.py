@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import json
 import re
-from datetime import datetime
+from datetime import date, datetime
 from urllib.parse import quote
 
 from .analytics import project_performance
@@ -13,8 +13,11 @@ from .project_report import build_project_report, render_project_report_markdown
 
 
 def render_dashboard(repo: Repository) -> str:
-    projects = repo.list_project_rows()
-    checks = repo.list_daily_checks(limit=20)
+    projects = sorted(
+        repo.list_project_rows(),
+        key=lambda row: (row["entry_date"] or row["created_at"][:10], int(row["id"])),
+        reverse=True,
+    )
     recent_inputs = input_summaries(repo, limit=8)
     publish_events = repo.list_publish_events(limit=1)
     last_publish = publish_events[0] if publish_events else None
@@ -24,280 +27,185 @@ def render_dashboard(repo: Repository) -> str:
         for row in projects
     }
     active = sum(1 for row in projects if row["status"] in {"active", "needs_review"})
-    exits = sum(1 for row in projects if row["status"] == "exit_signal")
+    exits = sum(1 for row in projects if row["status"] in {"exit_signal", "closed"})
     needs_review = sum(1 for row in projects if project_needs_review(row))
     returns = [perf.return_pct for perf in performances.values() if perf.return_pct is not None]
     avg_return = sum(returns) / len(returns) if returns else None
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    project_rows = "\n".join(
-        render_project_row(row, performances[int(row["id"])], latest_checks[int(row["id"])])
+    project_cards = "\n".join(
+        render_project_card(repo, row, performances[int(row["id"])])
         for row in projects
-    ) or (
-        "<tr><td colspan='11' class='empty'>暂无跟踪项目</td></tr>"
-    )
-    source_cards = render_source_summary(projects, performances)
+    ) or "<div class='empty-state'>暂无跟踪项目</div>"
     source_filter = render_source_filter(projects)
-    status_filter = render_status_filter(projects)
-    direction_filter = render_direction_filter(projects)
-    detail_cards = "\n".join(render_project_detail(repo, row, performances[int(row["id"])]) for row in projects)
-    input_items = render_recent_inputs(recent_inputs)
-    check_items = "\n".join(
-        render_check_item(row)
-        for row in checks
-    ) or "<li class='empty'>暂无检查记录</li>"
 
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>投资信号看板</title>
+  <title>Signal Track</title>
   <style>
     :root {{
-      color-scheme: dark;
-      --bg: #0D0F0E;
-      --surface: rgba(245,247,244,.055);
-      --surface-raised: rgba(245,247,244,.085);
-      --border: rgba(231,238,232,.14);
-      --border-strong: rgba(231,238,232,.24);
-      --text: #F1F5EF;
-      --muted: #AEB9B0;
-      --faint: #727D75;
-      --cyan: #44D7C8;
-      --amber: #D8B35D;
-      --green: #58D68D;
-      --red: #FF6B6B;
+      color-scheme: light;
+      --midnight: #0D352B;
+      --paper: #F7F1E3;
+      --celeste: #D8E2D8;
+      --herb: #526B45;
+      --ink: #19342B;
+      --muted: #746D5F;
+      --line: rgba(13,53,43,.22);
+      --panel: rgba(255,252,244,.76);
+      --green: #2C7654;
+      --red: #9A4D35;
+      --amber: #A96B3C;
+      --cyan: #237D78;
+      --wash: #E8DDC9;
+      --pencil: rgba(25,52,43,.34);
     }}
     * {{ box-sizing: border-box; }}
-    html {{ overflow-x: hidden; }}
+    html {{ overflow-x: hidden; background: var(--paper); }}
     body {{
       margin: 0;
       background:
-        linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px),
-        var(--bg);
-      background-size: 32px 32px;
-      color: var(--text);
-      font-family: Geist, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        radial-gradient(rgba(25,52,43,.08) .7px, transparent .8px),
+        linear-gradient(180deg, rgba(216,226,216,.58), rgba(247,241,227,.96) 340px),
+        var(--paper);
+      background-size: 8px 8px, auto, auto;
+      color: var(--ink);
+      font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", Georgia, serif;
       overflow-x: hidden;
     }}
-    .shell {{ max-width: 1440px; margin: 0 auto; padding: 24px; }}
+    .shell {{ max-width: 1280px; margin: 0 auto; padding: 28px 24px 34px; }}
     .topbar {{
-      display: flex; align-items: end; justify-content: space-between; gap: 16px;
-      padding: 18px 0 22px;
+      position: relative; display: flex; align-items: end; justify-content: space-between; gap: 22px; padding: 14px 0 26px; margin-bottom: 18px;
     }}
-    h1 {{ margin: 0; font-size: 28px; line-height: 36px; letter-spacing: 0; }}
-    .stamp {{ color: var(--muted); font-size: 13px; }}
+    .topbar::after {{ content: ""; position: absolute; left: 0; right: 120px; bottom: 7px; height: 11px; border-bottom: 2px solid rgba(154,77,53,.58); border-radius: 50%; transform: rotate(-.45deg); }}
+    .brand-kicker {{ color: var(--herb); font: 700 12px/16px "Kaiti SC", "STKaiti", serif; letter-spacing: .08em; margin-bottom: 4px; }}
+    h1 {{ margin: 0; font-size: 52px; line-height: 58px; letter-spacing: 0; color: var(--midnight); font-weight: 800; }}
+    .stamp {{ color: var(--muted); font-size: 13px; line-height: 20px; }}
+    .top-aside {{ display: flex; align-items: center; justify-content: end; gap: 16px; flex-wrap: wrap; }}
+    .edition-badge {{ width: 50px; height: 58px; display: grid; place-items: center; border: 1px solid rgba(13,53,43,.32); color: var(--herb); background: rgba(255,252,244,.5); box-shadow: 3px 4px 0 rgba(82,107,69,.10); font-family: "IBM Plex Mono", "Geist Mono", monospace; }}
+    .edition-badge strong {{ font-size: 20px; line-height: 20px; }}
+    .edition-badge span {{ font-size: 12px; margin-top: -12px; }}
     .top-actions {{ display: flex; align-items: center; justify-content: end; gap: 10px; flex-wrap: wrap; }}
-    .nav-link {{ color: var(--cyan); text-decoration: none; border: 1px solid rgba(68,215,200,.45); border-radius: 999px; min-height: 32px; display: inline-flex; align-items: center; padding: 0 12px; font-size: 13px; background: rgba(68,215,200,.07); }}
-    .nav-link:hover {{ background: rgba(68,215,200,.12); }}
-    .metrics {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }}
-    .source-summary {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }}
-    .filter-bar {{ display: grid; gap: 10px; margin: 0 0 16px; }}
-    .filter-group {{ display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }}
-    .filter-label {{ color: var(--faint); min-width: 56px; font-size: 12px; line-height: 18px; }}
-    .source-filter {{ display: flex; }}
-    .source-chip {{ color: var(--muted); background: rgba(245,247,244,.055); border: 1px solid var(--border); border-radius: 999px; min-height: 32px; padding: 0 12px; cursor: pointer; font: inherit; }}
-    .source-chip:hover, .source-chip.active {{ color: var(--cyan); border-color: rgba(68,215,200,.55); background: rgba(68,215,200,.08); }}
-    .source-chip[data-filter-type='status'][data-status='needs_review'].active,
-    .source-chip[data-filter-type='status'][data-status='exit_signal'].active {{ color: var(--amber); border-color: rgba(216,179,93,.58); background: rgba(216,179,93,.09); }}
-    .source-chip[data-filter-type='status'][data-status='exit_signal'].active {{ color: var(--red); border-color: rgba(255,107,107,.58); background: rgba(255,107,107,.1); }}
-    .card {{
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 16px 48px rgba(0,0,0,.24);
-      backdrop-filter: blur(18px);
-    }}
-    .metric {{ padding: 16px; }}
-    .metric span {{ color: var(--muted); font-size: 12px; }}
-    .metric strong {{ display: block; margin-top: 8px; font-size: 28px; line-height: 32px; font-variant-numeric: tabular-nums; }}
-    .source-card {{ padding: 14px; display: grid; gap: 10px; }}
-    .source-card h3 {{ margin: 0; font-size: 14px; line-height: 20px; }}
-    .source-card-grid {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }}
-    .source-stat span {{ color: var(--muted); display: block; font-size: 11px; line-height: 16px; }}
-    .source-stat strong {{ display: block; font-size: 16px; line-height: 22px; font-variant-numeric: tabular-nums; }}
-    .grid {{ display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }}
-    .details {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }}
-    .panel {{ overflow: hidden; }}
-    .panel-header {{ display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border); }}
-    .panel-header h2 {{ margin: 0; font-size: 18px; line-height: 26px; }}
-    .table-wrap {{ width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }}
-    table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
-    th, td {{ padding: 11px 12px; border-bottom: 1px solid rgba(231,238,232,.08); text-align: left; vertical-align: middle; }}
-    th {{ color: var(--muted); font-weight: 600; position: sticky; top: 0; background: rgba(13,15,14,.92); }}
-    td.num {{ text-align: right; font-variant-numeric: tabular-nums; font-family: "IBM Plex Mono", "Geist Mono", monospace; }}
-    td.check-cell {{ min-width: 92px; }}
-    td.check-cell span:first-child {{ white-space: nowrap; }}
-    td.action-cell {{ min-width: 72px; }}
-    .symbol {{ color: var(--cyan); font-family: "IBM Plex Mono", "Geist Mono", monospace; }}
+    .nav-link {{ color: var(--midnight); text-decoration: none; border: 1.4px solid rgba(13,53,43,.34); border-radius: 5px; min-height: 34px; display: inline-flex; align-items: center; padding: 0 14px; font-size: 14px; background: rgba(255,252,244,.72); box-shadow: 2px 3px 0 rgba(82,107,69,.10); }}
+    .nav-link:hover {{ background: var(--celeste); }}
+    .summary-strip {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1.4px solid rgba(13,53,43,.28); background: rgba(255,252,244,.58); margin-bottom: 18px; box-shadow: 5px 7px 0 rgba(82,107,69,.10); }}
+    .metric {{ min-height: 70px; padding: 12px 16px; border-right: 1px solid rgba(13,53,43,.18); }}
+    .metric:last-child {{ border-right: 0; }}
+    .metric span {{ color: var(--muted); display: block; font: 700 12px/17px "Kaiti SC", "STKaiti", serif; letter-spacing: .04em; }}
+    .metric strong {{ color: var(--midnight); display: block; font: 800 28px/34px "Noto Serif SC", "Source Han Serif SC", serif; font-variant-numeric: tabular-nums; }}
+    .filter-bar {{ display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin: 0 0 16px; }}
+    .filter-label {{ color: var(--muted); font-size: 13px; line-height: 20px; }}
+    .source-chip {{ color: var(--midnight); background: rgba(255,252,244,.66); border: 1.3px solid rgba(13,53,43,.28); border-radius: 5px; min-height: 32px; padding: 0 13px; cursor: pointer; font: inherit; font-size: 14px; box-shadow: 2px 3px 0 rgba(82,107,69,.08); }}
+    .source-chip:hover, .source-chip.active {{ background: var(--midnight); border-color: var(--midnight); color: var(--paper); }}
+    .project-list {{ display: grid; gap: 14px; }}
+    .project-card {{ position: relative; border: 1.4px solid rgba(13,53,43,.30); background: rgba(255,252,244,.74); box-shadow: 6px 8px 0 rgba(82,107,69,.10), 0 18px 38px rgba(13,53,43,.08); border-radius: 6px; overflow: hidden; }}
+    .project-card::before {{ content: ""; position: absolute; inset: 7px; border: 1px solid rgba(13,53,43,.12); border-radius: 4px; pointer-events: none; }}
+    .project-main, .leg-row {{ display: grid; grid-template-columns: 82px minmax(190px, 1.15fr) minmax(340px, 1.75fr) 112px 92px 34px; gap: 12px; align-items: stretch; min-height: 92px; padding: 10px 16px; }}
+    .project-id {{ color: var(--midnight); font: 800 17px/20px "IBM Plex Mono", "Geist Mono", monospace; }}
+    .project-id, .project-title, .project-return, .status-pill, .expand-button {{ align-self: center; }}
+    .project-title {{ min-width: 0; }}
+    .project-title strong {{ display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; line-height: 24px; color: var(--midnight); }}
+    .project-title span {{ color: var(--muted); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; line-height: 19px; }}
+    .project-title .rule-line {{ margin-top: 8px; color: var(--muted); font: 13px/19px "Kaiti SC", "STKaiti", serif; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }}
+    .chart-wrap {{ min-width: 0; height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto; align-items: stretch; }}
+    .chart-meta {{ color: var(--muted); display: flex; justify-content: space-between; gap: 10px; font-size: 12px; line-height: 18px; font-family: "Kaiti SC", "STKaiti", serif; }}
+    .project-return {{ text-align: right; font: 800 20px/24px "IBM Plex Mono", "Geist Mono", monospace; }}
+    .status-pill {{ display: inline-flex; justify-self: end; align-items: center; justify-content: center; min-height: 26px; padding: 0 9px; border: 1.2px solid rgba(13,53,43,.25); border-radius: 5px; font-size: 13px; color: var(--midnight); background: rgba(216,226,216,.70); white-space: nowrap; box-shadow: 2px 2px 0 rgba(82,107,69,.08); }}
+    .status-pill.closed {{ color: white; background: var(--herb); border-color: var(--herb); }}
+    .status-pill.exit_signal {{ color: white; background: var(--amber); border-color: var(--amber); }}
+    .expand-button {{ width: 30px; height: 30px; border: 1.3px solid rgba(13,53,43,.30); border-radius: 5px; color: var(--midnight); background: rgba(255,252,244,.70); cursor: pointer; font-size: 15px; line-height: 1; box-shadow: 2px 2px 0 rgba(82,107,69,.08); }}
+    .expand-button[disabled] {{ opacity: .28; cursor: default; }}
+    .project-card.expanded .expand-button {{ transform: rotate(180deg); }}
+    .leg-panel {{ display: none; border-top: 1px solid rgba(13,53,43,.16); background: rgba(232,221,201,.35); padding: 0; }}
+    .project-card.expanded .leg-panel {{ display: grid; gap: 0; }}
+    .leg-row {{ border-top: 1px solid rgba(13,53,43,.10); }}
+    .leg-row:first-child {{ border-top: 0; }}
+    .leg-name {{ grid-column: 2; align-self: center; min-width: 0; }}
+    .leg-title-line {{ display: flex; align-items: baseline; gap: 10px; min-width: 0; }}
+    .leg-name strong {{ color: var(--midnight); display: block; font-size: 15px; line-height: 20px; }}
+    .leg-title-line strong {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+    .leg-weight {{ color: var(--amber); flex: 0 0 auto; font: 800 18px/22px "IBM Plex Mono", "Geist Mono", monospace; }}
+    .leg-entry {{ color: var(--muted); display: block; font-size: 12px; line-height: 17px; margin-top: 2px; }}
+    .leg-row .mini-chart {{ grid-column: 3; align-self: stretch; }}
+    .leg-return {{ grid-column: 4; align-self: center; text-align: right; font: 800 20px/24px "IBM Plex Mono", "Geist Mono", monospace; }}
+    .leg-contribution {{ grid-column: 5; align-self: center; justify-self: end; text-align: right; font: 800 16px/20px "IBM Plex Mono", "Geist Mono", monospace; }}
+    .symbol {{ color: var(--midnight); font-family: "IBM Plex Mono", "Geist Mono", monospace; }}
     .positive {{ color: var(--red); }}
     .negative {{ color: var(--green); }}
     .muted {{ color: var(--muted); }}
-    .pill {{ display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: 999px; font-size: 12px; }}
-    .pill.active {{ color: var(--cyan); border-color: rgba(68,215,200,.55); }}
-    .pill.needs_review {{ color: var(--amber); border-color: rgba(216,179,93,.55); background: rgba(216,179,93,.08); }}
-    .pill.exit_signal {{ color: var(--red); border-color: rgba(255,107,107,.6); background: rgba(255,107,107,.1); }}
-    .rail {{ padding: 14px 16px; }}
-    .rail ul {{ list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }}
-    .rail li {{ display: grid; gap: 4px; padding: 10px 0; border-bottom: 1px solid rgba(231,238,232,.08); }}
-    .rail span, .rail em {{ color: var(--muted); font-size: 12px; font-style: normal; }}
-    .rail-section {{ margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(231,238,232,.1); }}
-    .rail-section-head {{ display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 8px; }}
-    .rail-section-head h2 {{ margin: 0; font-size: 16px; line-height: 22px; }}
-    .recent-inputs {{ list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }}
-    .recent-inputs li {{ border: 1px solid rgba(231,238,232,.08); border-radius: 8px; padding: 10px; background: rgba(255,255,255,.018); }}
-    .input-top {{ display: flex; justify-content: space-between; gap: 8px; align-items: start; }}
-    .input-action {{ border: 1px solid var(--border-strong); border-radius: 999px; padding: 2px 8px; font-size: 11px; line-height: 16px; }}
-    .input-action.close, .input-action.exit_signal {{ color: var(--red); border-color: rgba(255,107,107,.58); background: rgba(255,107,107,.08); }}
-    .input-action.update {{ color: var(--amber); border-color: rgba(216,179,93,.58); background: rgba(216,179,93,.08); }}
-    .input-action.mixed {{ color: var(--green); border-color: rgba(88,214,141,.58); background: rgba(88,214,141,.08); }}
-    .input-action.track {{ color: var(--cyan); border-color: rgba(68,215,200,.55); background: rgba(68,215,200,.07); }}
-    .input-preview {{ color: var(--muted); font-size: 12px; line-height: 18px; margin-top: 6px; }}
-    .input-meta {{ color: var(--faint); font-size: 11px; line-height: 16px; margin-top: 6px; }}
-    .rule-hit {{ color: var(--amber); font-size: 12px; line-height: 18px; }}
-    .empty {{ color: var(--faint); padding: 20px; }}
-    .detail-card {{ padding: 16px; }}
-    .detail-top {{ display: flex; justify-content: space-between; gap: 12px; align-items: start; margin-bottom: 12px; }}
-    .detail-top h3 {{ margin: 0; font-size: 15px; line-height: 22px; }}
-    .chart {{ width: 100%; height: 120px; margin: 8px 0 14px; border: 1px solid rgba(231,238,232,.08); border-radius: 8px; background: rgba(255,255,255,.025); }}
-    .chart-marker circle {{ stroke: rgba(13,15,14,.9); stroke-width: 2; }}
-    .chart-marker text {{ font: 600 13px/1 "Geist Mono", monospace; paint-order: stroke; stroke: rgba(13,15,14,.85); stroke-width: 3px; }}
-    .chart-marker-curve-start circle, .chart-marker-curve-end circle {{ fill: var(--cyan); }}
-    .chart-marker-curve-start text, .chart-marker-curve-end text {{ fill: var(--cyan); }}
-    .chart-marker-open circle {{ fill: var(--amber); }}
-    .chart-marker-open text {{ fill: var(--amber); }}
-    .chart-marker-close circle {{ fill: var(--red); }}
-    .chart-marker-close text {{ fill: var(--red); }}
-    .logic-grid {{ display: grid; gap: 10px; }}
-    .logic-block {{ border-left: 2px solid rgba(68,215,200,.45); padding-left: 10px; color: var(--muted); font-size: 13px; line-height: 20px; }}
-    .logic-block.system_logic {{ border-left-color: rgba(216,179,93,.65); }}
-    .logic-evidence {{ display: grid; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(231,238,232,.08); }}
-    .logic-evidence span {{ color: var(--faint); font-size: 11px; line-height: 16px; text-transform: uppercase; }}
-    .logic-evidence-item {{ color: var(--amber); font-size: 12px; line-height: 18px; }}
-    .leg-list {{ display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }}
-    .leg {{ border: 1px solid var(--border); border-radius: 999px; padding: 4px 8px; color: var(--muted); font-size: 12px; }}
-    .leg-curves {{ display: grid; gap: 10px; margin: 10px 0 14px; }}
-    .leg-curve {{ border: 1px solid rgba(231,238,232,.08); border-radius: 8px; padding: 10px; background: rgba(255,255,255,.022); }}
-    .leg-curve-head {{ display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 8px; }}
-    .leg-curve-head strong {{ font-size: 12px; line-height: 18px; }}
-    .mini-chart {{ width: 100%; height: 72px; margin: 0; border: 0; border-radius: 6px; background: rgba(255,255,255,.025); }}
-    .check-log {{ display: grid; gap: 8px; margin: 10px 0 14px; }}
-    .check-log h4 {{ margin: 0; font-size: 12px; line-height: 18px; color: var(--muted); }}
-    .check-log-item {{ border: 1px solid rgba(231,238,232,.08); border-radius: 8px; padding: 10px; background: rgba(255,255,255,.018); }}
-    .check-log-top {{ display: flex; justify-content: space-between; gap: 10px; margin-bottom: 5px; font-size: 12px; }}
-    .check-log-summary {{ color: var(--muted); font-size: 12px; line-height: 18px; }}
-    .research-items {{ display: grid; gap: 8px; margin: 10px 0 14px; }}
-    .research-items h4 {{ margin: 0; font-size: 12px; line-height: 18px; color: var(--muted); }}
-    .research-item {{ display: grid; grid-template-columns: 120px 1fr 88px; gap: 8px; align-items: start; border: 1px solid rgba(231,238,232,.08); border-radius: 8px; padding: 9px 10px; background: rgba(255,255,255,.018); font-size: 12px; line-height: 18px; }}
-    .research-item strong {{ color: var(--cyan); font-weight: 600; }}
-    .research-item span {{ color: var(--muted); }}
-    .research-item em {{ color: var(--amber); font-style: normal; text-align: right; }}
-    .project-inputs {{ display: grid; gap: 8px; margin: 10px 0 14px; }}
-    .project-inputs h4 {{ margin: 0; font-size: 12px; line-height: 18px; color: var(--muted); }}
-    .report-card {{ display: grid; gap: 10px; margin: 10px 0 14px; border: 1px solid rgba(68,215,200,.2); border-radius: 8px; padding: 12px; background: rgba(68,215,200,.045); }}
-    .report-card-head {{ display: flex; justify-content: space-between; gap: 10px; align-items: start; }}
-    .report-card h4 {{ margin: 0; font-size: 13px; line-height: 19px; }}
-    .report-link {{ color: var(--cyan); text-decoration: none; border: 1px solid rgba(68,215,200,.45); border-radius: 999px; padding: 4px 9px; font-size: 12px; white-space: nowrap; }}
-    .report-link:hover {{ background: rgba(68,215,200,.1); }}
-    .report-artifact {{ color: var(--faint); font-size: 11px; line-height: 16px; word-break: break-word; }}
-    .report-stats {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }}
-    .report-stat {{ border: 1px solid rgba(231,238,232,.08); border-radius: 8px; padding: 8px; background: rgba(255,255,255,.018); }}
-    .report-stat span {{ display: block; color: var(--faint); font-size: 11px; line-height: 15px; }}
-    .report-stat strong {{ display: block; margin-top: 3px; font-size: 15px; line-height: 20px; font-variant-numeric: tabular-nums; }}
-    .framework-tags {{ display: flex; flex-wrap: wrap; gap: 6px; }}
-    .framework-tag {{ border: 1px solid rgba(231,238,232,.14); border-radius: 999px; padding: 3px 8px; color: var(--muted); font-size: 11px; line-height: 16px; }}
-    .framework-tag.covered {{ color: var(--cyan); border-color: rgba(68,215,200,.45); background: rgba(68,215,200,.08); }}
-    .report-body {{ border: 1px solid rgba(231,238,232,.1); border-radius: 8px; background: rgba(0,0,0,.16); overflow: hidden; }}
-    .report-body summary {{ cursor: pointer; padding: 9px 10px; color: var(--cyan); font-size: 12px; line-height: 18px; }}
-    .report-body pre {{ margin: 0; max-height: 360px; overflow: auto; padding: 12px; white-space: pre-wrap; word-break: break-word; color: var(--muted); font: 12px/18px "IBM Plex Mono", "Geist Mono", monospace; border-top: 1px solid rgba(231,238,232,.08); }}
+    .chart, .mini-chart {{ width: 100%; height: 100%; margin: 0; border: 1.2px solid rgba(13,53,43,.20); border-radius: 5px; background: rgba(255,252,244,.62); box-shadow: inset 0 0 0 1px rgba(255,252,244,.7), 2px 3px 0 rgba(82,107,69,.08); }}
+    .chart {{ min-height: 66px; }}
+    .mini-chart {{ min-height: 74px; }}
+    .entry-baseline {{ stroke: rgba(169,107,60,.34); stroke-width: 1; stroke-dasharray: 6 5; }}
+    .chart-marker circle {{ fill: var(--amber); stroke: rgba(247,241,227,.95); stroke-width: 2; }}
+    .chart-marker-line {{ stroke: var(--amber); stroke-width: 1.4; stroke-dasharray: 4 4; opacity: .9; }}
+    .chart-marker text {{ fill: var(--amber); font: 600 13px/1 "Geist Mono", monospace; paint-order: stroke; stroke: rgba(252,243,227,.9); stroke-width: 3px; }}
+    .tooltip {{ position: fixed; z-index: 50; pointer-events: none; max-width: 340px; padding: 10px 12px; border-radius: 5px; background: var(--midnight); color: var(--paper); box-shadow: 0 16px 40px rgba(13,53,43,.28); font-size: 13px; line-height: 20px; opacity: 0; transform: translate(10px, 10px); transition: opacity .08s ease; }}
+    .empty-state {{ border: 1px solid rgba(13,53,43,.18); background: rgba(255,252,244,.52); border-radius: 6px; padding: 28px; color: var(--muted); }}
     @media (max-width: 900px) {{
       .shell {{ padding: 16px; }}
-      .metrics {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
-      .source-summary {{ grid-template-columns: 1fr; }}
-      .grid {{ grid-template-columns: 1fr; }}
-      .details {{ grid-template-columns: 1fr; }}
+      .summary-strip {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
       .topbar {{ align-items: start; flex-direction: column; }}
       .top-actions {{ justify-content: start; }}
-      table {{ min-width: 960px; }}
-      .research-item {{ grid-template-columns: 1fr; gap: 6px; }}
-      .research-item em {{ text-align: left; }}
-      .detail-top {{ flex-direction: column; }}
-      .report-card-head {{ flex-direction: column; }}
-      .report-stats {{ grid-template-columns: 1fr; }}
+      .project-main {{ grid-template-columns: 74px minmax(0, 1fr) 74px 30px; }}
+      .chart-wrap {{ grid-column: 1 / -1; }}
+      .project-title .rule-line {{ -webkit-line-clamp: 3; }}
+      .project-return {{ text-align: left; }}
+      .leg-row {{ grid-template-columns: 1fr; min-height: 96px; }}
+      .leg-name, .leg-row .mini-chart, .leg-return, .leg-contribution {{ grid-column: 1; }}
+      .leg-return {{ text-align: left; }}
+      .leg-contribution {{ justify-self: start; text-align: left; }}
     }}
     @media (max-width: 520px) {{
       .shell {{ padding: 12px; }}
       h1 {{ font-size: 22px; line-height: 30px; }}
-      .metrics {{ gap: 8px; }}
-      .metric {{ padding: 12px; }}
-      .metric strong {{ font-size: 22px; line-height: 28px; }}
-      .source-card-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
-      .panel-header {{ padding: 12px; }}
-      .detail-card {{ padding: 12px; }}
+      .summary-strip {{ grid-template-columns: 1fr 1fr; }}
+      .project-main {{ padding: 8px; gap: 8px; }}
     }}
   </style>
 </head>
 <body>
   <main class="shell">
     <section class="topbar">
-      <div>
-        <h1>投资信号看板</h1>
-        <div class="stamp">最后生成：{escape(now)}</div>
+      <div class="brand-block">
+        <div class="brand-kicker">EDITORIAL CURVE NOTE</div>
+        <h1>Signal Track</h1>
+        <div class="stamp">按开仓时间从新到旧 · 最后生成：{escape(now)}</div>
       </div>
-      <div class="top-actions">
-        <a class="nav-link" href="/inbox" title="打开信息录入页">录入</a>
-        <div class="stamp">{render_publish_stamp(last_publish)}</div>
-      </div>
-    </section>
-    <section class="filter-bar" aria-label="看板筛选">
-      <div class="filter-group source-filter" data-filter-group="source"><span class="filter-label">来源</span>{source_filter}</div>
-      <div class="filter-group" data-filter-group="status"><span class="filter-label">状态</span>{status_filter}</div>
-      <div class="filter-group" data-filter-group="direction"><span class="filter-label">方向</span>{direction_filter}</div>
-    </section>
-    <section class="metrics">
-      <div class="card metric"><span>全部项目</span><strong>{len(projects)}</strong></div>
-      <div class="card metric"><span>活跃/复核</span><strong>{active}</strong></div>
-      <div class="card metric"><span>平仓信号</span><strong>{exits}</strong></div>
-      <div class="card metric"><span>平均收益</span><strong>{format_return(avg_return)}</strong></div>
-    </section>
-    <section class="source-summary">{source_cards}</section>
-    <section class="grid">
-      <div class="card panel">
-        <div class="panel-header"><h2>跟踪项目</h2><span class="muted">按更新时间排序</span></div>
-        <div class="table-wrap" tabindex="0" aria-label="跟踪项目表格">
-          <table>
-            <thead><tr><th>状态</th><th>信息源</th><th>项目</th><th>标的</th><th>方向</th><th>入场</th><th>逻辑分</th><th>收益</th><th>最新检查</th><th>动作</th><th>复核</th></tr></thead>
-            <tbody>{project_rows}</tbody>
-          </table>
+      <div class="top-aside">
+        <div class="edition-badge" aria-hidden="true"><strong>03</strong><span>/04</span></div>
+        <div class="top-actions">
+          <a class="nav-link" href="/inbox" title="打开信息录入页">录入</a>
+          <div class="stamp">{render_publish_stamp(last_publish)}</div>
         </div>
       </div>
-      <aside class="card rail">
-        <div class="panel-header"><h2>每日检查</h2></div>
-        <ul>{check_items}</ul>
-        <div class="rail-section">
-          <div class="rail-section-head"><h2>最近输入</h2><span>{len(recent_inputs)}</span></div>
-          <ul class="recent-inputs">{input_items}</ul>
-        </div>
-      </aside>
     </section>
-    <section class="details">{detail_cards}</section>
+    <section class="summary-strip" aria-label="项目概览">
+      <div class="metric"><span>项目</span><strong>{len(projects)}</strong></div>
+      <div class="metric"><span>跟踪中</span><strong>{active}</strong></div>
+      <div class="metric"><span>已触发平仓</span><strong>{exits}</strong></div>
+      <div class="metric"><span>平均收益</span><strong>{format_return(avg_return)}</strong></div>
+    </section>
+    <section class="filter-bar" aria-label="按信息源筛选">
+      <span class="filter-label">信息源</span>{source_filter}
+    </section>
+    <section class="project-list">{project_cards}</section>
   </main>
+  <div class="tooltip" id="tooltip" role="tooltip"></div>
   <script>
     (() => {{
       const chips = Array.from(document.querySelectorAll('[data-filter-type]'));
-      const rows = Array.from(document.querySelectorAll('tr[data-source]'));
-      const cards = Array.from(document.querySelectorAll('article.detail-card[data-source]'));
-      const state = {{ source: 'all', status: 'all', direction: 'all' }};
+      const cards = Array.from(document.querySelectorAll('.project-card[data-source]'));
+      const state = {{ source: 'all' }};
       const matches = (node) => {{
-        return (state.source === 'all' || node.dataset.source === state.source)
-          && (state.status === 'all' || node.dataset.status === state.status)
-          && (state.direction === 'all' || node.dataset.direction === state.direction);
+        return state.source === 'all' || node.dataset.source === state.source;
       }};
       const applyFilters = () => {{
         chips.forEach((chip) => chip.classList.toggle('active', state[chip.dataset.filterType] === chip.dataset.value));
-        [...rows, ...cards].forEach((node) => {{
+        cards.forEach((node) => {{
           node.hidden = !matches(node);
         }});
       }};
@@ -305,11 +213,147 @@ def render_dashboard(repo: Repository) -> str:
         state[chip.dataset.filterType] = chip.dataset.value || 'all';
         applyFilters();
       }}));
+      document.querySelectorAll('[data-toggle-project]').forEach((button) => {{
+        button.addEventListener('click', () => {{
+          const card = button.closest('.project-card');
+          if (!card) return;
+          const expanded = card.classList.toggle('expanded');
+          button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        }});
+      }});
+      const tooltip = document.getElementById('tooltip');
+      document.addEventListener('mousemove', (event) => {{
+        const target = event.target.closest('[data-tooltip]');
+        if (!target || !tooltip) {{
+          if (tooltip) tooltip.style.opacity = '0';
+          return;
+        }}
+        tooltip.textContent = target.dataset.tooltip || '';
+        tooltip.style.left = `${{event.clientX + 14}}px`;
+        tooltip.style.top = `${{event.clientY + 14}}px`;
+        tooltip.style.opacity = '1';
+      }});
       applyFilters();
     }})();
   </script>
 </body>
 </html>"""
+
+
+def render_project_card(repo: Repository, row, performance) -> str:
+    legs = performance.legs
+    is_portfolio = len(legs) > 1
+    card_classes = "project-card is-portfolio" if is_portfolio else "project-card"
+    source = row["source_name"] or "manual"
+    project_tooltip = project_description(row)
+    symbols = row["symbols"] or "--"
+    title = row["title"] or symbols
+    status = str(row["status"])
+    window = f"{performance.window_start or '--'} 至 {performance.window_end or '--'}"
+    expand = (
+        "<button class='expand-button' type='button' data-toggle-project aria-expanded='false' title='展开组合标的'>⌄</button>"
+        if is_portfolio
+        else "<button class='expand-button' type='button' disabled aria-hidden='true'>·</button>"
+    )
+    leg_panel = render_leg_rows(legs, row["entry_date"], row["closed_date"], performance.window_start, performance.window_end)
+    return (
+        f"<article class='{card_classes}' data-source='{escape(source)}' data-status='{escape(status)}'>"
+        "<div class='project-main'>"
+        f"<div class='project-id'>{escape(project_id_label(row))}</div>"
+        f"<div class='project-title' data-tooltip='{escape(project_tooltip)}'>"
+        f"<strong>{escape(title)}</strong>"
+        f"<span>{escape(source)} · {escape(symbols)}</span>"
+        f"<span class='rule-line'>默认：跌 20% 平仓；从最高点回撤 20% 止盈。触发后曲线继续跟踪 1 个月。</span>"
+        "</div>"
+        "<div class='chart-wrap'>"
+        f"{render_sparkline(performance.points, trade_markers=project_chart_markers(row['entry_date'], row['closed_date']), window_start=performance.window_start, window_end=performance.window_end)}"
+        f"<div class='chart-meta'><span>{escape(window)}</span><span>{escape(default_rule_label(row))}</span></div>"
+        "</div>"
+        f"<div class='project-return {return_css(performance.return_pct)}'>{format_return(performance.return_pct)}</div>"
+        f"<span class='status-pill {escape(status)}'>{escape(compact_status_label(status))}</span>"
+        f"{expand}"
+        "</div>"
+        f"{leg_panel}"
+        "</article>"
+    )
+
+
+def render_leg_rows(
+    legs,
+    project_entry_date: str | None,
+    project_closed_date: str | None,
+    window_start: str | None,
+    window_end: str | None,
+) -> str:
+    if len(legs) <= 1:
+        return ""
+    rows = []
+    for leg in legs:
+        tooltip = leg_description(leg)
+        contribution = leg_contribution_pct(leg)
+        rows.append(
+            "<div class='leg-row'>"
+            f"<div class='leg-name' data-tooltip='{escape(tooltip)}'>"
+            "<div class='leg-title-line'>"
+            f"<strong><span class='symbol'>{escape(leg.symbol)}</span> · {escape(leg.name)}</strong>"
+            f"<span class='leg-weight'>权重 {leg.weight:.0%}</span>"
+            "</div>"
+            f"<span class='leg-entry'>入场 {escape(leg.entry_date or project_entry_date or '--')}</span>"
+            "</div>"
+            f"{render_sparkline(leg.price_points, css_class='mini-chart', label=f'{leg.symbol} 价格曲线', show_zero=False, trade_markers=project_chart_markers(project_entry_date, project_closed_date), window_start=window_start, window_end=window_end)}"
+            f"<div class='leg-return {return_css(leg.return_pct)}' title='标的自身涨跌'>{format_return(leg.return_pct)}</div>"
+            f"<div class='leg-contribution {return_css(contribution)}' title='对组合收益的贡献'>{format_return(contribution)}</div>"
+            "</div>"
+        )
+    return "<div class='leg-panel'>" + "".join(rows) + "</div>"
+
+
+def leg_contribution_pct(leg) -> float | None:
+    if leg.return_pct is None:
+        return None
+    return leg.return_pct * leg.weight
+
+
+def project_id_label(row) -> str:
+    return f"#{int(row['id']):03d}"
+
+
+def default_rule_label(row) -> str:
+    if row["closed_date"]:
+        return f"平仓 {row['closed_date']}"
+    return "默认规则"
+
+
+def compact_status_label(status: str) -> str:
+    labels = {
+        "active": "跟踪中",
+        "needs_review": "跟踪中",
+        "exit_signal": "已触发",
+        "closed": "已平仓",
+        "watch_after_close": "平仓后",
+        "archived": "归档",
+    }
+    return labels.get(status, status)
+
+
+def project_description(row) -> str:
+    metadata = safe_json(row["metadata"])
+    description = metadata.get("description") or metadata.get("summary") or metadata.get("note")
+    if description:
+        return str(description)
+    return f"{project_id_label(row)} {row['title']}。信息源：{row['source_name']}；开仓：{row['entry_date'] or '--'}；标的：{row['symbols'] or '--'}。"
+
+
+def leg_description(leg) -> str:
+    return f"{leg.symbol} / {leg.name}。权重 {leg.weight:.0%}；最新价 {format_price(leg.latest_price)}；当前收益 {format_return(leg.return_pct)}。"
+
+
+def safe_json(raw: str | None) -> dict:
+    try:
+        parsed = json.loads(raw or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def render_source_filter(projects) -> str:
@@ -480,7 +524,10 @@ def render_project_inputs(inputs: list[dict]) -> str:
 def render_project_detail(repo: Repository, row, performance) -> str:
     logic_blocks = repo.list_logic_blocks(int(row["id"]))
     logic_html = "\n".join(render_logic_block(block) for block in logic_blocks)
-    check_log = render_project_check_log(repo.list_daily_checks(project_id=int(row["id"]), limit=5))
+    check_log = render_project_check_log(
+        repo.list_daily_checks(project_id=int(row["id"]), limit=5),
+        suppress_resolved_low_logic=not project_needs_review(row),
+    )
     report_snapshot = render_report_snapshot(repo, int(row["id"]))
     research_items = render_research_items(repo.list_research_items(project_id=int(row["id"]), limit=8))
     input_history = render_project_inputs(project_input_history(repo, int(row["id"]), limit=5))
@@ -488,7 +535,16 @@ def render_project_detail(repo: Repository, row, performance) -> str:
         f"<span class='leg'>{escape(leg.symbol)} · {leg.weight:.0%} · {format_return(leg.return_pct)}</span>"
         for leg in performance.legs
     )
-    leg_curves = "\n".join(render_leg_curve(leg, row["entry_date"], row["closed_date"]) for leg in performance.legs)
+    leg_curves = "\n".join(
+        render_leg_curve(
+            leg,
+            row["entry_date"],
+            row["closed_date"],
+            performance.window_start,
+            performance.window_end,
+        )
+        for leg in performance.legs
+    )
     return (
         f"<article class='card detail-card' data-source='{escape(row['source_name'])}' "
         f"data-status='{escape(row['status'])}' data-direction='{escape(row['direction'])}'>"
@@ -497,7 +553,7 @@ def render_project_detail(repo: Repository, row, performance) -> str:
         f"<strong class='{return_css(performance.return_pct)}'>{format_return(performance.return_pct)}</strong>"
         "</div>"
         f"{render_performance_window(row, performance)}"
-        f"{render_sparkline(performance.points, trade_markers=project_chart_markers(row['entry_date'], row['closed_date']))}"
+        f"{render_sparkline(performance.points, trade_markers=project_chart_markers(row['entry_date'], row['closed_date']), window_start=performance.window_start, window_end=performance.window_end)}"
         f"<div class='leg-list'>{legs}</div>"
         f"<div class='leg-curves'>{leg_curves}</div>"
         f"{report_snapshot}"
@@ -625,7 +681,9 @@ def parse_logic_evidence(raw_evidence: str | None) -> list[str]:
     return [str(parsed)]
 
 
-def render_project_check_log(checks) -> str:
+def render_project_check_log(checks, suppress_resolved_low_logic: bool = False) -> str:
+    if suppress_resolved_low_logic:
+        checks = [row for row in checks if not is_low_logic_review_check(row)]
     if not checks:
         return "<div class='check-log'><h4>项目检查日志</h4><div class='check-log-item empty'>暂无检查记录</div></div>"
     items = []
@@ -645,14 +703,32 @@ def render_project_check_log(checks) -> str:
     return "<div class='check-log'><h4>项目检查日志</h4>" + "".join(items) + "</div>"
 
 
-def render_leg_curve(leg, project_entry_date: str | None, project_closed_date: str | None) -> str:
+def is_low_logic_review_check(row) -> bool:
+    try:
+        rules = json.loads(row["triggered_rules"] or "[]")
+    except json.JSONDecodeError:
+        return False
+    return row["conclusion"] == "needs_review" and any("Project logic score" in str(rule) for rule in rules)
+
+
+def is_resolved_low_logic_check(check_row, project_row) -> bool:
+    return bool(project_row) and not project_needs_review(project_row) and is_low_logic_review_check(check_row)
+
+
+def render_leg_curve(
+    leg,
+    project_entry_date: str | None,
+    project_closed_date: str | None,
+    window_start: str | None,
+    window_end: str | None,
+) -> str:
     return (
         "<div class='leg-curve'>"
         "<div class='leg-curve-head'>"
         f"<strong>{escape(leg.symbol)} · {escape(leg.name)} · {leg.weight:.0%}</strong>"
         f"<span class='{return_css(leg.return_pct)}'>{format_price(leg.latest_price)} · {format_return(leg.return_pct)}</span>"
         "</div>"
-        f"{render_sparkline(leg.price_points, css_class='mini-chart', label=f'{leg.symbol} 价格曲线', show_zero=False, trade_markers=project_chart_markers(project_entry_date, project_closed_date))}"
+        f"{render_sparkline(leg.price_points, css_class='mini-chart', label=f'{leg.symbol} 价格曲线', show_zero=False, trade_markers=project_chart_markers(project_entry_date, project_closed_date), window_start=window_start, window_end=window_end)}"
         "</div>"
     )
 
@@ -663,32 +739,45 @@ def render_sparkline(
     label: str = "收益曲线",
     show_zero: bool = True,
     trade_markers: list[dict[str, str]] | None = None,
+    window_start: str | None = None,
+    window_end: str | None = None,
 ) -> str:
     if len(points) < 2:
         return f"<div class='{escape(css_class)} empty'>暂无价格曲线。运行 check --provider 或 fetch-bars 后显示。</div>"
     width = 640
     height = 120
-    values = [value for _, value in points]
+    domain_start, domain_end = chart_domain(points, window_start, window_end)
+    plot_points = extend_points_to_domain(points, domain_start, domain_end)
+    values = [value for _, value in plot_points]
     minimum = min(values)
     maximum = max(values)
     span = maximum - minimum or 1
-    step = width / (len(points) - 1)
     coords = []
-    for index, (_, value) in enumerate(points):
-        x = index * step
+    for point_date, value in plot_points:
+        x = chart_x(point_date, domain_start, domain_end, width)
         y = height - ((value - minimum) / span * (height - 18)) - 9
         coords.append(f"{x:.1f},{y:.1f}")
     zero_line = ""
     if show_zero:
         zero_y = height - ((0 - minimum) / span * (height - 18)) - 9
         zero_y = max(8, min(height - 8, zero_y))
-        zero_line = f"<line x1='0' y1='{zero_y:.1f}' x2='640' y2='{zero_y:.1f}' stroke='rgba(231,238,232,.18)' />"
-    markers = curve_boundary_markers(points) + (trade_markers or [])
-    marker_html = render_chart_markers(points, coords, markers)
+        zero_line = f"<line x1='0' y1='{zero_y:.1f}' x2='640' y2='{zero_y:.1f}' stroke='rgba(169,107,60,.18)' />"
+    markers = curve_boundary_markers(domain_start.isoformat(), domain_end.isoformat()) + (trade_markers or [])
+    baseline_html = render_entry_baseline(plot_points, coords, markers, width)
+    marker_html = render_chart_markers(
+        plot_points,
+        coords,
+        markers,
+        domain_start,
+        domain_end,
+        width,
+        value_mode="return" if show_zero else "price",
+    )
     return (
-        f"<svg class='{escape(css_class)}' viewBox='0 0 640 120' role='img' aria-label='{escape(label)}'>"
+        f"<svg class='{escape(css_class)}' viewBox='0 0 640 120' preserveAspectRatio='none' role='img' aria-label='{escape(label)}'>"
         f"{zero_line}"
-        f"<polyline points='{' '.join(coords)}' fill='none' stroke='#44D7C8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' />"
+        f"{baseline_html}"
+        f"<polyline points='{' '.join(coords)}' fill='none' stroke='#237D78' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' />"
         f"{marker_html}"
         "</svg>"
     )
@@ -703,22 +792,97 @@ def project_chart_markers(entry_date: str | None, closed_date: str | None) -> li
     return markers
 
 
-def curve_boundary_markers(points: list[tuple[str, float]]) -> list[dict[str, str]]:
-    if not points:
-        return []
-    markers = [{"date": points[0][0], "label": "始", "title_label": "曲线开始", "kind": "curve-start"}]
-    if points[-1][0] != points[0][0]:
-        markers.append({"date": points[-1][0], "label": "末", "title_label": "曲线结束", "kind": "curve-end"})
+def chart_domain(
+    points: list[tuple[str, float]],
+    window_start: str | None,
+    window_end: str | None,
+) -> tuple[date, date]:
+    first_date = date.fromisoformat(points[0][0])
+    last_date = date.fromisoformat(points[-1][0])
+    domain_start = date.fromisoformat(window_start) if window_start else first_date
+    domain_end = date.fromisoformat(window_end) if window_end else last_date
+    if domain_end <= domain_start:
+        domain_end = last_date if last_date > domain_start else domain_start
+    return domain_start, domain_end
+
+
+def extend_points_to_domain(
+    points: list[tuple[str, float]],
+    domain_start: date,
+    domain_end: date,
+) -> list[tuple[str, float]]:
+    start_label = domain_start.isoformat()
+    end_label = domain_end.isoformat()
+    extended = [(point_date, value) for point_date, value in points if start_label <= point_date <= end_label]
+    if not extended:
+        extended = list(points)
+    if extended[0][0] > start_label:
+        extended.insert(0, (start_label, extended[0][1]))
+    if extended[-1][0] < end_label:
+        extended.append((end_label, extended[-1][1]))
+    return extended
+
+
+def chart_x(point_date: str, domain_start: date, domain_end: date, width: int) -> float:
+    point = date.fromisoformat(point_date)
+    total_days = max(1, (domain_end - domain_start).days)
+    offset_days = (point - domain_start).days
+    return max(0.0, min(float(width), (offset_days / total_days) * width))
+
+
+def curve_boundary_markers(start_date: str, end_date: str) -> list[dict[str, str]]:
+    markers = [{"date": start_date, "label": "始", "title_label": "曲线开始", "kind": "curve-start"}]
+    if end_date != start_date:
+        markers.append({"date": end_date, "label": "末", "title_label": "曲线结束", "kind": "curve-end"})
     return markers
 
 
-def render_chart_markers(points: list[tuple[str, float]], coords: list[str], markers: list[dict[str, str]]) -> str:
+def render_chart_markers(
+    points: list[tuple[str, float]],
+    coords: list[str],
+    markers: list[dict[str, str]],
+    domain_start: date,
+    domain_end: date,
+    width: int,
+    value_mode: str,
+) -> str:
     if not points or not coords or not markers:
         return ""
-    return "".join(chart_marker(points, coords, marker) for marker in markers)
+    return "".join(chart_marker(points, coords, marker, domain_start, domain_end, width, value_mode) for marker in markers)
 
 
-def chart_marker(points: list[tuple[str, float]], coords: list[str], marker: dict[str, str]) -> str:
+def render_entry_baseline(
+    points: list[tuple[str, float]],
+    coords: list[str],
+    markers: list[dict[str, str]],
+    width: int,
+) -> str:
+    open_marker = next((marker for marker in markers if marker.get("kind") == "open"), None)
+    if not open_marker:
+        return ""
+    index = chart_marker_index(points, open_marker["date"])
+    if index is None:
+        return ""
+    _, y_text = coords[index].split(",", 1)
+    y = float(y_text)
+    title = f"盈亏线：{open_marker['date']}"
+    return (
+        "<g class='entry-baseline-group'>"
+        f"<title>{escape(title)}</title>"
+        f"<line class='entry-baseline' x1='0' y1='{y:.1f}' x2='{width}' y2='{y:.1f}' />"
+        "</g>"
+    )
+
+
+def chart_marker(
+    points: list[tuple[str, float]],
+    coords: list[str],
+    marker: dict[str, str],
+    domain_start: date,
+    domain_end: date,
+    width: int,
+    value_mode: str,
+) -> str:
     target_date = marker["date"]
     index = chart_marker_index(points, target_date)
     if index is None:
@@ -726,32 +890,60 @@ def chart_marker(points: list[tuple[str, float]], coords: list[str], marker: dic
     point = points[index]
     coord = coords[index]
     date_label, value = point
-    x_text, y_text = coord.split(",", 1)
-    x = float(x_text)
+    _, y_text = coord.split(",", 1)
+    x = chart_x(target_date, domain_start, domain_end, width)
     y = float(y_text)
     label = marker["label"]
     kind = marker["kind"]
-    is_left_label = kind in {"open", "curve-start"}
     css_class = f"chart-marker-{kind}"
-    text_anchor = "start" if is_left_label else "end"
-    text_x = min(620, x + 10) if is_left_label else max(20, x - 10)
-    text_y = marker_text_y(y, kind)
+    text_anchor = marker_text_anchor(x, width)
+    text_x = marker_text_x(x, width)
+    text_y = marker_text_y(kind)
     plotted_suffix = marker_plotted_suffix(points, target_date, date_label)
     title_label = marker.get("title_label", label)
     title = f"{title_label}点：{target_date}{plotted_suffix} / {value:.4g}"
-    visible_label = f"{label} {compact_date(target_date)}"
+    value_label = marker_value_label(value, value_mode)
+    date_label_text = f"{label} {compact_date(target_date)}"
+    vertical_line = ""
+    circle = f"<circle cx='{x:.1f}' cy='{y:.1f}' r='5' />"
+    if kind in {"open", "close"}:
+        vertical_line = f"<line class='chart-marker-line' x1='{x:.1f}' y1='8' x2='{x:.1f}' y2='104' />"
+        circle = ""
     return (
         f"<g class='chart-marker {css_class}'>"
         f"<title>{escape(title)}</title>"
-        f"<circle cx='{x:.1f}' cy='{y:.1f}' r='5' />"
-        f"<text x='{text_x:.1f}' y='{text_y:.1f}' text-anchor='{text_anchor}'>{escape(visible_label)}</text>"
+        f"{vertical_line}"
+        f"{circle}"
+        f"<text x='{text_x:.1f}' y='18' text-anchor='{text_anchor}'>{escape(value_label)}</text>"
+        f"<text x='{text_x:.1f}' y='{text_y:.1f}' text-anchor='{text_anchor}'>{escape(date_label_text)}</text>"
         "</g>"
     )
 
 
-def marker_text_y(y: float, kind: str) -> float:
-    offset = 20 if kind in {"curve-start", "curve-end"} else -8
-    return min(112, max(18, y + offset))
+def marker_value_label(value: float, value_mode: str) -> str:
+    if value_mode == "return":
+        return format_return(value)
+    return format_price(value)
+
+
+def marker_text_anchor(x: float, width: int) -> str:
+    if x <= 24:
+        return "start"
+    if x >= width - 24:
+        return "end"
+    return "middle"
+
+
+def marker_text_x(x: float, width: int) -> float:
+    if x <= 24:
+        return 8
+    if x >= width - 24:
+        return width - 8
+    return x
+
+
+def marker_text_y(kind: str) -> float:
+    return 112
 
 
 def marker_plotted_suffix(points: list[tuple[str, float]], target_date: str, plotted_date: str) -> str:

@@ -79,6 +79,9 @@ GO_SITES_DEMO_API_KEY=<your-demo-api-key>
 
 `.env` is intentionally ignored by git.
 
+Published dashboards use the stable demo URL
+`https://liangz77.cn/demo/signal-track` by default.
+
 ## Codex App-First Ingestion
 
 For ordinary use, invoke the repo-local skill at

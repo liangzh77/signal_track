@@ -36,12 +36,13 @@ class DailyChecker:
             triggered_rules: list[str] = list(refresh_errors_by_project.get(project_id, []))
             project = self.repo.get_project_row(project_id)
             existing_exit_signal = bool(project and project["status"] == "exit_signal")
+            logic_blocks = self.repo.list_logic_blocks(project_id)
 
             if existing_exit_signal:
                 conclusion = "exit_signal"
                 triggered_rules.append("Existing exit signal remains open until the project is closed.")
 
-            project_review_rules = project_level_review_rules(project) if project else []
+            project_review_rules = project_level_review_rules(project, logic_blocks) if project else []
             if project_review_rules and not existing_exit_signal:
                 conclusion = "needs_review"
                 triggered_rules.extend(project_review_rules)
@@ -61,19 +62,31 @@ class DailyChecker:
                 if not existing_exit_signal:
                     conclusion = "needs_review"
                     self.repo.update_project_status(project_id, "needs_review", needs_review=True)
-            elif performance.return_pct is not None and performance.return_pct <= -0.10:
-                conclusion = "exit_signal"
-                triggered_rules.append(f"项目收益回撤达到 {performance.return_pct:.2%}")
-                self.repo.update_project_status(project_id, "exit_signal", needs_review=True)
+            elif performance.return_pct is not None:
+                default_close_reason = default_close_rule_hit(project, performance) if project else None
+                if default_close_reason:
+                    conclusion = "closed"
+                    triggered_rules.append(default_close_reason)
+                    self.repo.close_project(
+                        project_id,
+                        current_date,
+                        metadata={"closed_by_rule": True, "close_reason": default_close_reason},
+                    )
 
-            rule_hits = evaluate_project_rules(self.repo, project_id, performance, current)
+            rule_hits = [] if conclusion == "closed" else evaluate_project_rules(self.repo, project_id, performance, current)
             if rule_hits:
-                conclusion = "exit_signal"
+                conclusion = "closed"
                 triggered_rules.extend(hit.message for hit in rule_hits)
-                self.repo.update_project_status(project_id, "exit_signal", needs_review=True)
+                self.repo.close_project(
+                    project_id,
+                    current_date,
+                    metadata={"closed_by_rule": True, "close_reason": "; ".join(hit.message for hit in rule_hits)},
+                )
 
-            research_conclusion, research_rules = evaluate_research_item_statuses(
-                self.repo.list_research_items(project_id=project_id)
+            research_conclusion, research_rules = (
+                (None, []) if conclusion == "closed" else evaluate_research_item_statuses(
+                    self.repo.list_research_items(project_id=project_id)
+                )
             )
             if research_rules:
                 triggered_rules.extend(research_rules)
@@ -85,7 +98,7 @@ class DailyChecker:
                     self.repo.update_project_status(project_id, "needs_review", needs_review=True)
 
             summary = build_summary(performance)
-            evaluation = self._evaluate_logic(project_id, performance, current)
+            evaluation = None if conclusion == "closed" else self._evaluate_logic(project_id, performance, current)
             if evaluation:
                 summary = merge_summary(summary, evaluation.summary)
                 triggered_rules.extend(evaluation.triggered_rules)
@@ -120,6 +133,9 @@ class DailyChecker:
             try:
                 service.fetch_and_store(instrument, start, current)
             except Exception as exc:
+                latest_bar = self.repo.get_latest_price_on_or_before(instrument.id or int(leg["instrument_id"]), current.isoformat())
+                if latest_bar and price_bar_is_recent(str(latest_bar["bar_date"]), current):
+                    continue
                 errors.append(f"行情刷新失败：{instrument.symbol} - {exc}")
         return errors
 
@@ -147,7 +163,7 @@ class DailyChecker:
         project = self.repo.get_project_row(project_id)
         if not project or project["status"] != "needs_review":
             return
-        if has_project_level_review_reason(project):
+        if has_project_level_review_reason(project, self.repo.list_logic_blocks(project_id)):
             return
         self.repo.update_project_status(project_id, "active", needs_review=False)
 
@@ -190,16 +206,49 @@ def build_summary(performance) -> str:
     return f"项目当前收益 {performance.return_pct:.2%}，最新日期 {performance.latest_date or '未知'}；" + "；".join(leg_parts)
 
 
-def has_project_level_review_reason(project) -> bool:
-    return bool(project_level_review_rules(project))
+def has_project_level_review_reason(project, logic_blocks: list | None = None) -> bool:
+    return bool(project_level_review_rules(project, logic_blocks or []))
 
 
-def project_level_review_rules(project) -> list[str]:
+def price_bar_is_recent(bar_date: str, current: date, max_staleness_days: int = 7) -> bool:
+    try:
+        latest = date.fromisoformat(bar_date)
+    except ValueError:
+        return False
+    return 0 <= (current - latest).days <= max_staleness_days
+
+
+def default_close_rule_hit(project, performance, stop_loss: float = -0.20, trailing_drawdown: float = -0.20) -> str | None:
+    if performance.return_pct is None:
+        return None
+    if performance.return_pct <= stop_loss:
+        return f"默认平仓规则触发：项目收益跌至 {performance.return_pct:.2%}，低于 -20%。"
+    entry_date = project["entry_date"] or project["created_at"][:10]
+    post_entry_points = [(point_date, value) for point_date, value in performance.points if point_date >= entry_date]
+    if not post_entry_points:
+        return None
+    peak_return = max(value for _, value in post_entry_points)
+    latest_return = post_entry_points[-1][1]
+    if peak_return <= 0:
+        return None
+    drawdown_from_peak = (1 + latest_return) / (1 + peak_return) - 1
+    if drawdown_from_peak <= trailing_drawdown:
+        return (
+            "默认止盈规则触发："
+            f"从最高收益 {peak_return:.2%} 回撤至 {latest_return:.2%}，"
+            f"回撤 {drawdown_from_peak:.2%}。"
+        )
+    return None
+
+
+def project_level_review_rules(project, logic_blocks: list | None = None) -> list[str]:
     rules: list[str] = []
-    if float(project["logic_score"]) < 6:
+    logic_blocks = logic_blocks or []
+    has_system_review = any(block["logic_type"] == "system_logic" for block in logic_blocks)
+    if float(project["logic_score"]) < 6 and not has_system_review:
         rules.append(
             f"Project logic score {float(project['logic_score']):.1f} is below 6; "
-            "keep the project in review until the thesis and tracking logic are verified."
+            "keep the project in review until automatic thesis supplementation runs."
         )
     if bool(project["weight_needs_review"]):
         rules.append("Portfolio weights need review; equal-weight tracking is provisional.")

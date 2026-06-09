@@ -18,7 +18,7 @@ from signal_track.checker import DailyChecker
 from signal_track.cli import refresh_markets as cli_refresh_markets
 from signal_track.cli import main as cli_main
 from signal_track.cli import run_self_check
-from signal_track.dashboard import render_dashboard
+from signal_track.dashboard import project_chart_markers, render_dashboard, render_sparkline
 from signal_track.analytics import LegPerformance, ProjectPerformance, combine_weighted_points, project_performance
 from signal_track.daily_evaluator import DailyEvaluation, DailyLogicEvaluator
 from signal_track.exit_signals import exit_signal_summaries
@@ -30,7 +30,7 @@ from signal_track.market_smoke import market_data_smoke
 from signal_track.market_data import MarketDataService
 from signal_track.models import AssetType, DailyBar, Direction, Instrument, Market
 from signal_track.provider_diagnostics import market_data_coverage
-from signal_track.publisher import extract_published_address, publish_payload
+from signal_track.publisher import DEFAULT_DEMO_SLUG, DEFAULT_DEMO_TITLE, DemoPublisher, extract_published_address, publish_payload
 from signal_track.publisher import PublishResult
 from signal_track.project_report import build_project_report, render_project_report_markdown
 from signal_track.providers.auto import AutoMarketDataProvider
@@ -239,8 +239,15 @@ class FakeDemoPublisher:
         self.publish_url = publish_url
         self.api_key = api_key
 
-    def publish(self, title: str, html: str, feature: str = "", disabled: bool = False) -> PublishResult:
-        del title, html, feature, disabled
+    def publish(
+        self,
+        title: str,
+        html: str,
+        feature: str = "",
+        disabled: bool = False,
+        slug: str | None = DEFAULT_DEMO_SLUG,
+    ) -> PublishResult:
+        del title, html, feature, disabled, slug
         return PublishResult(True, 200, '{"address":"https://example.com/demo/signal"}')
 
 
@@ -249,8 +256,15 @@ class FailingDemoPublisher:
         self.publish_url = publish_url
         self.api_key = api_key
 
-    def publish(self, title: str, html: str, feature: str = "", disabled: bool = False) -> PublishResult:
-        del title, html, feature, disabled
+    def publish(
+        self,
+        title: str,
+        html: str,
+        feature: str = "",
+        disabled: bool = False,
+        slug: str | None = DEFAULT_DEMO_SLUG,
+    ) -> PublishResult:
+        del title, html, feature, disabled, slug
         return PublishResult(False, 500, '{"error":"publish failed"}')
 
 
@@ -259,8 +273,15 @@ class ThrowingDemoPublisher:
         self.publish_url = publish_url
         self.api_key = api_key
 
-    def publish(self, title: str, html: str, feature: str = "", disabled: bool = False) -> PublishResult:
-        del title, html, feature, disabled
+    def publish(
+        self,
+        title: str,
+        html: str,
+        feature: str = "",
+        disabled: bool = False,
+        slug: str | None = DEFAULT_DEMO_SLUG,
+    ) -> PublishResult:
+        del title, html, feature, disabled, slug
         raise RuntimeError("network exploded")
 
 
@@ -730,6 +751,45 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual([bar.adj_close for bar in bars], [1.2429, 1.2427])
         self.assertEqual([bar.provider for bar in bars], ["eastmoney_fund", "eastmoney_fund"])
 
+    def test_eastmoney_fund_provider_paginates_nav_history(self) -> None:
+        class PagedEastmoneyProvider(EastmoneyFundProvider):
+            def _fetch_nav_page(self, fund_code: str, start_date: date, end_date: date, page_index: int) -> dict:
+                del fund_code, start_date, end_date
+                pages = {
+                    1: [
+                        {"FSRQ": "2026-06-09", "DWJZ": "1.2224", "LJJZ": "1.2424"},
+                        {"FSRQ": "2026-06-08", "DWJZ": "1.2227", "LJJZ": "1.2427"},
+                    ],
+                    2: [
+                        {"FSRQ": "2026-04-10", "DWJZ": "1.2173", "LJJZ": "1.2373"},
+                        {"FSRQ": "2026-04-03", "DWJZ": "1.2165", "LJJZ": "1.2365"},
+                    ],
+                }
+                return {
+                    "Data": {"LSJZList": pages.get(page_index, [])},
+                    "TotalCount": 4,
+                    "PageSize": 2,
+                    "PageIndex": page_index,
+                }
+
+        instrument = Instrument(
+            symbol="006947.OF",
+            provider_symbol="006947.OF",
+            name="Open Fund",
+            aliases=("006947",),
+            market=Market.CN_A,
+            asset_type=AssetType.ETF,
+            exchange="OF",
+            currency="CNY",
+            timezone="Asia/Shanghai",
+            metadata={"fund_type": "open_fund"},
+        )
+
+        bars = PagedEastmoneyProvider().get_daily_bars(instrument, date(2026, 4, 3), date(2026, 6, 9))
+
+        self.assertEqual([bar.date for bar in bars], [date(2026, 4, 3), date(2026, 4, 10), date(2026, 6, 8), date(2026, 6, 9)])
+        self.assertEqual([bar.close for bar in bars], [1.2165, 1.2173, 1.2227, 1.2224])
+
     def test_tushare_continuous_future_uses_mapping_contracts(self) -> None:
         provider = TushareMarketDataProvider.__new__(TushareMarketDataProvider)
         provider.pro = FakeTusharePro()
@@ -1034,10 +1094,15 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertTrue(result["scenario_results"]["report_archive"])
             self.assertTrue(result["report_artifacts"])
             self.assertTrue(html_path.exists())
-            self.assertIn("已归档报告：", html_path.read_text(encoding="utf-8"))
+            html = html_path.read_text(encoding="utf-8")
+            self.assertIn("Signal Track", html)
+            self.assertIn("project-list", html)
+            self.assertNotIn("已归档报告：", html)
 
     def test_source_name_can_be_inferred_from_content_marker(self) -> None:
         self.assertEqual(resolve_source_name(None, "信息源：Alpha Desk\n00700.HK 做多"), "Alpha Desk")
+        self.assertEqual(resolve_source_name("信息源（爆）", "00700.HK 做多"), "爆")
+        self.assertEqual(resolve_source_name(None, "来源：信息源（爆）\n00700.HK 做多"), "爆")
         self.assertEqual(resolve_source_name("manual", "来源：Beta\nAAPL 做空"), "Beta")
         self.assertEqual(resolve_source_name(None, "信息来源：Gamma Desk\n00700.HK 做多"), "Gamma Desk")
         self.assertEqual(resolve_source_name(None, "信号源：Delta Desk\n00700.HK 做多"), "Delta Desk")
@@ -1075,10 +1140,16 @@ class SignalTrackCoreTests(unittest.TestCase):
             checked = DailyChecker(repo, FixtureMarketDataProvider()).run(next_fixture_trading_day(date.today()))
             self.assertEqual(checked, 1)
 
+            project = repo.get_project_row(result.project_ids[0])
+            check = repo.list_daily_checks(project_id=result.project_ids[0])[0]
+            self.assertEqual(project["status"], "active")
+            self.assertFalse(bool(project["needs_review"]))
+            self.assertEqual(check["conclusion"], "watch")
+            self.assertNotIn("Project logic score", check["triggered_rules"])
+
             html = render_dashboard(repo)
-            self.assertIn("投资信号看板", html)
+            self.assertIn("Signal Track", html)
             self.assertIn("腾讯控股", html)
-            self.assertIn("needs_review", html)
             self.assertIn("polyline", html)
             self.assertIn("chart-marker-open", html)
             self.assertIn("开仓点：", html)
@@ -1087,9 +1158,8 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("曲线开始点：", html)
             self.assertIn("曲线结束点：", html)
             self.assertNotIn("平仓点：", html)
-            self.assertIn("系统补充逻辑", html)
-            self.assertIn("项目检查日志", html)
-            self.assertIn("needs_review", html)
+            self.assertNotIn("系统补充逻辑", html)
+            self.assertNotIn("项目检查日志", html)
             self.assertIn(next_fixture_trading_day(date.today()).isoformat(), html)
 
     def test_low_logic_signal_uses_optional_logic_supplementer(self) -> None:
@@ -1133,10 +1203,12 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(updated["source_note"], "checked public filings")
 
             html = render_dashboard(repo)
-            self.assertIn("证据 / 验证", html)
-            self.assertIn("研究验证项", html)
-            self.assertIn("跟踪指标：广告收入环比改善", html)
-            self.assertIn("广告收入环比改善", html)
+            self.assertIn("Signal Track", html)
+            self.assertIn("腾讯控股", html)
+            self.assertNotIn("证据 / 验证", html)
+            self.assertNotIn("研究验证项", html)
+            self.assertNotIn("跟踪指标：广告收入环比改善", html)
+            self.assertNotIn("广告收入环比改善", html)
 
     def test_project_report_exports_framework_and_verification_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1226,40 +1298,28 @@ class SignalTrackCoreTests(unittest.TestCase):
 
             html = render_dashboard(repo)
 
-            self.assertIn("source-summary", html)
-            self.assertIn("data-filter-group=\"source\"", html)
-            self.assertIn("data-filter-group=\"status\"", html)
-            self.assertIn("data-filter-group=\"direction\"", html)
-            self.assertIn("table-wrap", html)
-            self.assertIn("<th>入场</th>", html)
+            self.assertIn("summary-strip", html)
+            self.assertIn("project-list", html)
             self.assertIn("source-chip", html)
             self.assertIn('href="/inbox"', html)
             self.assertIn("class=\"top-actions\"", html)
             self.assertIn("data-source='信息源A'", html)
-            self.assertIn("data-status='needs_review'", html)
-            self.assertIn("data-direction='long'", html)
-            self.assertIn("title='待复核'>待复核", html)
-            self.assertIn("title='00700.HK / 腾讯控股'", html)
-            self.assertIn("data-filter-type='status' data-value='exit_signal'", html)
-            self.assertIn("data-filter-type='direction' data-value='short'", html)
-            self.assertIn("report-card", html)
-            self.assertIn("report-body", html)
-            self.assertIn("data:text/markdown;charset=utf-8,", html)
-            self.assertIn("aria-label='下载项目投研报告文件'", html)
-            self.assertIn("download='signal-track-project-", html)
+            self.assertIn("data-source='信息源B'", html)
+            self.assertIn("data-status='active'", html)
+            self.assertIn("data-tooltip=", html)
+            self.assertIn("#001", html)
+            self.assertIn("#002", html)
+            self.assertIn("跟踪中", html)
+            self.assertIn("00700.HK", html)
+            self.assertIn("默认：跌 20% 平仓", html)
+            self.assertIn("tooltip", html)
+            self.assertNotIn("report-card", html)
+            self.assertNotIn("report-body", html)
+            self.assertNotIn("download='signal-track-project-", html)
             self.assertNotIn("/api/projects/", html)
-            self.assertIn("投研报告 | 基于风和3C-5M-3D-3T框架", html)
-            self.assertIn("免责声明", html)
-            self.assertIn("framework-tag covered", html)
-            self.assertIn("<span>待验证</span>", html)
-            self.assertIn("class='card detail-card' data-source='信息源B'", html)
             self.assertIn("applyFilters", html)
-            self.assertIn("最新检查", html)
-            self.assertIn("动作", html)
-            self.assertIn("复核逻辑", html)
             self.assertIn("信息源A", html)
             self.assertIn("信息源B", html)
-            self.assertIn("待复核", html)
             self.assertIn("尚未发布", html)
             self.assertNotIn("Futuristic minimalism", html)
 
@@ -1282,15 +1342,14 @@ class SignalTrackCoreTests(unittest.TestCase):
 
             html = render_dashboard(repo)
 
-            self.assertIn("recent-inputs", html)
-            self.assertIn("data-input-action='close'", html)
-            self.assertIn("data-input-action='mixed'", html)
-            self.assertIn("input-action mixed", html)
-            self.assertIn("输入记录", html)
+            self.assertNotIn("recent-inputs", html)
+            self.assertNotIn("data-input-action='close'", html)
+            self.assertNotIn("data-input-action='mixed'", html)
+            self.assertNotIn("输入记录", html)
             self.assertIn("Input Desk", html)
             self.assertIn("Mixed Desk", html)
             self.assertIn("00700.HK", html)
-            self.assertIn("关联项目 1", html)
+            self.assertIn("project-list", html)
 
     def test_project_input_history_scans_beyond_recent_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1350,7 +1409,8 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertTrue(all(leg.points for leg in performance.legs))
             self.assertTrue(all(leg.price_points for leg in performance.legs))
             html = render_dashboard(repo)
-            self.assertIn("leg-curves", html)
+            self.assertIn("leg-panel", html)
+            self.assertIn("leg-row", html)
             self.assertIn("mini-chart", html)
             self.assertIn("300750.SZ 价格曲线", html)
             self.assertIn("600519.SH 价格曲线", html)
@@ -1396,6 +1456,23 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertAlmostEqual(points[1][1], 0.06)
         self.assertEqual(points[1][0], "2026-06-02")
         self.assertAlmostEqual(points[2][1], 0.08)
+
+    def test_sparkline_extends_to_window_edges_and_places_trade_markers_by_date(self) -> None:
+        html = render_sparkline(
+            [("2026-05-12", 1.0), ("2026-06-08", 2.0)],
+            trade_markers=project_chart_markers("2026-05-04", None),
+            window_start="2026-04-03",
+            window_end="2026-06-09",
+        )
+
+        self.assertIn("<polyline points='0.0,", html)
+        self.assertIn("640.0,", html)
+        self.assertIn("class='chart-marker-line' x1='296.1'", html)
+        self.assertIn("chart-marker-open", html)
+        self.assertIn("class='entry-baseline'", html)
+        self.assertIn("盈亏线：2026-05-04", html)
+        open_marker = html.split("chart-marker-open", 1)[1]
+        self.assertNotIn("<circle", open_marker)
 
     def test_portfolio_current_return_normalizes_leg_weights_like_curve(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1530,8 +1607,9 @@ class SignalTrackCoreTests(unittest.TestCase):
             logic = repo.list_logic_blocks(result.project_ids[0])
             self.assertTrue(any(block["logic_type"] == "system_logic" for block in logic))
             html = render_dashboard(repo)
-            self.assertIn("待复核 1", html)
-            self.assertIn("<td>是</td>", html)
+            self.assertIn("data-status='needs_review'", html)
+            self.assertIn("权重 50%", html)
+            self.assertNotIn("<td>是</td>", html)
 
     def test_missing_portfolio_weights_mark_status_review_until_confirmed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1921,7 +1999,9 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertFalse(bool(row["needs_review"]))
             self.assertFalse(bool(row["weight_needs_review"]))
             html = render_dashboard(repo)
-            self.assertIn("待复核 0", html)
+            self.assertIn("data-status='closed'", html)
+            self.assertIn("已平仓", html)
+            self.assertNotIn("待复核 0", html)
 
     def test_unmatched_close_signal_does_not_create_tracking_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2497,7 +2577,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(performance.window_start, "2026-05-06")
             self.assertEqual(performance.window_end, "2026-07-06")
             html = render_dashboard(repo)
-            self.assertIn("价格窗口（含平仓后一个月", html)
+            self.assertIn("平仓 2026-06-05", html)
             self.assertIn("2026-05-06 至 2026-07-06", html)
             late_provider = RecordingMarketDataProvider("fixture")
             late_checked = DailyChecker(repo, late_provider).run(date(2026, 7, 10))
@@ -2523,6 +2603,37 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(payload["publish_url"], "https://example.com/api")
         self.assertEqual(payload["error"], '{"error":"publish failed"}')
         self.assertEqual(payload["response_body"], '{"error":"publish failed"}')
+
+    def test_demo_publisher_sends_stable_signal_track_slug(self) -> None:
+        class Response:
+            status = 201
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self) -> bytes:
+                return b'{"address":"https://liangz77.cn/demo/signal-track"}'
+
+        requests = []
+
+        def fake_urlopen(request, timeout):
+            del timeout
+            requests.append(request)
+            return Response()
+
+        with patch("signal_track.publisher.urllib.request.urlopen", fake_urlopen):
+            result = DemoPublisher("https://liangz77.cn/api/demos/publish", "demo-key").publish(
+                title=DEFAULT_DEMO_TITLE,
+                html="<html></html>",
+            )
+
+        payload = json.loads(requests[0].data.decode("utf-8"))
+        self.assertTrue(result.ok)
+        self.assertEqual(payload["title"], "Signal Track")
+        self.assertEqual(payload["slug"], DEFAULT_DEMO_SLUG)
 
     def test_cli_ingest_auto_publishes_when_configured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2696,8 +2807,8 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(payload["report_artifacts"][0]["path"], str(report_path))
             self.assertTrue(report_path.exists())
             self.assertEqual(len(reports), 1)
-            self.assertIn("已归档报告：", html)
-            self.assertIn(f"project-{project_id}-report.md", html)
+            self.assertNotIn("已归档报告：", html)
+            self.assertNotIn(f"project-{project_id}-report.md", html)
 
     def test_cli_check_auto_publishes_when_configured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2887,7 +2998,7 @@ class SignalTrackCoreTests(unittest.TestCase):
                     ])
                 output = StringIO()
                 with redirect_stdout(output):
-                    code = cli_main(["list-projects", "--source", "CLI Desk A", "--status", "needs_review"])
+                    code = cli_main(["list-projects", "--source", "CLI Desk A", "--status", "active"])
                 short_output = StringIO()
                 with redirect_stdout(short_output):
                     short_code = cli_main(["list-projects", "--direction", "short"])
@@ -2898,13 +3009,13 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(len(payload["projects"]), 1)
         project = payload["projects"][0]
         self.assertEqual(project["source_name"], "CLI Desk A")
-        self.assertEqual(project["status"], "needs_review")
+        self.assertEqual(project["status"], "active")
         self.assertIn("performance", project)
         self.assertGreater(project["performance"]["point_count"], 0)
         self.assertEqual(project["performance"]["legs"][0]["symbol"], "00700.HK")
-        self.assertEqual(project["latest_check"]["conclusion"], "needs_review")
-        self.assertIn("Project logic score", project["latest_check"]["triggered_rules"])
-        self.assertEqual(project["next_action"], "review_logic")
+        self.assertEqual(project["latest_check"]["conclusion"], "watch")
+        self.assertNotIn("Project logic score", project["latest_check"]["triggered_rules"])
+        self.assertEqual(project["next_action"], "keep_tracking")
         self.assertEqual(short_code, 0)
         self.assertEqual(len(short_payload["projects"]), 1)
         self.assertEqual(short_payload["projects"][0]["source_name"], "CLI Desk B")
@@ -2952,8 +3063,8 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual(len(markdown_payload["report_artifact"]["content_hash"]), 64)
         self.assertEqual(len(reports_payload["reports"]), 1)
         self.assertEqual(reports_payload["reports"][0]["id"], markdown_payload["report_artifact_id"])
-        self.assertIn("已归档报告：", dashboard_html)
-        self.assertIn("project-report.md", dashboard_html)
+        self.assertNotIn("已归档报告：", dashboard_html)
+        self.assertNotIn("project-report.md", dashboard_html)
         self.assertEqual(payload["project"]["source_name"], "CLI Report Desk")
         self.assertEqual(payload["instruments"][0]["symbol"], "00700.HK")
 
@@ -3124,6 +3235,42 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("行情刷新失败：NVDA - provider unavailable", nvda_check["triggered_rules"])
             self.assertIn("缺少行情数据：NVDA", nvda_check["triggered_rules"])
 
+    def test_daily_check_suppresses_refresh_error_when_recent_local_price_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            for instrument in SEED_INSTRUMENTS:
+                repo.upsert_instrument(instrument)
+            opened = SignalIngestor(repo, InstrumentResolver(repo.list_instruments())).ingest(
+                "Desk B",
+                "NVDA long, watch order growth.",
+            )
+            instrument = repo.get_instrument("NVDA")
+            assert instrument is not None
+            check_date = next_fixture_trading_day(date.today())
+            repo.upsert_bars(
+                instrument.id,
+                [
+                    DailyBar(
+                        symbol="NVDA",
+                        provider_symbol="NVDA",
+                        date=check_date,
+                        open=100,
+                        high=101,
+                        low=99,
+                        close=100,
+                        provider="local",
+                    )
+                ],
+            )
+
+            DailyChecker(repo, PartiallyFailingMarketDataProvider({"NVDA"})).run(check_date)
+
+            check = repo.list_daily_checks(project_id=opened.project_ids[0])[0]
+            self.assertNotIn("行情刷新失败：NVDA - provider unavailable", check["triggered_rules"])
+            self.assertNotIn("缺少行情数据：NVDA", check["triggered_rules"])
+
     def test_daily_check_clears_transient_needs_review_after_prices_recover(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
@@ -3152,7 +3299,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertEqual(recovered_project["status"], "active")
             self.assertFalse(bool(recovered_project["needs_review"]))
 
-    def test_daily_check_keeps_project_level_needs_review_after_prices_recover(self) -> None:
+    def test_daily_check_auto_reviews_low_logic_after_system_supplement(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "signal_track.sqlite3")
             db.init()
@@ -3165,15 +3312,27 @@ class SignalTrackCoreTests(unittest.TestCase):
             )
             project_id = opened.project_ids[0]
             check_date = next_fixture_trading_day(date.today())
+            repo.add_daily_check(
+                project_id,
+                (check_date - timedelta(days=1)).isoformat(),
+                "needs_review",
+                "old low logic review",
+                [
+                    "Project logic score 4.0 is below 6; "
+                    "keep the project in review until the thesis and tracking logic are verified."
+                ],
+            )
 
             DailyChecker(repo, FixtureMarketDataProvider()).run(check_date)
 
             project = repo.get_project_row(project_id)
             check = repo.list_daily_checks(project_id=project_id)[0]
-            self.assertEqual(check["conclusion"], "needs_review")
-            self.assertIn("Project logic score", check["triggered_rules"])
-            self.assertEqual(project["status"], "needs_review")
-            self.assertTrue(bool(project["needs_review"]))
+            self.assertEqual(check["conclusion"], "watch")
+            self.assertNotIn("Project logic score", check["triggered_rules"])
+            self.assertEqual(project["status"], "active")
+            self.assertFalse(bool(project["needs_review"]))
+            html = render_dashboard(repo)
+            self.assertNotIn("Project logic score", html)
 
     def test_daily_check_surfaces_portfolio_weight_review_reason(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3329,7 +3488,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             instrument = repo.get_instrument("00700.HK")
             self.assertIsNotNone(instrument)
             instrument_id = repo.upsert_instrument(instrument)
-            closes = [100, 100, 100, 100, 80]
+            closes = [100, 100, 100, 100, 85]
             bars = [
                 DailyBar(
                     symbol="00700.HK",
@@ -3348,7 +3507,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             DailyChecker(repo).run(date(2026, 6, 5))
 
             row = repo.get_project_row(result.project_ids[0])
-            self.assertEqual(row["status"], "exit_signal")
+            self.assertEqual(row["status"], "closed")
             checks = repo.list_daily_checks(project_id=result.project_ids[0])
             self.assertIn("跌破 5 日均线", checks[0]["triggered_rules"])
 
@@ -3366,7 +3525,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             instrument = repo.get_instrument("00700.HK")
             self.assertIsNotNone(instrument)
             instrument_id = repo.upsert_instrument(instrument)
-            closes = [100, 100, 100, 100, 80]
+            closes = [100, 100, 100, 100, 85]
             bars = [
                 DailyBar(
                     symbol="00700.HK",
@@ -3385,7 +3544,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             DailyChecker(repo).run(date(2026, 6, 5))
 
             row = repo.get_project_row(result.project_ids[0])
-            self.assertEqual(row["status"], "exit_signal")
+            self.assertEqual(row["status"], "closed")
             checks = repo.list_daily_checks(project_id=result.project_ids[0])
             self.assertIn("跌破 5 日均线", checks[0]["triggered_rules"])
 
@@ -3403,7 +3562,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             instrument = repo.get_instrument("NVDA")
             self.assertIsNotNone(instrument)
             instrument_id = repo.upsert_instrument(instrument)
-            closes = [100, 100, 100, 100, 120]
+            closes = [100, 100, 100, 100, 115]
             bars = [
                 DailyBar(
                     symbol="NVDA",
@@ -3422,7 +3581,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             DailyChecker(repo).run(date(2026, 6, 5))
 
             row = repo.get_project_row(result.project_ids[0])
-            self.assertEqual(row["status"], "exit_signal")
+            self.assertEqual(row["status"], "closed")
             checks = repo.list_daily_checks(project_id=result.project_ids[0])
             self.assertIn("突破 5 日均线", checks[0]["triggered_rules"])
 
