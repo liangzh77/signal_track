@@ -964,10 +964,10 @@ def chart_hover_payload(
 
 def hover_change_label(value: float, display_mode: str, reference: float | None) -> str:
     if display_mode == "return":
-        return f"较开仓 {format_return(value)}"
+        return f"较开仓 {format_chart_return(value)}"
     if reference is None or reference == 0:
         return ""
-    return f"较开仓 {format_return((value / reference) - 1)}"
+    return f"较开仓 {format_chart_return((value / reference) - 1)}"
 
 
 def hover_value_for_date(
@@ -1141,7 +1141,7 @@ def chart_marker(
 
 def marker_value_label(value: float, value_mode: str) -> str:
     if value_mode == "return":
-        return format_return(value)
+        return format_chart_return(value)
     return format_price(value)
 
 
@@ -1197,6 +1197,12 @@ def format_return(value: float | None) -> str:
     if value is None:
         return "--"
     return f"{value:+.2%}"
+
+
+def format_chart_return(value: float | None) -> str:
+    if value is None:
+        return "--"
+    return f"{value:+.1%}"
 
 
 def format_price(value: float | None) -> str:

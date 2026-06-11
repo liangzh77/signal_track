@@ -1531,7 +1531,7 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIn("chart-hover-date", html)
         self.assertIn("<rect width='96' height='52'", html)
         self.assertIn("收益", html)
-        self.assertIn("较开仓 +200.00%", html)
+        self.assertIn("较开仓 +200.0%", html)
         open_marker = html.split("chart-marker-open", 1)[1].split("</g>", 1)[0]
         self.assertNotIn("<circle", open_marker)
 
@@ -1552,7 +1552,7 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIn("13.4", price_hover_html)
         self.assertIn("chart-hover-change", price_hover_html)
         self.assertIn("较开仓", price_hover_html)
-        self.assertIn("+8.94%", price_hover_html)
+        self.assertIn("+8.9%", price_hover_html)
 
     def test_portfolio_current_return_normalizes_leg_weights_like_curve(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
