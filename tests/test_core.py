@@ -14,7 +14,7 @@ from zipfile import ZipFile
 
 from signal_track.config import Settings
 from signal_track.db import Database, Repository
-from signal_track.checker import DailyChecker
+from signal_track.checker import DailyChecker, default_close_rule_hit
 from signal_track.cli import refresh_markets as cli_refresh_markets
 from signal_track.cli import main as cli_main
 from signal_track.cli import run_self_check
@@ -1301,8 +1301,8 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("summary-strip", html)
             self.assertIn("project-list", html)
             self.assertIn("source-chip", html)
-            self.assertIn('href="/inbox"', html)
-            self.assertIn("class=\"top-actions\"", html)
+            self.assertIn("top-aside", html)
+            self.assertIn("按开仓时间从新到旧", html)
             self.assertIn("data-source='信息源A'", html)
             self.assertIn("data-source='信息源B'", html)
             self.assertIn("data-status='active'", html)
@@ -1320,8 +1320,54 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("applyFilters", html)
             self.assertIn("信息源A", html)
             self.assertIn("信息源B", html)
-            self.assertIn("尚未发布", html)
+            self.assertNotIn('href="/inbox"', html)
+            self.assertNotIn("最近发布", html)
             self.assertNotIn("Futuristic minimalism", html)
+
+    def test_dashboard_can_show_project_specific_hold_until_rule(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "signal_track.sqlite3")
+            db.init()
+            repo = Repository(db)
+            source_id = repo.get_or_create_source("修")
+            instrument_id = repo.upsert_instrument(
+                Instrument(
+                    symbol="PAAS",
+                    provider_symbol="PAAS",
+                    name="泛美白银",
+                    aliases=("泛美白银", "Pan American Silver", "PAAS"),
+                    market=Market.US,
+                    asset_type=AssetType.STOCK,
+                    exchange="NYSE",
+                    currency="USD",
+                    timezone="America/New_York",
+                )
+            )
+            project_id = repo.create_tracking_project(
+                title="泛美白银 做多跟踪",
+                source_id=source_id,
+                raw_input_id=None,
+                status="active",
+                direction="long",
+                entry_date="2026-06-11",
+                logic_score=4,
+                metadata={
+                    "default_close_rule": "disabled_until",
+                    "hold_until": "2027-06-30",
+                    "hold_until_label": "持有到 2027 年二季度",
+                    "rule_line": "策略：一直持有到 2027 年二季度（2027-06-30 前不触发默认跌 20% 平仓/回撤止盈）；到期复核。",
+                },
+            )
+            repo.add_project_leg(project_id, instrument_id, "long", 1.0)
+
+            html = render_dashboard(repo)
+
+            self.assertIn("泛美白银 做多跟踪", html)
+            self.assertIn("<span class='title-name'>泛美白银</span>", html)
+            self.assertIn("<span class='title-suffix'>做多跟踪</span>", html)
+            self.assertIn("PAAS", html)
+            self.assertIn("策略：一直持有到 2027 年二季度", html)
+            self.assertIn("持有到 2027 年二季度", html)
 
     def test_dashboard_shows_recent_input_feed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3614,6 +3660,30 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertEqual([hit.rule_type for hit in leading_loss_hits], ["return_drawdown"])
         self.assertEqual([hit.rule_type for hit in leading_profit_hits], ["return_take_profit"])
         self.assertEqual(chinese_thresholds, [0.08, 0.1])
+
+    def test_default_close_rule_can_be_disabled_until_hold_date(self) -> None:
+        project = {
+            "metadata": json.dumps({
+                "default_close_rule": "disabled_until",
+                "hold_until": "2027-06-30",
+            }),
+            "entry_date": "2026-06-11",
+            "created_at": "2026-06-11 00:00:00",
+        }
+        performance = ProjectPerformance(
+            project_id=4,
+            return_pct=-0.25,
+            latest_date="2026-12-31",
+            points=[("2026-06-11", 0.0), ("2026-12-31", -0.25)],
+            legs=[],
+            missing_price_symbols=[],
+        )
+
+        before_hold_expires = default_close_rule_hit(project, performance, date(2027, 6, 30))
+        after_hold_expires = default_close_rule_hit(project, performance, date(2027, 7, 1))
+
+        self.assertIsNone(before_hold_expires)
+        self.assertIsNotNone(after_hold_expires)
 
     def test_daily_check_uses_contradicted_research_exit_condition(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

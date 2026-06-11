@@ -19,8 +19,6 @@ def render_dashboard(repo: Repository) -> str:
         reverse=True,
     )
     recent_inputs = input_summaries(repo, limit=8)
-    publish_events = repo.list_publish_events(limit=1)
-    last_publish = publish_events[0] if publish_events else None
     performances = {int(row["id"]): project_performance(repo, int(row["id"])) for row in projects}
     latest_checks = {
         int(row["id"]): next(iter(repo.list_daily_checks(project_id=int(row["id"]), limit=1)), None)
@@ -32,6 +30,7 @@ def render_dashboard(repo: Repository) -> str:
     returns = [perf.return_pct for perf in performances.values() if perf.return_pct is not None]
     avg_return = sum(returns) / len(returns) if returns else None
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    generated_stamp = f"按开仓时间从新到旧 · 最后生成：{now}"
 
     project_cards = "\n".join(
         render_project_card(repo, row, performances[int(row["id"])])
@@ -84,13 +83,8 @@ def render_dashboard(repo: Repository) -> str:
     .brand-kicker {{ color: var(--herb); font: 700 12px/16px "Kaiti SC", "STKaiti", serif; letter-spacing: .08em; margin-bottom: 4px; }}
     h1 {{ margin: 0; font-size: 52px; line-height: 58px; letter-spacing: 0; color: var(--midnight); font-weight: 800; }}
     .stamp {{ color: var(--muted); font-size: 13px; line-height: 20px; }}
-    .top-aside {{ display: flex; align-items: center; justify-content: end; gap: 16px; flex-wrap: wrap; }}
-    .edition-badge {{ width: 50px; height: 58px; display: grid; place-items: center; border: 1px solid rgba(13,53,43,.32); color: var(--herb); background: rgba(255,252,244,.5); box-shadow: 3px 4px 0 rgba(82,107,69,.10); font-family: "IBM Plex Mono", "Geist Mono", monospace; }}
-    .edition-badge strong {{ font-size: 20px; line-height: 20px; }}
-    .edition-badge span {{ font-size: 12px; margin-top: -12px; }}
-    .top-actions {{ display: flex; align-items: center; justify-content: end; gap: 10px; flex-wrap: wrap; }}
-    .nav-link {{ color: var(--midnight); text-decoration: none; border: 1.4px solid rgba(13,53,43,.34); border-radius: 5px; min-height: 34px; display: inline-flex; align-items: center; padding: 0 14px; font-size: 14px; background: rgba(255,252,244,.72); box-shadow: 2px 3px 0 rgba(82,107,69,.10); }}
-    .nav-link:hover {{ background: var(--celeste); }}
+    .top-aside {{ display: flex; align-items: end; justify-content: end; text-align: right; min-width: min(440px, 100%); }}
+    .top-aside .stamp {{ max-width: 440px; }}
     .summary-strip {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1.4px solid rgba(13,53,43,.28); background: rgba(255,252,244,.58); margin-bottom: 18px; box-shadow: 5px 7px 0 rgba(82,107,69,.10); }}
     .metric {{ min-height: 70px; padding: 12px 16px; border-right: 1px solid rgba(13,53,43,.18); }}
     .metric:last-child {{ border-right: 0; }}
@@ -108,6 +102,10 @@ def render_dashboard(repo: Repository) -> str:
     .project-id, .project-title, .project-return, .status-pill, .expand-button {{ align-self: center; }}
     .project-title {{ min-width: 0; }}
     .project-title strong {{ display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; line-height: 24px; color: var(--midnight); }}
+    .project-title .title-line {{ display: flex; align-items: baseline; overflow: hidden; text-overflow: clip; white-space: nowrap; }}
+    .project-title .title-line span {{ display: inline; font-size: inherit; line-height: inherit; white-space: nowrap; }}
+    .project-title .title-name {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--midnight); }}
+    .project-title .title-suffix {{ flex: 0 0 auto; margin-left: 1em; color: var(--amber); }}
     .project-title span {{ color: var(--muted); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; line-height: 19px; }}
     .project-title .rule-line {{ margin-top: 8px; color: var(--muted); font: 13px/19px "Kaiti SC", "STKaiti", serif; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }}
     .chart-wrap {{ min-width: 0; height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto; align-items: stretch; }}
@@ -149,7 +147,7 @@ def render_dashboard(repo: Repository) -> str:
       .shell {{ padding: 16px; }}
       .summary-strip {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
       .topbar {{ align-items: start; flex-direction: column; }}
-      .top-actions {{ justify-content: start; }}
+      .top-aside {{ justify-content: start; text-align: left; min-width: 0; }}
       .project-main {{ grid-template-columns: 74px minmax(0, 1fr) 74px 30px; }}
       .chart-wrap {{ grid-column: 1 / -1; }}
       .project-title .rule-line {{ -webkit-line-clamp: 3; }}
@@ -173,14 +171,9 @@ def render_dashboard(repo: Repository) -> str:
       <div class="brand-block">
         <div class="brand-kicker">EDITORIAL CURVE NOTE</div>
         <h1>Signal Track</h1>
-        <div class="stamp">按开仓时间从新到旧 · 最后生成：{escape(now)}</div>
       </div>
       <div class="top-aside">
-        <div class="edition-badge" aria-hidden="true"><strong>03</strong><span>/04</span></div>
-        <div class="top-actions">
-          <a class="nav-link" href="/inbox" title="打开信息录入页">录入</a>
-          <div class="stamp">{render_publish_stamp(last_publish)}</div>
-        </div>
+        <div class="stamp">{escape(generated_stamp)}</div>
       </div>
     </section>
     <section class="summary-strip" aria-label="项目概览">
@@ -261,9 +254,9 @@ def render_project_card(repo: Repository, row, performance) -> str:
         "<div class='project-main'>"
         f"<div class='project-id'>{escape(project_id_label(row))}</div>"
         f"<div class='project-title' data-tooltip='{escape(project_tooltip)}'>"
-        f"<strong>{escape(title)}</strong>"
+        f"{render_project_title(title)}"
         f"<span>{escape(source)} · {escape(symbols)}</span>"
-        f"<span class='rule-line'>默认：跌 20% 平仓；从最高点回撤 20% 止盈。触发后曲线继续跟踪 1 个月。</span>"
+        f"<span class='rule-line'>{escape(project_rule_line(row))}</span>"
         "</div>"
         "<div class='chart-wrap'>"
         f"{render_sparkline(performance.points, trade_markers=project_chart_markers(row['entry_date'], row['closed_date']), window_start=performance.window_start, window_end=performance.window_end)}"
@@ -276,6 +269,26 @@ def render_project_card(repo: Repository, row, performance) -> str:
         f"{leg_panel}"
         "</article>"
     )
+
+
+def render_project_title(title: str) -> str:
+    name, suffix = split_tracking_title(title)
+    if not suffix:
+        return f"<strong>{escape(title)}</strong>"
+    return (
+        "<strong class='title-line'>"
+        f"<span class='title-name'>{escape(name)}</span>"
+        f"<span class='title-suffix'>{escape(suffix)}</span>"
+        "</strong>"
+    )
+
+
+def split_tracking_title(title: str) -> tuple[str, str | None]:
+    for suffix in ("做多跟踪", "做空跟踪", "观察跟踪", "中性跟踪"):
+        marker = f" {suffix}"
+        if title.endswith(marker):
+            return title[: -len(marker)].rstrip(), suffix
+    return title, None
 
 
 def render_leg_rows(
@@ -321,7 +334,31 @@ def project_id_label(row) -> str:
 def default_rule_label(row) -> str:
     if row["closed_date"]:
         return f"平仓 {row['closed_date']}"
+    metadata = project_metadata(row)
+    if metadata.get("hold_until_label"):
+        return str(metadata["hold_until_label"])
+    if metadata.get("hold_until"):
+        return f"持有到 {metadata['hold_until']}"
     return "默认规则"
+
+
+def project_rule_line(row) -> str:
+    metadata = project_metadata(row)
+    if metadata.get("rule_line"):
+        return str(metadata["rule_line"])
+    if metadata.get("default_close_rule") == "disabled_until" and metadata.get("hold_until"):
+        return f"策略：持有到 {metadata['hold_until']}；到期前不触发默认跌 20% 平仓/回撤止盈。"
+    if metadata.get("default_close_rule") == "disabled":
+        return "策略：不使用默认跌 20% 平仓/回撤止盈规则。"
+    return "默认：跌 20% 平仓；从最高点回撤 20% 止盈。触发后曲线继续跟踪 1 个月。"
+
+
+def project_metadata(row) -> dict:
+    try:
+        metadata = json.loads(row["metadata"] or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return metadata if isinstance(metadata, dict) else {}
 
 
 def compact_status_label(status: str) -> str:
@@ -1226,16 +1263,6 @@ def logic_label(value: str) -> str:
     if value == "manual_note":
         return "手动备注"
     return value
-
-
-def render_publish_stamp(row) -> str:
-    if not row:
-        return "尚未发布"
-    status = row["status_code"] or "--"
-    url = row["url"] or ""
-    if url:
-        return f"最近发布：<a href='{escape(url)}'>{escape(url)}</a> · {escape(status)}"
-    return f"最近发布状态：{escape(status)}"
 
 
 def project_needs_review(row) -> bool:

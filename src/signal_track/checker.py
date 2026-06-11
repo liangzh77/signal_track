@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
 
 from .analytics import instrument_from_leg_row, project_performance
@@ -63,7 +64,7 @@ class DailyChecker:
                     conclusion = "needs_review"
                     self.repo.update_project_status(project_id, "needs_review", needs_review=True)
             elif performance.return_pct is not None:
-                default_close_reason = default_close_rule_hit(project, performance) if project else None
+                default_close_reason = default_close_rule_hit(project, performance, current) if project else None
                 if default_close_reason:
                     conclusion = "closed"
                     triggered_rules.append(default_close_reason)
@@ -218,7 +219,16 @@ def price_bar_is_recent(bar_date: str, current: date, max_staleness_days: int = 
     return 0 <= (current - latest).days <= max_staleness_days
 
 
-def default_close_rule_hit(project, performance, stop_loss: float = -0.20, trailing_drawdown: float = -0.20) -> str | None:
+def default_close_rule_hit(
+    project,
+    performance,
+    check_date: date | None = None,
+    stop_loss: float = -0.20,
+    trailing_drawdown: float = -0.20,
+) -> str | None:
+    metadata = project_metadata(project)
+    if default_close_rule_disabled(metadata, check_date, performance.latest_date):
+        return None
     if performance.return_pct is None:
         return None
     if performance.return_pct <= stop_loss:
@@ -239,6 +249,35 @@ def default_close_rule_hit(project, performance, stop_loss: float = -0.20, trail
             f"回撤 {drawdown_from_peak:.2%}。"
         )
     return None
+
+
+def project_metadata(project) -> dict:
+    try:
+        metadata = json.loads(project["metadata"] or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def default_close_rule_disabled(metadata: dict, check_date: date | None, latest_date: str | None) -> bool:
+    if metadata.get("default_close_rule") == "disabled":
+        return True
+    if metadata.get("default_close_rule") != "disabled_until":
+        return False
+    hold_until = str(metadata.get("hold_until") or "").strip()
+    if not hold_until:
+        return False
+    try:
+        until = date.fromisoformat(hold_until)
+    except ValueError:
+        return False
+    current = check_date
+    if current is None and latest_date:
+        try:
+            current = date.fromisoformat(latest_date)
+        except ValueError:
+            current = None
+    return current is None or current <= until
 
 
 def project_level_review_rules(project, logic_blocks: list | None = None) -> list[str]:
