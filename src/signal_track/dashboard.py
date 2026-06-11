@@ -134,14 +134,22 @@ def render_dashboard(repo: Repository) -> str:
     .positive {{ color: var(--red); }}
     .negative {{ color: var(--green); }}
     .muted {{ color: var(--muted); }}
-    .chart, .mini-chart {{ width: 100%; height: 100%; margin: 0; border: 1.2px solid rgba(13,53,43,.20); border-radius: 5px; background: rgba(255,252,244,.62); box-shadow: inset 0 0 0 1px rgba(255,252,244,.7), 2px 3px 0 rgba(82,107,69,.08); }}
+    .chart, .mini-chart {{ width: 100%; height: 100%; margin: 0; border: 1.2px solid rgba(13,53,43,.20); border-radius: 5px; background: rgba(255,252,244,.62); box-shadow: inset 0 0 0 1px rgba(255,252,244,.7), 2px 3px 0 rgba(82,107,69,.08); cursor: crosshair; }}
     .chart {{ min-height: 66px; }}
     .mini-chart {{ min-height: 74px; }}
     .entry-baseline {{ stroke: rgba(169,107,60,.34); stroke-width: 1; stroke-dasharray: 6 5; }}
     .chart-marker circle {{ fill: var(--amber); stroke: rgba(247,241,227,.95); stroke-width: 2; }}
     .chart-marker-line {{ stroke: var(--amber); stroke-width: 1.4; stroke-dasharray: 4 4; opacity: .9; }}
     .chart-marker text {{ fill: var(--amber); font: 600 13px/1 "Geist Mono", monospace; paint-order: stroke; stroke: rgba(252,243,227,.9); stroke-width: 3px; }}
-    .tooltip {{ position: fixed; z-index: 50; pointer-events: none; max-width: 340px; padding: 10px 12px; border-radius: 5px; background: var(--midnight); color: var(--paper); box-shadow: 0 16px 40px rgba(13,53,43,.28); font-size: 13px; line-height: 20px; opacity: 0; transform: translate(10px, 10px); transition: opacity .08s ease; }}
+    .chart-hover-hit {{ fill: transparent; pointer-events: all; }}
+    .chart-hover-line {{ opacity: 0; stroke: var(--amber); stroke-width: 1.4; stroke-dasharray: 4 4; pointer-events: none; }}
+    .chart-hover-dot {{ opacity: 0; fill: var(--amber); stroke: rgba(247,241,227,.96); stroke-width: 2.2; pointer-events: none; }}
+    .chart-hover-label {{ opacity: 0; pointer-events: none; }}
+    .chart-hover-label rect {{ fill: rgba(13,53,43,.92); stroke: rgba(247,241,227,.55); stroke-width: 1; }}
+    .chart-hover-label text {{ fill: var(--paper); font: 700 12px/1 "IBM Plex Mono", "Geist Mono", monospace; }}
+    .chart-hover-label .chart-hover-value {{ fill: #F0C094; }}
+    .chart-hover-label .chart-hover-change {{ fill: rgba(247,241,227,.78); }}
+    .chart-hover-active .chart-hover-line, .chart-hover-active .chart-hover-dot, .chart-hover-active .chart-hover-label {{ opacity: 1; }}
     .empty-state {{ border: 1px solid rgba(13,53,43,.18); background: rgba(255,252,244,.52); border-radius: 6px; padding: 28px; color: var(--muted); }}
     @media (max-width: 900px) {{
       .shell {{ padding: 16px; }}
@@ -187,7 +195,6 @@ def render_dashboard(repo: Repository) -> str:
     </section>
     <section class="project-list">{project_cards}</section>
   </main>
-  <div class="tooltip" id="tooltip" role="tooltip"></div>
   <script>
     (() => {{
       const chips = Array.from(document.querySelectorAll('[data-filter-type]'));
@@ -214,17 +221,97 @@ def render_dashboard(repo: Repository) -> str:
           button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
         }});
       }});
-      const tooltip = document.getElementById('tooltip');
+      let activeChart = null;
+      const clearChartHover = (chart) => {{
+        if (!chart) return;
+        chart.classList.remove('chart-hover-active');
+      }};
+      const chartHoverPoints = (chart) => {{
+        if (!chart.__hoverPoints) {{
+          try {{
+            chart.__hoverPoints = JSON.parse(chart.dataset.chartHover || '[]');
+          }} catch (error) {{
+            chart.__hoverPoints = [];
+          }}
+        }}
+        return chart.__hoverPoints;
+      }};
+      const nearestChartPoint = (points, x) => {{
+        return points.reduce((nearest, point) => {{
+          if (!nearest) return point;
+          return Math.abs(point.x - x) < Math.abs(nearest.x - x) ? point : nearest;
+        }}, null);
+      }};
+      const closestElement = (target, selector) => {{
+        return target && target.closest ? target.closest(selector) : null;
+      }};
+      const updateChartHover = (event, chart) => {{
+        const points = chartHoverPoints(chart);
+        if (!points.length) return;
+        if (activeChart && activeChart !== chart) clearChartHover(activeChart);
+        activeChart = chart;
+        const rect = chart.getBoundingClientRect();
+        const x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 640;
+        const point = nearestChartPoint(points, x);
+        if (!point) return;
+        chart.classList.add('chart-hover-active');
+        const line = chart.querySelector('.chart-hover-line');
+        const dot = chart.querySelector('.chart-hover-dot');
+        const label = chart.querySelector('.chart-hover-label');
+        const dateText = chart.querySelector('.chart-hover-date');
+        const valueText = chart.querySelector('.chart-hover-value');
+        const changeText = chart.querySelector('.chart-hover-change');
+        if (line) {{
+          line.setAttribute('x1', point.x.toFixed(1));
+          line.setAttribute('x2', point.x.toFixed(1));
+        }}
+        if (dot) {{
+          dot.setAttribute('cx', point.x.toFixed(1));
+          dot.setAttribute('cy', point.y.toFixed(1));
+        }}
+        if (dateText) dateText.textContent = point.date;
+        if (valueText) valueText.textContent = `${{point.label}} ${{point.value}}`;
+        if (changeText) changeText.textContent = point.change || '';
+        if (label) {{
+          const labelRect = label.querySelector('rect');
+          const textWidths = [dateText, valueText, changeText]
+            .filter((node) => node && node.textContent)
+            .map((node) => {{
+              try {{
+                return node.getBBox().width;
+              }} catch (error) {{
+                return (node.textContent || '').length * 7;
+              }}
+            }});
+          const labelWidth = Math.ceil(Math.max(78, ...textWidths) + 18);
+          const labelHeight = point.change ? 52 : 38;
+          if (labelRect) {{
+            labelRect.setAttribute('width', labelWidth.toFixed(0));
+            labelRect.setAttribute('height', labelHeight.toFixed(0));
+          }}
+          let labelX = point.x + 10;
+          if (labelX + labelWidth > 634) labelX = point.x - labelWidth - 10;
+          labelX = Math.max(6, Math.min(640 - labelWidth - 6, labelX));
+          let labelY = point.y + 10;
+          if (labelY + labelHeight > 114) labelY = point.y - labelHeight - 10;
+          labelY = Math.max(6, Math.min(120 - labelHeight - 6, labelY));
+          label.setAttribute('transform', `translate(${{labelX.toFixed(1)}} ${{labelY.toFixed(1)}})`);
+        }}
+      }};
       document.addEventListener('mousemove', (event) => {{
-        const target = event.target.closest('[data-tooltip]');
-        if (!target || !tooltip) {{
-          if (tooltip) tooltip.style.opacity = '0';
+        const chart = closestElement(event.target, 'svg[data-chart-hover]');
+        if (chart) {{
+          updateChartHover(event, chart);
           return;
         }}
-        tooltip.textContent = target.dataset.tooltip || '';
-        tooltip.style.left = `${{event.clientX + 14}}px`;
-        tooltip.style.top = `${{event.clientY + 14}}px`;
-        tooltip.style.opacity = '1';
+        if (activeChart) {{
+          clearChartHover(activeChart);
+          activeChart = null;
+        }}
+      }});
+      document.addEventListener('mouseleave', () => {{
+        clearChartHover(activeChart);
+        activeChart = null;
       }});
       applyFilters();
     }})();
@@ -238,7 +325,6 @@ def render_project_card(repo: Repository, row, performance) -> str:
     is_portfolio = len(legs) > 1
     card_classes = "project-card is-portfolio" if is_portfolio else "project-card"
     source = row["source_name"] or "manual"
-    project_tooltip = project_description(row)
     symbols = row["symbols"] or "--"
     title = row["title"] or symbols
     status = str(row["status"])
@@ -249,17 +335,19 @@ def render_project_card(repo: Repository, row, performance) -> str:
         else "<button class='expand-button' type='button' disabled aria-hidden='true'>·</button>"
     )
     leg_panel = render_leg_rows(legs, row["entry_date"], row["closed_date"], performance.window_start, performance.window_end)
+    hover_price_points = single_leg_price_points(performance)
+    hover_reference_value = single_leg_entry_price(performance)
     return (
         f"<article class='{card_classes}' data-source='{escape(source)}' data-status='{escape(status)}'>"
         "<div class='project-main'>"
         f"<div class='project-id'>{escape(project_id_label(row))}</div>"
-        f"<div class='project-title' data-tooltip='{escape(project_tooltip)}'>"
+        "<div class='project-title'>"
         f"{render_project_title(title)}"
         f"<span>{escape(source)} · {escape(symbols)}</span>"
         f"<span class='rule-line'>{escape(project_rule_line(row))}</span>"
         "</div>"
         "<div class='chart-wrap'>"
-        f"{render_sparkline(performance.points, trade_markers=project_chart_markers(row['entry_date'], row['closed_date']), window_start=performance.window_start, window_end=performance.window_end)}"
+        f"{render_sparkline(performance.points, trade_markers=project_chart_markers(row['entry_date'], row['closed_date']), window_start=performance.window_start, window_end=performance.window_end, hover_points=hover_price_points, hover_value_mode='price' if hover_price_points else None, hover_reference_value=hover_reference_value)}"
         f"<div class='chart-meta'><span>{escape(window)}</span><span>{escape(default_rule_label(row))}</span></div>"
         "</div>"
         f"<div class='project-return {return_css(performance.return_pct)}'>{format_return(performance.return_pct)}</div>"
@@ -283,6 +371,18 @@ def render_project_title(title: str) -> str:
     )
 
 
+def single_leg_price_points(performance) -> list[tuple[str, float]] | None:
+    if len(performance.legs) != 1:
+        return None
+    return performance.legs[0].price_points or None
+
+
+def single_leg_entry_price(performance) -> float | None:
+    if len(performance.legs) != 1:
+        return None
+    return performance.legs[0].entry_price
+
+
 def split_tracking_title(title: str) -> tuple[str, str | None]:
     for suffix in ("做多跟踪", "做空跟踪", "观察跟踪", "中性跟踪"):
         marker = f" {suffix}"
@@ -302,18 +402,17 @@ def render_leg_rows(
         return ""
     rows = []
     for leg in legs:
-        tooltip = leg_description(leg)
         contribution = leg_contribution_pct(leg)
         rows.append(
             "<div class='leg-row'>"
-            f"<div class='leg-name' data-tooltip='{escape(tooltip)}'>"
+            "<div class='leg-name'>"
             "<div class='leg-title-line'>"
-            f"<strong><span class='symbol'>{escape(leg.symbol)}</span> · {escape(leg.name)}</strong>"
+            f"<strong>{escape(display_leg_name(leg))}</strong>"
             f"<span class='leg-weight'>权重 {leg.weight:.0%}</span>"
             "</div>"
-            f"<span class='leg-entry'>入场 {escape(leg.entry_date or project_entry_date or '--')}</span>"
+            f"<span class='leg-entry'><span class='symbol'>{escape(leg.symbol)}</span> · 入场 {escape(leg.entry_date or project_entry_date or '--')}</span>"
             "</div>"
-            f"{render_sparkline(leg.price_points, css_class='mini-chart', label=f'{leg.symbol} 价格曲线', show_zero=False, trade_markers=project_chart_markers(project_entry_date, project_closed_date), window_start=window_start, window_end=window_end)}"
+            f"{render_sparkline(leg.price_points, css_class='mini-chart', label=f'{leg.symbol} 价格曲线', show_zero=False, trade_markers=project_chart_markers(project_entry_date, project_closed_date), window_start=window_start, window_end=window_end, hover_reference_value=leg.entry_price)}"
             f"<div class='leg-return {return_css(leg.return_pct)}' title='标的自身涨跌'>{format_return(leg.return_pct)}</div>"
             f"<div class='leg-contribution {return_css(contribution)}' title='对组合收益的贡献'>{format_return(contribution)}</div>"
             "</div>"
@@ -373,16 +472,15 @@ def compact_status_label(status: str) -> str:
     return labels.get(status, status)
 
 
-def project_description(row) -> str:
-    metadata = safe_json(row["metadata"])
-    description = metadata.get("description") or metadata.get("summary") or metadata.get("note")
-    if description:
-        return str(description)
-    return f"{project_id_label(row)} {row['title']}。信息源：{row['source_name']}；开仓：{row['entry_date'] or '--'}；标的：{row['symbols'] or '--'}。"
-
-
-def leg_description(leg) -> str:
-    return f"{leg.symbol} / {leg.name}。权重 {leg.weight:.0%}；最新价 {format_price(leg.latest_price)}；当前收益 {format_return(leg.return_pct)}。"
+def display_leg_name(leg) -> str:
+    name = str(leg.name or "").strip()
+    symbol = str(leg.symbol or "").strip()
+    if not name:
+        return symbol
+    for suffix in (f" · {symbol}", f" {symbol}", f"({symbol})", f"（{symbol}）"):
+        if symbol and name.endswith(suffix):
+            return name[: -len(suffix)].rstrip()
+    return name
 
 
 def safe_json(raw: str | None) -> dict:
@@ -568,6 +666,8 @@ def render_project_detail(repo: Repository, row, performance) -> str:
     report_snapshot = render_report_snapshot(repo, int(row["id"]))
     research_items = render_research_items(repo.list_research_items(project_id=int(row["id"]), limit=8))
     input_history = render_project_inputs(project_input_history(repo, int(row["id"]), limit=5))
+    hover_price_points = single_leg_price_points(performance)
+    hover_reference_value = single_leg_entry_price(performance)
     legs = "\n".join(
         f"<span class='leg'>{escape(leg.symbol)} · {leg.weight:.0%} · {format_return(leg.return_pct)}</span>"
         for leg in performance.legs
@@ -590,7 +690,7 @@ def render_project_detail(repo: Repository, row, performance) -> str:
         f"<strong class='{return_css(performance.return_pct)}'>{format_return(performance.return_pct)}</strong>"
         "</div>"
         f"{render_performance_window(row, performance)}"
-        f"{render_sparkline(performance.points, trade_markers=project_chart_markers(row['entry_date'], row['closed_date']), window_start=performance.window_start, window_end=performance.window_end)}"
+        f"{render_sparkline(performance.points, trade_markers=project_chart_markers(row['entry_date'], row['closed_date']), window_start=performance.window_start, window_end=performance.window_end, hover_points=hover_price_points, hover_value_mode='price' if hover_price_points else None, hover_reference_value=hover_reference_value)}"
         f"<div class='leg-list'>{legs}</div>"
         f"<div class='leg-curves'>{leg_curves}</div>"
         f"{report_snapshot}"
@@ -762,10 +862,11 @@ def render_leg_curve(
     return (
         "<div class='leg-curve'>"
         "<div class='leg-curve-head'>"
-        f"<strong>{escape(leg.symbol)} · {escape(leg.name)} · {leg.weight:.0%}</strong>"
+        f"<strong>{escape(display_leg_name(leg))} · {leg.weight:.0%}</strong>"
         f"<span class='{return_css(leg.return_pct)}'>{format_price(leg.latest_price)} · {format_return(leg.return_pct)}</span>"
         "</div>"
-        f"{render_sparkline(leg.price_points, css_class='mini-chart', label=f'{leg.symbol} 价格曲线', show_zero=False, trade_markers=project_chart_markers(project_entry_date, project_closed_date), window_start=window_start, window_end=window_end)}"
+        f"<div class='muted'><span class='symbol'>{escape(leg.symbol)}</span> · 入场 {escape(leg.entry_date or project_entry_date or '--')}</div>"
+        f"{render_sparkline(leg.price_points, css_class='mini-chart', label=f'{leg.symbol} 价格曲线', show_zero=False, trade_markers=project_chart_markers(project_entry_date, project_closed_date), window_start=window_start, window_end=window_end, hover_reference_value=leg.entry_price)}"
         "</div>"
     )
 
@@ -778,6 +879,9 @@ def render_sparkline(
     trade_markers: list[dict[str, str]] | None = None,
     window_start: str | None = None,
     window_end: str | None = None,
+    hover_points: list[tuple[str, float]] | None = None,
+    hover_value_mode: str | None = None,
+    hover_reference_value: float | None = None,
 ) -> str:
     if len(points) < 2:
         return f"<div class='{escape(css_class)} empty'>暂无价格曲线。运行 check --provider 或 fetch-bars 后显示。</div>"
@@ -790,9 +894,11 @@ def render_sparkline(
     maximum = max(values)
     span = maximum - minimum or 1
     coords = []
+    coord_pairs = []
     for point_date, value in plot_points:
         x = chart_x(point_date, domain_start, domain_end, width)
         y = height - ((value - minimum) / span * (height - 18)) - 9
+        coord_pairs.append((x, y))
         coords.append(f"{x:.1f},{y:.1f}")
     zero_line = ""
     if show_zero:
@@ -801,6 +907,7 @@ def render_sparkline(
         zero_line = f"<line x1='0' y1='{zero_y:.1f}' x2='640' y2='{zero_y:.1f}' stroke='rgba(169,107,60,.18)' />"
     markers = curve_boundary_markers(domain_start.isoformat(), domain_end.isoformat()) + (trade_markers or [])
     baseline_html = render_entry_baseline(plot_points, coords, markers, width)
+    value_mode = "return" if show_zero else "price"
     marker_html = render_chart_markers(
         plot_points,
         coords,
@@ -808,15 +915,90 @@ def render_sparkline(
         domain_start,
         domain_end,
         width,
-        value_mode="return" if show_zero else "price",
+        value_mode=value_mode,
     )
+    hover_payload = chart_hover_payload(
+        plot_points,
+        coord_pairs,
+        value_mode,
+        hover_points=hover_points,
+        hover_value_mode=hover_value_mode,
+        hover_reference_value=hover_reference_value,
+    )
+    hover_html = render_chart_hover_layer(width, height)
     return (
-        f"<svg class='{escape(css_class)}' viewBox='0 0 640 120' preserveAspectRatio='none' role='img' aria-label='{escape(label)}'>"
+        f"<svg class='{escape(css_class)}' viewBox='0 0 640 120' preserveAspectRatio='none' role='img' aria-label='{escape(label)}' data-chart-hover='{hover_payload}'>"
         f"{zero_line}"
         f"{baseline_html}"
         f"<polyline points='{' '.join(coords)}' fill='none' stroke='#237D78' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' />"
         f"{marker_html}"
+        f"{hover_html}"
         "</svg>"
+    )
+
+
+def chart_hover_payload(
+    points: list[tuple[str, float]],
+    coord_pairs: list[tuple[float, float]],
+    value_mode: str,
+    hover_points: list[tuple[str, float]] | None = None,
+    hover_value_mode: str | None = None,
+    hover_reference_value: float | None = None,
+) -> str:
+    display_mode = hover_value_mode or value_mode
+    value_label = "收益" if display_mode == "return" else "价格"
+    payload = [
+        {
+            "x": round(x, 1),
+            "y": round(y, 1),
+            "date": point_date,
+            "label": value_label,
+            "value": marker_value_label(display_value, display_mode),
+            "change": hover_change_label(display_value, display_mode, hover_reference_value),
+        }
+        for (point_date, value), (x, y) in zip(points, coord_pairs)
+        for display_value in [hover_value_for_date(hover_points, point_date, value)]
+    ]
+    return escape(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+
+
+def hover_change_label(value: float, display_mode: str, reference: float | None) -> str:
+    if display_mode == "return":
+        return f"较开仓 {format_return(value)}"
+    if reference is None or reference == 0:
+        return ""
+    return f"较开仓 {format_return((value / reference) - 1)}"
+
+
+def hover_value_for_date(
+    hover_points: list[tuple[str, float]] | None,
+    point_date: str,
+    fallback: float,
+) -> float:
+    if not hover_points:
+        return fallback
+    index = chart_marker_index(hover_points, point_date)
+    if index is None:
+        return fallback
+    hover_date, hover_value = hover_points[index]
+    if hover_date > point_date and index > 0:
+        return hover_points[index - 1][1]
+    return hover_value
+
+
+def render_chart_hover_layer(width: int, height: int) -> str:
+    return (
+        "<g class='chart-hover' aria-hidden='true'>"
+        f"<line class='chart-hover-line' x1='0' y1='8' x2='0' y2='{height - 16}' />"
+        "<circle class='chart-hover-dot' cx='0' cy='0' r='4.8' />"
+        "<g class='chart-hover-label' transform='translate(8 8)'>"
+        "<rect width='96' height='52' rx='4' />"
+        "<text class='chart-hover-date' x='9' y='15'></text>"
+        "<text class='chart-hover-value' x='9' y='30'></text>"
+        "<text class='chart-hover-change' x='9' y='45'></text>"
+        "</g>"
+        "</g>"
+        f"<rect class='chart-hover-hit' x='0' y='0' width='{width}' height='{height}' />"
     )
 
 

@@ -1275,7 +1275,8 @@ def run_self_check(settings: Settings, provider_name: str = "fixture", out: str 
             and "source-chip" in html
             and "data-toggle-project" in html
             and "leg-panel" in html
-            and "data-tooltip" in html
+            and "data-tooltip" not in html
+            and "updateChartHover" in html
             and "默认：跌 20% 平仓" in html
         )
         scenario_results["report_archive"] = bool(

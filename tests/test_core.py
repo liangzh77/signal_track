@@ -7,6 +7,7 @@ import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from io import BytesIO
+from types import SimpleNamespace
 from unittest.mock import patch
 from datetime import date, timedelta
 from pathlib import Path
@@ -18,7 +19,7 @@ from signal_track.checker import DailyChecker, default_close_rule_hit
 from signal_track.cli import refresh_markets as cli_refresh_markets
 from signal_track.cli import main as cli_main
 from signal_track.cli import run_self_check
-from signal_track.dashboard import project_chart_markers, render_dashboard, render_sparkline
+from signal_track.dashboard import display_leg_name, project_chart_markers, render_dashboard, render_sparkline
 from signal_track.analytics import LegPerformance, ProjectPerformance, combine_weighted_points, project_performance
 from signal_track.daily_evaluator import DailyEvaluation, DailyLogicEvaluator
 from signal_track.exit_signals import exit_signal_summaries
@@ -1306,13 +1307,15 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("data-source='信息源A'", html)
             self.assertIn("data-source='信息源B'", html)
             self.assertIn("data-status='active'", html)
-            self.assertIn("data-tooltip=", html)
+            self.assertNotIn("data-tooltip=", html)
             self.assertIn("#001", html)
             self.assertIn("#002", html)
             self.assertIn("跟踪中", html)
             self.assertIn("00700.HK", html)
             self.assertIn("默认：跌 20% 平仓", html)
-            self.assertIn("tooltip", html)
+            self.assertNotIn('role="tooltip"', html)
+            self.assertIn("updateChartHover", html)
+            self.assertIn("getBBox().width", html)
             self.assertNotIn("report-card", html)
             self.assertNotIn("report-body", html)
             self.assertNotIn("download='signal-track-project-", html)
@@ -1362,7 +1365,6 @@ class SignalTrackCoreTests(unittest.TestCase):
 
             html = render_dashboard(repo)
 
-            self.assertIn("泛美白银 做多跟踪", html)
             self.assertIn("<span class='title-name'>泛美白银</span>", html)
             self.assertIn("<span class='title-suffix'>做多跟踪</span>", html)
             self.assertIn("PAAS", html)
@@ -1458,6 +1460,9 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("leg-panel", html)
             self.assertIn("leg-row", html)
             self.assertIn("mini-chart", html)
+            self.assertIn("<strong>宁德时代</strong>", html)
+            self.assertIn("<span class='symbol'>300750.SZ</span> · 入场", html)
+            self.assertNotIn("<span class='symbol'>300750.SZ</span> · 宁德时代", html)
             self.assertIn("300750.SZ 价格曲线", html)
             self.assertIn("600519.SH 价格曲线", html)
             self.assertIn("chart-marker-open", html)
@@ -1465,6 +1470,10 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("chart-marker-curve-end", html)
             self.assertNotIn("平仓点：", html)
             self.assertNotIn("300750.SZ 收益曲线", html)
+
+    def test_portfolio_leg_display_name_strips_trailing_symbol(self) -> None:
+        self.assertEqual(display_leg_name(SimpleNamespace(name="红利 SCHD", symbol="SCHD")), "红利")
+        self.assertEqual(display_leg_name(SimpleNamespace(name="黄金ETF", symbol="518880.SH")), "黄金ETF")
 
     def test_portfolio_curve_carries_forward_missing_leg_dates(self) -> None:
         leg_a = LegPerformance(
@@ -1517,8 +1526,33 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIn("chart-marker-open", html)
         self.assertIn("class='entry-baseline'", html)
         self.assertIn("盈亏线：2026-05-04", html)
-        open_marker = html.split("chart-marker-open", 1)[1]
+        self.assertIn("data-chart-hover=", html)
+        self.assertIn("chart-hover-hit", html)
+        self.assertIn("chart-hover-date", html)
+        self.assertIn("<rect width='96' height='52'", html)
+        self.assertIn("收益", html)
+        self.assertIn("较开仓 +200.00%", html)
+        open_marker = html.split("chart-marker-open", 1)[1].split("</g>", 1)[0]
         self.assertNotIn("<circle", open_marker)
+
+        price_html = render_sparkline(
+            [("2026-05-12", 12.3), ("2026-06-08", 13.4)],
+            show_zero=False,
+        )
+        self.assertIn("chart-hover-value", price_html)
+        self.assertIn("价格", price_html)
+
+        price_hover_html = render_sparkline(
+            [("2026-05-12", 0.0), ("2026-06-08", 0.1)],
+            hover_points=[("2026-05-12", 12.3), ("2026-06-08", 13.4)],
+            hover_value_mode="price",
+            hover_reference_value=12.3,
+        )
+        self.assertIn("价格", price_hover_html)
+        self.assertIn("13.4", price_hover_html)
+        self.assertIn("chart-hover-change", price_hover_html)
+        self.assertIn("较开仓", price_hover_html)
+        self.assertIn("+8.94%", price_hover_html)
 
     def test_portfolio_current_return_normalizes_leg_weights_like_curve(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
