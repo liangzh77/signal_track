@@ -1304,6 +1304,7 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("source-chip", html)
             self.assertIn("top-aside", html)
             self.assertIn("按开仓时间从新到旧", html)
+            self.assertIn("最后生成：", html)
             self.assertIn("data-source='信息源A'", html)
             self.assertIn("data-source='信息源B'", html)
             self.assertIn("data-status='active'", html)
@@ -1359,6 +1360,8 @@ class SignalTrackCoreTests(unittest.TestCase):
                     "hold_until": "2027-06-30",
                     "hold_until_label": "持有到 2027 年二季度",
                     "rule_line": "策略：一直持有到 2027 年二季度（2027-06-30 前不触发默认跌 20% 平仓/回撤止盈）；到期复核。",
+                    "tracking_focus_summary": "银价和产量成本共同决定持有质量。",
+                    "tracking_focus_signals": ["银价/金价趋势", "产量、AISC 与自由现金流兑现"],
                 },
             )
             repo.add_project_leg(project_id, instrument_id, "long", 1.0)
@@ -1370,6 +1373,9 @@ class SignalTrackCoreTests(unittest.TestCase):
             self.assertIn("PAAS", html)
             self.assertIn("策略：一直持有到 2027 年二季度", html)
             self.assertIn("持有到 2027 年二季度", html)
+            self.assertIn("重点观察", html)
+            self.assertIn("银价和产量成本共同决定持有质量。", html)
+            self.assertIn("产量、AISC 与自由现金流兑现", html)
 
     def test_dashboard_shows_recent_input_feed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

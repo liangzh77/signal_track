@@ -96,11 +96,22 @@ def render_dashboard(repo: Repository) -> str:
     .source-chip {{ color: var(--midnight); background: rgba(255,252,244,.66); border: 1.3px solid rgba(13,53,43,.28); border-radius: 5px; min-height: 32px; padding: 0 13px; cursor: pointer; font: inherit; font-size: 14px; box-shadow: 2px 3px 0 rgba(82,107,69,.08); }}
     .source-chip:hover, .source-chip.active {{ background: var(--midnight); border-color: var(--midnight); color: var(--paper); }}
     .project-list {{ display: grid; gap: 14px; }}
-    .project-card {{ position: relative; border: 1.4px solid rgba(13,53,43,.30); background: rgba(255,252,244,.74); box-shadow: 6px 8px 0 rgba(82,107,69,.10), 0 18px 38px rgba(13,53,43,.08); border-radius: 6px; overflow: hidden; }}
+    .project-card {{ position: relative; z-index: 0; border: 1.4px solid rgba(13,53,43,.30); background: rgba(255,252,244,.74); box-shadow: 6px 8px 0 rgba(82,107,69,.10), 0 18px 38px rgba(13,53,43,.08); border-radius: 6px; overflow: visible; }}
+    .project-card:hover, .project-card:focus-within {{ z-index: 80; }}
     .project-card::before {{ content: ""; position: absolute; inset: 7px; border: 1px solid rgba(13,53,43,.12); border-radius: 4px; pointer-events: none; }}
     .project-main, .leg-row {{ display: grid; grid-template-columns: 82px minmax(190px, 1.15fr) minmax(340px, 1.75fr) 112px 92px 34px; gap: 12px; align-items: stretch; min-height: 92px; padding: 10px 16px; }}
     .project-id {{ color: var(--midnight); font: 800 17px/20px "IBM Plex Mono", "Geist Mono", monospace; }}
+    .project-id-stack {{ align-self: center; position: relative; display: grid; gap: 7px; justify-items: start; z-index: 4; }}
     .project-id, .project-title, .project-return, .status-pill, .expand-button {{ align-self: center; }}
+    .focus-info {{ position: relative; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1.2px solid rgba(169,107,60,.55); border-radius: 999px; background: rgba(255,252,244,.82); color: var(--amber); cursor: help; font: 800 14px/1 "IBM Plex Mono", "Geist Mono", monospace; box-shadow: 2px 2px 0 rgba(82,107,69,.08); padding: 0; }}
+    .focus-info:hover, .focus-info:focus-visible {{ background: var(--midnight); border-color: var(--midnight); color: var(--paper); outline: none; }}
+    .focus-popover {{ position: absolute; left: 0; top: calc(100% + 8px); z-index: 120; width: max-content; min-width: 220px; max-width: min(360px, calc(100vw - 48px)); padding: 10px 12px; border: 1px solid rgba(247,241,227,.42); border-radius: 5px; background: rgba(13,53,43,.96); color: var(--paper); box-shadow: 0 16px 34px rgba(13,53,43,.22); opacity: 0; visibility: hidden; transform: translateY(-4px); transition: opacity .12s ease, transform .12s ease, visibility .12s ease; pointer-events: none; white-space: normal; text-align: left; font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", Georgia, serif; }}
+    .focus-popover::before {{ content: ""; position: absolute; left: 7px; top: -6px; width: 10px; height: 10px; background: rgba(13,53,43,.96); border-left: 1px solid rgba(247,241,227,.42); border-top: 1px solid rgba(247,241,227,.42); transform: rotate(45deg); }}
+    .focus-info:hover .focus-popover, .focus-info:focus-visible .focus-popover {{ opacity: 1; visibility: visible; transform: translateY(0); }}
+    .focus-popover-title {{ display: block; color: #F0C094; font: 700 12px/17px "Kaiti SC", "STKaiti", serif; margin-bottom: 4px; }}
+    .focus-summary {{ display: block; color: rgba(247,241,227,.92); font-size: 13px; line-height: 19px; margin-bottom: 6px; }}
+    .focus-signal {{ display: block; position: relative; color: rgba(247,241,227,.84); font-size: 13px; line-height: 19px; padding-left: 12px; }}
+    .focus-signal::before {{ content: ""; position: absolute; left: 0; top: .72em; width: 4px; height: 4px; border-radius: 999px; background: #F0C094; }}
     .project-title {{ min-width: 0; }}
     .project-title strong {{ display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; line-height: 24px; color: var(--midnight); }}
     .project-title .title-line {{ display: flex; align-items: baseline; overflow: hidden; text-overflow: clip; white-space: nowrap; }}
@@ -158,6 +169,7 @@ def render_dashboard(repo: Repository) -> str:
       .topbar {{ align-items: start; flex-direction: column; }}
       .top-aside {{ justify-content: start; text-align: left; min-width: 0; }}
       .project-main {{ grid-template-columns: 74px minmax(0, 1fr) 74px 30px; }}
+      .focus-popover {{ min-width: 210px; max-width: min(320px, calc(100vw - 36px)); }}
       .chart-wrap {{ grid-column: 1 / -1; }}
       .project-title .rule-line {{ -webkit-line-clamp: 3; }}
       .project-return {{ text-align: left; }}
@@ -341,7 +353,7 @@ def render_project_card(repo: Repository, row, performance) -> str:
     return (
         f"<article class='{card_classes}' data-source='{escape(source)}' data-status='{escape(status)}'>"
         "<div class='project-main'>"
-        f"<div class='project-id'>{escape(project_id_label(row))}</div>"
+        f"{render_project_id_stack(repo, row)}"
         "<div class='project-title'>"
         f"{render_project_title(title)}"
         f"<span>{escape(source)} · {escape(symbols)}</span>"
@@ -358,6 +370,64 @@ def render_project_card(repo: Repository, row, performance) -> str:
         f"{leg_panel}"
         "</article>"
     )
+
+
+def render_project_id_stack(repo: Repository, row) -> str:
+    summary, signals = project_focus_brief(repo, row)
+    return (
+        "<div class='project-id-stack'>"
+        f"<div class='project-id'>{escape(project_id_label(row))}</div>"
+        f"{render_focus_info(summary, signals)}"
+        "</div>"
+    )
+
+
+def render_focus_info(summary: str | None, signals: list[str]) -> str:
+    clean_summary = (summary or "").strip()
+    clean_signals = [signal.strip() for signal in signals if signal and signal.strip()]
+    if not clean_summary and not clean_signals:
+        return ""
+    summary_html = f"<span class='focus-summary'>{escape(clean_summary)}</span>" if clean_summary else ""
+    signal_html = "".join(
+        f"<span class='focus-signal'>{escape(signal)}</span>"
+        for signal in clean_signals[:4]
+    )
+    return (
+        "<button class='focus-info' type='button' aria-label='重点跟踪信号' data-focus-info>"
+        "i"
+        "<span class='focus-popover'>"
+        "<span class='focus-popover-title'>重点观察</span>"
+        f"{summary_html}"
+        f"{signal_html}"
+        "</span>"
+        "</button>"
+    )
+
+
+def project_focus_brief(repo: Repository, row) -> tuple[str | None, list[str]]:
+    del repo
+    metadata = project_metadata(row)
+    summary = normalize_focus_text(metadata.get("tracking_focus_summary"))
+    signals = normalize_focus_signals(metadata.get("tracking_focus_signals"))
+    return summary, signals
+
+
+def normalize_focus_signals(raw: object) -> list[str]:
+    if isinstance(raw, list):
+        candidates = [normalize_focus_text(item) for item in raw]
+    elif isinstance(raw, str):
+        candidates = [normalize_focus_text(item) for item in re.split(r"[\n；;]+", raw)]
+    else:
+        candidates = []
+    return [item for item in candidates if item][:4]
+
+
+def normalize_focus_text(raw: object) -> str | None:
+    if raw is None:
+        return None
+    text = localize_text(raw).strip()
+    text = re.sub(r"\s+", " ", text)
+    return text or None
 
 
 def render_project_title(title: str) -> str:

@@ -44,6 +44,8 @@ SCORECARD_ROWS = [
     ("估值吸引力", "sentiment"),
 ]
 
+FRAMEWORK_NAME = "胡猛3C-5M-3D-3T投资框架"
+
 
 def build_project_report(repo: Repository, project_id: int) -> dict[str, Any] | None:
     row = repo.get_project_row(project_id)
@@ -58,7 +60,7 @@ def build_project_report(repo: Repository, project_id: int) -> dict[str, Any] | 
     legs = [dict(item) for item in repo.list_project_legs(project_id)]
     performance_snapshot = performance_summary(performance)
     return {
-        "title": f"{row['title']} 投研报告 | 基于风和3C-5M-3D-3T框架",
+        "title": f"{row['title']} 投研报告 | 基于{FRAMEWORK_NAME}",
         "project": {
             "id": int(row["id"]),
             "title": row["title"],

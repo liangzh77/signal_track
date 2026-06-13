@@ -41,18 +41,27 @@ def project_performance(repo: Repository, project_id: int, end_date: date | None
     if not project:
         return ProjectPerformance(project_id, None, None, [], [], [])
 
+    project_legs = repo.list_project_legs(project_id)
     if end_date:
         current_end = end_date.isoformat()
     elif project["closed_date"]:
         current_end = (date.fromisoformat(project["closed_date"]) + timedelta(days=31)).isoformat()
     else:
         current_end = date.today().isoformat()
+        latest_bar_dates = [
+            latest_bar["bar_date"]
+            for leg in project_legs
+            for latest_bar in [repo.get_latest_price_on_or_before(int(leg["instrument_id"]), "9999-12-31")]
+            if latest_bar and latest_bar["bar_date"]
+        ]
+        if latest_bar_dates:
+            current_end = max(current_end, max(latest_bar_dates))
     entry_date = project["entry_date"] or project["created_at"][:10]
     chart_start = (date.fromisoformat(entry_date) - timedelta(days=31)).isoformat()
     legs: list[LegPerformance] = []
     missing: list[str] = []
 
-    for leg in repo.list_project_legs(project_id):
+    for leg in project_legs:
         bars = repo.list_price_bars(int(leg["instrument_id"]), chart_start, current_end)
         entry_bar = repo.get_first_price_on_or_after(int(leg["instrument_id"]), entry_date)
         latest_bar = repo.get_latest_price_on_or_before(int(leg["instrument_id"]), current_end)

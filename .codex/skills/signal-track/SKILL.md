@@ -26,6 +26,12 @@ Use SQLite as the runtime source of truth. Use Markdown for human-readable long-
 
 Read `references/tracking-workflow.md` when you need the exact structured JSON shape.
 
+## Research Framework
+
+The canonical investment research framework for this project is `docs/个股分析-胡猛的3C-5M-3D-3T投资框架.md`.
+
+When summarizing or supplementing a target, map observations into Step 1 evidence collection and Step 2 dimensions: 3C, 5M, 3D, 3T, 风和特色视角, 综合评估, risks, and key tracking indicators. Do not fabricate financial or industry data; mark unverified items clearly until independently checked.
+
 ## Daily Check Workflow
 
 Use Codex App Automations for recurring runs. The standard command is:
