@@ -4,6 +4,7 @@ import html
 import json
 import re
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from urllib.parse import quote
 
 from .analytics import project_performance
@@ -29,7 +30,7 @@ def render_dashboard(repo: Repository) -> str:
     needs_review = sum(1 for row in projects if project_needs_review(row))
     returns = [perf.return_pct for perf in performances.values() if perf.return_pct is not None]
     avg_return = sum(returns) / len(returns) if returns else None
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M")
     generated_stamp = f"按开仓时间从新到旧 · 最后生成：{now}"
 
     project_cards = "\n".join(
