@@ -1121,9 +1121,25 @@ def chart_x(point_date: str, domain_start: date, domain_end: date, width: int) -
 
 
 def curve_boundary_markers(start_date: str, end_date: str) -> list[dict[str, str]]:
-    markers = [{"date": start_date, "label": "始", "title_label": "曲线开始", "kind": "curve-start"}]
+    markers = [
+        {
+            "date": start_date,
+            "label": "始",
+            "title_label": "曲线开始",
+            "kind": "curve-start",
+            "show_date_label": "false",
+        }
+    ]
     if end_date != start_date:
-        markers.append({"date": end_date, "label": "末", "title_label": "曲线结束", "kind": "curve-end"})
+        markers.append(
+            {
+                "date": end_date,
+                "label": "末",
+                "title_label": "曲线结束",
+                "kind": "curve-end",
+                "show_date_label": "false",
+            }
+        )
     return markers
 
 
@@ -1199,13 +1215,18 @@ def chart_marker(
     if kind in {"open", "close"}:
         vertical_line = f"<line class='chart-marker-line' x1='{x:.1f}' y1='8' x2='{x:.1f}' y2='104' />"
         circle = ""
+    date_label_html = ""
+    if marker.get("show_date_label") != "false":
+        date_label_html = (
+            f"<text x='{text_x:.1f}' y='{text_y:.1f}' text-anchor='{text_anchor}'>{escape(date_label_text)}</text>"
+        )
     return (
         f"<g class='chart-marker {css_class}'>"
         f"<title>{escape(title)}</title>"
         f"{vertical_line}"
         f"{circle}"
         f"<text x='{text_x:.1f}' y='18' text-anchor='{text_anchor}'>{escape(value_label)}</text>"
-        f"<text x='{text_x:.1f}' y='{text_y:.1f}' text-anchor='{text_anchor}'>{escape(date_label_text)}</text>"
+        f"{date_label_html}"
         "</g>"
     )
 

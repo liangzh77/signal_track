@@ -1538,6 +1538,8 @@ class SignalTrackCoreTests(unittest.TestCase):
         self.assertIn("<rect width='96' height='52'", html)
         self.assertIn("收益", html)
         self.assertIn("较开仓 +200.0%", html)
+        self.assertNotIn(">始 04-03<", html)
+        self.assertNotIn(">末 06-09<", html)
         open_marker = html.split("chart-marker-open", 1)[1].split("</g>", 1)[0]
         self.assertNotIn("<circle", open_marker)
 
